@@ -5,11 +5,11 @@ mod macros;
 use bytes::Bytes;
 use std::convert::TryInto;
 
-pub struct Parser<'a> {
-    value: Option<Value<'a>>,
+pub struct Parser {
+    pos: usize
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Value<'a> {
     Array(Vec<Value<'a>>),
     Blob(&'a [u8]),
@@ -22,14 +22,17 @@ pub enum Value<'a> {
     Null,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Status {
-    Partial,
-    Complete,
+impl<'a> Clone for Value<'a> {
+    fn clone(&self) -> Value<'a> {
+        match self {
+            _ => Self::Null,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Error {
+    Partial,
     InvalidPrefix,
     InvalidLength,
     InvalidBoolean,
@@ -37,33 +40,26 @@ pub enum Error {
     NewLine,
 }
 
-impl<'a> Default for Parser<'a> {
+impl Default for Parser {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     pub fn new() -> Self {
-        Parser { value: None }
+        Parser {
+            pos: 0,
+        }
     }
 
-    pub fn get_value(&self) -> Option<&'a Value> {
-        self.value.as_ref()
+    pub fn parse(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        self.pos = 0;
+        self.parse_bytes(bytes)
     }
 
-    pub fn take_value(&mut self) -> Option<Value> {
-        self.value.take()
-    }
-
-    pub fn parse(&mut self, buffer: &'a [u8]) -> Result<Status, Error> {
-        let mut bytes = Bytes::new(buffer);
-
-        self.parse_bytes(&mut bytes)
-    }
-
-    fn parse_bytes(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        match next!(bytes) {
+    fn parse_bytes(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        match next!(self, bytes) {
             b'*' => self.parse_array(bytes),
             b'$' => self.parse_blob(bytes),
             b':' => self.parse_integer(bytes),
@@ -76,83 +72,67 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_error(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        let err_type = unsafe { std::str::from_utf8_unchecked(read_until!(bytes, b' ')) };
-        let str = unsafe { std::str::from_utf8_unchecked(read_line!(bytes)) };
-        self.value = Some(Value::Error(err_type, str));
-        Ok(Status::Complete)
+    fn parse_error(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        let err_type = unsafe { std::str::from_utf8_unchecked(read_until!(self, bytes, b' ')) };
+        let str = unsafe { std::str::from_utf8_unchecked(read_line!(self, bytes)) };
+        Ok(Value::Error(err_type, str))
     }
 
-    fn parse_str(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        let str = unsafe { std::str::from_utf8_unchecked(read_line!(bytes)) };
-        self.value = Some(Value::String(str));
-        Ok(Status::Complete)
+    fn parse_str(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        let str = unsafe { std::str::from_utf8_unchecked(read_line!(self, bytes)) };
+        Ok(Value::String(str))
     }
 
-    fn parse_boolean(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        let v = match next!(bytes) {
+    fn parse_boolean(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        let v = match next!(self, bytes) {
             b't' => true,
             b'f' => false,
             _ => return Err(Error::InvalidBoolean),
         };
-        self.value = Some(Value::Boolean(v));
-        Ok(Status::Complete)
+        Ok(Value::Boolean(v))
     }
 
-    fn parse_big_integer(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        let number = read_line_number!(bytes, i128);
-        self.value = Some(Value::BigInteger(number));
-        Ok(Status::Complete)
+    fn parse_big_integer(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        let number = read_line_number!(self, bytes, i128);
+        Ok(Value::BigInteger(number))
     }
 
-    fn parse_integer(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        let number = read_line_number!(bytes, i64);
-        self.value = Some(Value::Integer(number));
-        Ok(Status::Complete)
+    fn parse_integer(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        let number = read_line_number!(self, bytes, i64);
+        Ok(Value::Integer(number))
     }
 
-    fn parse_float(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        let number = read_line_number!(bytes, f64);
-        self.value = Some(Value::Float(number));
-        Ok(Status::Complete)
+    fn parse_float(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        let number = read_line_number!(self, bytes, f64);
+        Ok(Value::Float(number))
     }
 
-    fn parse_blob(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        let len = read_line_number!(bytes, i32);
+    fn parse_blob(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        let len = read_line_number!(self, bytes, i32);
 
         if len <= 0 {
-            self.value = Some(Value::Null);
-            return Ok(Status::Complete);
+            return Ok(Value::Null);
         }
 
-        let blob = read_len!(bytes, len);
-        assert_nl!(bytes);
+        let blob = read_len!(self, bytes, len);
+        assert_nl!(self, bytes);
 
-        self.value = Some(Value::Blob(blob));
-
-        Ok(Status::Complete)
+        Ok(Value::Blob(blob))
     }
 
-    fn parse_array(&mut self, bytes: &mut Bytes<'a>) -> Result<Status, Error> {
-        let len = read_line_number!(bytes, i32);
+    fn parse_array(&mut self, bytes: &[u8]) -> Result<Value, Error> {
+        let len = read_line_number!(self, bytes, i32);
         if len <= 0 {
-            self.value = Some(Value::Null);
-            return Ok(Status::Complete);
+            return Ok(Value::Null);
         }
 
         let mut v = vec![Value::Null; len as usize];
 
         for i in 0..len {
-            if self.parse_bytes(bytes)? == Status::Partial {
-                return Ok(Status::Partial);
-            }
-            let r = self.value.as_ref().unwrap();
-            v[i as usize] = r.clone();
+            v[i as usize] = self.parse_bytes(bytes)?;
         }
 
-        self.value = Some(Value::Array(v));
-
-        Ok(Status::Complete)
+        Ok(Value::Array(v))
     }
 }
 
@@ -164,14 +144,14 @@ mod test {
     fn test_parse_partial() {
         let mut p = Parser::new();
         let d = b"*-1";
-        assert_eq!(Ok(Status::Partial), p.parse(d));
+        assert_eq!(Err(Error::Partial), p.parse(d));
     }
 
     #[test]
     fn test_parse_partial_2() {
         let mut p = Parser::new();
         let d = b"*12\r\n";
-        assert_eq!(Ok(Status::Partial), p.parse(d));
+        assert_eq!(Err(Error::Partial), p.parse(d));
     }
 
     #[test]
@@ -179,7 +159,7 @@ mod test {
         let d = b"$60\r\nfoobar\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Partial), p.parse(d));
+        assert_eq!(Err(Error::Partial), p.parse(d));
     }
 
     #[test]
@@ -187,10 +167,11 @@ mod test {
         let d = b"$6\r\nfoobar\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let data = match p.get_value() {
-            Some(Value::Blob(x)) => unsafe { std::str::from_utf8_unchecked(x) },
+        let data = match r.unwrap() {
+            Value::Blob(x) => unsafe { std::str::from_utf8_unchecked(x) },
             _ => "",
         };
 
@@ -202,10 +183,11 @@ mod test {
         let d = b"*2\r\n$6\r\nfoobar\r\n$3\r\nfoo\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::Array(x)) => x,
+        let x = match r.unwrap() {
+            Value::Array(x) => x,
             _ => panic!("Unxpected type"),
         };
 
@@ -217,10 +199,11 @@ mod test {
         let d = b"*2\r\n$6\r\nfoobar\r\n*1\r\n$3\r\nfoo\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::Array(x)) => x,
+        let x = match r.unwrap() {
+            Value::Array(x) => x,
             _ => panic!("Unxpected type"),
         };
 
@@ -232,10 +215,11 @@ mod test {
         let d = b",0.25887\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::Float(x)) => *x,
+        let x = match r.unwrap() {
+            Value::Float(x) => x,
             _ => panic!("Unxpected type"),
         };
 
@@ -247,10 +231,11 @@ mod test {
         let d = b":25887\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::Integer(x)) => *x,
+        let x = match r.unwrap() {
+            Value::Integer(x) => x,
             _ => panic!("Unxpected type"),
         };
 
@@ -262,10 +247,11 @@ mod test {
         let d = b"(25887\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::BigInteger(x)) => *x,
+        let x = match r.unwrap() {
+            Value::BigInteger(x) => x,
             _ => panic!("Unxpected type"),
         };
 
@@ -277,10 +263,11 @@ mod test {
         let d = b"#f\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::Boolean(x)) => *x,
+        let x = match r.unwrap() {
+            Value::Boolean(x) => x,
             _ => panic!("Unxpected type"),
         };
 
@@ -292,10 +279,11 @@ mod test {
         let d = b"#t\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::Boolean(x)) => *x,
+        let x = match r.unwrap() {
+            Value::Boolean(x) => x,
             _ => panic!("Unxpected type"),
         };
 
@@ -315,10 +303,11 @@ mod test {
         let d = b"+hello world\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::String(x)) => *x,
+        let x = match r.unwrap() {
+            Value::String(x) => x,
             _ => panic!("Unxpected type"),
         };
 
@@ -330,10 +319,11 @@ mod test {
         let d = b"-ERR this is the error description\r\n";
         let mut p = Parser::new();
 
-        assert_eq!(Ok(Status::Complete), p.parse(d));
+        let r = p.parse(d);
+        assert!(r.is_ok());
 
-        let x = match p.get_value() {
-            Some(Value::Error(a, b)) => (*a, *b),
+        let x = match r.unwrap() {
+            Value::Error(a, b) => (a, b),
             _ => panic!("Unxpected type"),
         };
 

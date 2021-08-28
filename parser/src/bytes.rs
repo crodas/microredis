@@ -25,7 +25,7 @@ impl<'a> Bytes<'a> {
     }
 
     #[inline]
-    pub fn slice_any(&self, start: usize, end: usize) -> &'a [u8] {
+    pub fn slice_any(&self, start: usize, end: usize) -> &[u8] {
         &self.slice[start..end]
     }
 }
