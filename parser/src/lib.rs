@@ -16,35 +16,6 @@ pub enum Value<'a> {
     Null,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Frame {
-    Array(Vec<Frame>),
-    Blob(Vec<u8>),
-    String(String),
-    Error(String, String),
-    Integer(i64),
-    Boolean(bool),
-    Float(f64),
-    BigInteger(i128),
-    Null,
-}
-
-impl<'a> Value<'a> {
-    pub fn to_frame(&self) -> Frame {
-        match self {
-            Self::String(x) => Frame::String(x.to_string()),
-            Self::Blob(x) => Frame::Blob(x.to_vec()),
-            Self::Array(x) => Frame::Array(x.iter().map(|x| x.to_frame()).collect()),
-            Self::Boolean(x) => Frame::Boolean(*x),
-            Self::BigInteger(x) => Frame::BigInteger(*x),
-            Self::Integer(x) => Frame::Integer(*x),
-            Self::Float(x) => Frame::Float(*x),
-            Self::Error(x, y) => Frame::Error(x.to_string(), y.to_string()),
-            Self::Null => Frame::Null,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Error {
     Partial,
