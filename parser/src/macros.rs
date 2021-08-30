@@ -1,69 +1,82 @@
+macro_rules! ret {
+    ($bytes: ident, $value: expr) => {{
+        Ok(($bytes, $value))
+    }};
+}
 macro_rules! next {
-    ($self:ident, $bytes:ident) => {{
-        if $bytes.len() > $self.pos {
-            let b = unsafe { *$bytes.get_unchecked($self.pos) };
-            $self.pos += 1;
-            b
+    ($bytes:ident) => {{
+        let byte = if $bytes.len() > 0 {
+            unsafe { *$bytes.get_unchecked(0) }
         } else {
             return Err(Error::Partial);
-        }
+        };
+        (&$bytes[1..], byte)
     }};
 }
 
 macro_rules! read_len {
-    ($self:ident, $bytes:ident, $len:ident) => {{
+    ($bytes:ident, $len:ident) => {{
         let len: usize = $len.try_into().unwrap();
 
-        if ($bytes.len() - $self.pos < len) {
+        if ($bytes.len() < len) {
             return Err(Error::Partial);
         }
 
-        let start = $self.pos;
-
-        &$bytes[start..start + len]
+        (&$bytes[len..], &$bytes[0..len])
     }};
 }
 
 macro_rules! assert_nl {
-    ($self:ident, $bytes:ident) => {{
-        if (next!($self, $bytes) != b'\r' || next!($self, $bytes) != b'\n') {
+    ($bytes:ident) => {{
+        if ($bytes.len() < 2) {
+            return Err(Error::Partial);
+        }
+        if ($bytes[0] != b'\r' || $bytes[1] != b'\n') {
             return Err(Error::NewLine);
         }
+        &$bytes[2..]
     }};
 }
 
 macro_rules! read_until {
-    ($self:ident, $bytes:ident, $next:expr) => {{
-        let start = $self.pos;
+    ($bytes:ident, $next:expr) => {{
+        let len = $bytes.len();
+        let mut i = 0;
         loop {
-            if (next!($self, $bytes) == $next) {
+            if (i >= len) {
+                return Err(Error::Partial);
+            }
+
+            if ($bytes[i] == $next) {
                 break;
             }
+            i += 1;
         }
-        &$bytes[start..$self.pos - 1]
+        (&$bytes[i + 1..], &$bytes[0..i])
     }};
 }
 
 macro_rules! read_line {
-    ($self:ident, $bytes:ident) => {{
-        let start = $self.pos;
+    ($bytes:ident) => {{
+        let ($bytes, prev) = read_until!($bytes, b'\r');
+        let ($bytes, next) = next!($bytes);
 
-        read_until!($self, $bytes, b'\r');
-
-        if (next!($self, $bytes) != b'\n') {
+        if (next != b'\n') {
             return Err(Error::NewLine);
         }
 
-        &$bytes[start..$self.pos - 2]
+        ($bytes, prev)
     }};
 }
 
 macro_rules! read_line_number {
-    ($self:ident, $bytes:ident, $type:ident) => {{
-        let n = unsafe { std::str::from_utf8_unchecked(read_line!($self, $bytes)) };
-        match n.parse::<$type>() {
+    ($bytes:ident, $type:ident) => {{
+        let ($bytes, n) = read_line!($bytes);
+        let n = unsafe { std::str::from_utf8_unchecked(n) };
+        let n = match n.parse::<$type>() {
             Ok(x) => x,
             _ => return Err(Error::InvalidNumber),
-        }
+        };
+        ($bytes, n)
     }};
 }
