@@ -1,10 +1,12 @@
+use crate::{value_try_from, value_vec_try_from};
 use redis_zero_parser::Value as ParsedValue;
+use bytes::{Bytes, BytesMut};
 use std::convert::TryFrom;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     Array(Vec<Value>),
-    Blob(Vec<u8>),
+    Blob(Bytes),
     String(String),
     Err(String, String),
     Integer(i64),
@@ -14,13 +16,45 @@ pub enum Value {
     Null,
 }
 
+impl From<&Value> for Vec<u8> {
+    fn from(value: &Value) -> Vec<u8> {
+        match value {
+            Value::Null => b"*-1\r\n".to_vec(),
+            Value::Array(x) => {
+                let mut s: Vec<u8> = format!("*{}\r\n", x.len()).into();
+                for i in x.iter() {
+                    let b: Vec<u8> = i.into();
+                    s.extend(b);
+                }
+                s.to_vec()
+            }
+            Value::Integer(x) => format!(":{}\r\n", x).into(),
+            Value::BigInteger(x) => format!("({}\r\n", x).into(),
+            Value::Blob(x) => {
+                let s = format!("${}\r\n", x.len());
+                let mut s: BytesMut = s.as_str().as_bytes().into();
+                s.extend_from_slice(&x);
+                s.extend_from_slice(b"\r\n");
+                s.to_vec()
+            }
+            _ => b"*-1\r\n".to_vec(),
+        }
+    }
+}
+
+impl From<Value> for Vec<u8> {
+    fn from(value: Value) -> Vec<u8> {
+        (&value).into()
+    }
+}
+
 impl<'a> TryFrom<&ParsedValue<'a>> for Value {
     type Error = &'static str;
 
     fn try_from(value: &ParsedValue) -> Result<Self, Self::Error> {
         Ok(match value {
             ParsedValue::String(x) => Self::String(x.to_string()),
-            ParsedValue::Blob(x) => Self::Blob(x.to_vec()),
+            ParsedValue::Blob(x) => Self::Blob(Bytes::copy_from_slice(*x)),
             ParsedValue::Array(x) => {
                 Self::Array(x.iter().map(|x| Value::try_from(x).unwrap()).collect())
             }
@@ -33,3 +67,14 @@ impl<'a> TryFrom<&ParsedValue<'a>> for Value {
         })
     }
 }
+
+value_try_from!(i64, Value::Integer);
+value_try_from!(i128, Value::BigInteger);
+
+impl From<&str> for Value {
+    fn from(value: &str) -> Value {
+        Value::Blob(Bytes::copy_from_slice(value.as_bytes()))
+    }
+}
+
+value_vec_try_from!(&str);
