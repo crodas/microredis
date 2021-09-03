@@ -4,6 +4,7 @@ macro_rules! dispatcher {
         $($command:ident {
             $handler:ident,
             [$($tag:tt)+],
+            $min_args:expr,
         },)+$(,)?
     }=>  {
         $(
@@ -13,19 +14,30 @@ macro_rules! dispatcher {
 
                 pub struct Command {
                     pub tags: &'static [&'static str],
+                    pub min_args: i32,
                 }
 
                 impl Command {
                     pub fn new() -> Self {
                         Self {
                             tags: &[$($tag,)+],
+                            min_args: $min_args,
                         }
                     }
                 }
 
                 impl ExecutableCommand for Command {
-                    fn execute(&self, args: &[Value]) -> Result<Value, String> {
-                        $handler(args)
+                    fn execute(&self, db: &Db, args: &[Value]) -> Result<Value, Error> {
+                        $handler(db, args)
+                    }
+
+                    fn check_number_args(&self, n: usize) -> bool {
+                        if ($min_args >= 0) {
+                            n == ($min_args as i32).try_into().unwrap()
+                        } else {
+                            let s: usize = ($min_args as i32).abs().try_into().unwrap();
+                            n >= s
+                        }
                     }
 
                     fn name(&self) -> &'static str {
@@ -37,7 +49,9 @@ macro_rules! dispatcher {
         use std::ops::Deref;
 
         pub trait ExecutableCommand {
-            fn execute(&self, args: &[Value]) -> Result<Value, String>;
+            fn execute(&self, db: &Db, args: &[Value]) -> Result<Value, Error>;
+
+            fn check_number_args(&self, n: usize) -> bool;
 
             fn name(&self) -> &'static str;
         }
@@ -50,18 +64,24 @@ macro_rules! dispatcher {
         }
 
         impl Dispatcher {
-            pub fn new(command: &Value) -> Result<Self, String> {
-                let command = match command {
+            pub fn new(args: &[Value]) -> Result<Self, Error> {
+                let command = match &args[0] {
                     Value::String(x) => Ok(x.as_str()),
                     Value::Blob(x) => Ok(unsafe { std::str::from_utf8_unchecked(&x) }),
-                    _ => Err("Invalid type"),
+                    _ => Err(Error::ProtocolError("$".to_string(), "*".to_string())),
                 }?;
 
-                match command.to_lowercase().as_str() {
+                let command = match command.to_lowercase().as_str() {
                 $(
                     stringify!($command) => Ok(Self::$command($command::Command::new())),
                 )+
-                    _ => Err(format!("Command ({}) not found", command)),
+                    _ => Err(Error::CommandNotFound(command.into())),
+                }?;
+
+                if ! command.check_number_args(args.len()) {
+                    Err(Error::InvalidArgsCount(command.name().into()))
+                } else {
+                    Ok(command)
                 }
             }
         }

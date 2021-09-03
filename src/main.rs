@@ -1,5 +1,6 @@
-mod dispatcher;
 mod db;
+mod dispatcher;
+mod error;
 mod macros;
 mod value;
 
@@ -11,11 +12,8 @@ use std::convert::TryFrom;
 use std::env;
 use std::error::Error;
 use std::ops::Deref;
-use std::{
-    io,
-    sync::{Arc, Mutex},
-};
-use tokio::net::{TcpListener, TcpStream};
+use std::{io, sync::Arc};
+use tokio::net::TcpListener;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, Encoder, Framed};
 use value::Value;
@@ -29,21 +27,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(&addr).await?;
     println!("Listening on: {}", addr);
 
+    let db = Arc::new(db::Db::new(12));
+
     loop {
         match listener.accept().await {
             Ok((socket, _)) => {
+                let db = db.clone();
                 tokio::spawn(async move {
                     let mut transport = Framed::new(socket, RedisParser);
 
                     while let Some(result) = transport.next().await {
                         match result {
-                            Ok(Value::Array(args)) => match Dispatcher::new(&args[0]) {
+                            Ok(Value::Array(args)) => match Dispatcher::new(&args) {
                                 Ok(handler) => {
-                                    let r = handler.deref().execute(&args);
-                                    transport.send(r.unwrap()).await;
+                                    let r = handler
+                                        .deref()
+                                        .execute(&db, &args)
+                                        .unwrap_or_else(|x| x.into());
+                                    transport.send(r).await;
                                 }
                                 Err(err) => {
-                                    println!("invalid command {:?}", err);
+                                    let err: Value = err.into();
+                                    transport.send(err).await;
                                 }
                             },
                             Ok(x) => {

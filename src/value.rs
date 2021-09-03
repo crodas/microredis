@@ -1,6 +1,6 @@
 use crate::{value_try_from, value_vec_try_from};
-use redis_zero_parser::Value as ParsedValue;
 use bytes::{Bytes, BytesMut};
+use redis_zero_parser::Value as ParsedValue;
 use std::convert::TryFrom;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -14,6 +14,7 @@ pub enum Value {
     Float(f64),
     BigInteger(i128),
     Null,
+    OK,
 }
 
 impl From<&Value> for Vec<u8> {
@@ -37,6 +38,8 @@ impl From<&Value> for Vec<u8> {
                 s.extend_from_slice(b"\r\n");
                 s.to_vec()
             }
+            Value::Err(x, y) => format!("-{} {}\r\n", x, y).into(),
+            Value::OK => "+OK\r\n".into(),
             _ => b"*-1\r\n".to_vec(),
         }
     }
