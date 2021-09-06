@@ -23,7 +23,41 @@ pub enum Error {
     InvalidLength,
     InvalidBoolean,
     InvalidNumber,
+    ProtocolError(u8, u8),
     NewLine,
+}
+
+pub fn parse_server(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
+    let (bytes, byte) = next!(bytes);
+    match byte {
+        b'*' => parse_server_array(bytes),
+        _ => Err(Error::ProtocolError(b'*', byte)),
+    }
+}
+
+fn parse_server_array(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
+    let (bytes, len) = read_line_number!(bytes, i32);
+    if len <= 0 {
+        return Err(Error::ProtocolError(b'x', b'y'));
+    }
+
+    let mut v = vec![];
+    let mut bytes = bytes;
+
+    for _i in 0..len {
+        let n = next!(bytes);
+        let r = match n.1 {
+            b'$' => parse_blob(n.0),
+            _ => Err(Error::ProtocolError(b'$', n.1)),
+        }?;
+        bytes = r.0;
+        v.push(match r.1 {
+            Value::Blob(x) => Ok(x),
+            _ => Err(Error::ProtocolError(b'x', b'y')),
+        }?);
+    }
+
+    Ok((bytes, v))
 }
 
 pub fn parse(bytes: &[u8]) -> Result<(&[u8], Value), Error> {

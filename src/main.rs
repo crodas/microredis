@@ -1,14 +1,14 @@
+mod commands;
 mod db;
 mod dispatcher;
 mod error;
 mod macros;
 mod value;
 
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use dispatcher::Dispatcher;
 use futures::SinkExt;
-use redis_zero_parser::{parse, Error as RedisError};
-use std::convert::TryFrom;
+use redis_zero_parser::{parse_server, Error as RedisError};
 use std::env;
 use std::error::Error;
 use std::ops::Deref;
@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     while let Some(result) = transport.next().await {
                         match result {
-                            Ok(Value::Array(args)) => match Dispatcher::new(&args) {
+                            Ok(args) => match Dispatcher::new(&args) {
                                 Ok(handler) => {
                                     let r = handler
                                         .deref()
@@ -51,9 +51,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     transport.send(err).await;
                                 }
                             },
-                            Ok(x) => {
-                                println!("Invalid message {:?}", x);
-                            }
                             Err(e) => {
                                 println!("error on decoding from socket; error = {:?}", e);
                                 break;
@@ -82,17 +79,20 @@ impl Encoder<Value> for RedisParser {
 }
 
 impl Decoder for RedisParser {
-    type Item = Value;
+    type Item = Vec<Bytes>;
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> io::Result<Option<Self::Item>> {
         let (frame, proccesed) = {
-            let (unused, val) = match parse(src) {
+            let (unused, mut val) = match parse_server(src) {
                 Ok((buf, val)) => (buf, val),
                 Err(RedisError::Partial) => return Ok(None),
                 Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "something")),
             };
-            (Value::try_from(&val).unwrap(), src.len() - unused.len())
+            (
+                val.iter_mut().map(|e| Bytes::copy_from_slice(e)).collect(),
+                src.len() - unused.len(),
+            )
         };
 
         src.advance(proccesed);

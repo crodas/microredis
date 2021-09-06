@@ -2,6 +2,7 @@ use crate::{error::Error, value::Value};
 use bytes::Bytes;
 use seahash::hash;
 use std::collections::{BTreeMap, HashMap};
+use std::convert::TryInto;
 use std::sync::RwLock;
 use tokio::time::Instant;
 
@@ -31,24 +32,33 @@ impl Db {
         (hash(key) as usize) % self.entries.len()
     }
 
-    pub fn get(&self, key: &Value) -> Result<Value, Error> {
-        match key {
-            Value::Blob(key) => {
-                let entries = self.entries[self.get_slot(key)].read().unwrap();
-                Ok(entries.get(key).cloned().unwrap_or(Value::Null))
+    pub fn incr(&self, key: &Bytes, incr_by: i64) -> Result<Value, Error> {
+        let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        match entries.get(key) {
+            Some(x) => {
+                let mut val: i64 = x.try_into()?;
+
+                val += incr_by;
+
+                entries.insert(key.clone(), format!("{}", val).as_str().into());
+
+                Ok(val.into())
             }
-            _ => Err(Error::WrongType),
+            None => {
+                entries.insert(key.clone(), "1".into());
+                Ok((1 as i64).into())
+            },
         }
     }
 
-    pub fn set(&self, key: &Value, value: &Value) -> Result<Value, Error> {
-        match key {
-            Value::Blob(key) => {
-                let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-                entries.insert(key.clone(), value.clone());
-                Ok(Value::OK)
-            }
-            _ => Err(Error::WrongType),
-        }
+    pub fn get(&self, key: &Bytes) -> Result<Value, Error> {
+        let entries = self.entries[self.get_slot(key)].read().unwrap();
+        Ok(entries.get(key).cloned().unwrap_or(Value::Null))
+    }
+
+    pub fn set(&self, key: &Bytes, value: &Value) -> Result<Value, Error> {
+        let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        entries.insert(key.clone(), value.clone());
+        Ok(Value::OK)
     }
 }

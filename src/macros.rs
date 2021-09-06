@@ -2,7 +2,7 @@
 macro_rules! dispatcher {
     {
         $($command:ident {
-            $handler:ident,
+            $handler:expr,
             [$($tag:tt)+],
             $min_args:expr,
         },)+$(,)?
@@ -27,7 +27,7 @@ macro_rules! dispatcher {
                 }
 
                 impl ExecutableCommand for Command {
-                    fn execute(&self, db: &Db, args: &[Value]) -> Result<Value, Error> {
+                    fn execute(&self, db: &Db, args: &[Bytes]) -> Result<Value, Error> {
                         $handler(db, args)
                     }
 
@@ -49,7 +49,7 @@ macro_rules! dispatcher {
         use std::ops::Deref;
 
         pub trait ExecutableCommand {
-            fn execute(&self, db: &Db, args: &[Value]) -> Result<Value, Error>;
+            fn execute(&self, db: &Db, args: &[Bytes]) -> Result<Value, Error>;
 
             fn check_number_args(&self, n: usize) -> bool;
 
@@ -64,12 +64,8 @@ macro_rules! dispatcher {
         }
 
         impl Dispatcher {
-            pub fn new(args: &[Value]) -> Result<Self, Error> {
-                let command = match &args[0] {
-                    Value::String(x) => Ok(x.as_str()),
-                    Value::Blob(x) => Ok(unsafe { std::str::from_utf8_unchecked(&x) }),
-                    _ => Err(Error::ProtocolError("$".to_string(), "*".to_string())),
-                }?;
+            pub fn new(args: &[Bytes]) -> Result<Self, Error> {
+                let command = unsafe { std::str::from_utf8_unchecked(&args[0]) };
 
                 let command = match command.to_lowercase().as_str() {
                 $(

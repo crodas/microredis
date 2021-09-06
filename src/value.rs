@@ -1,7 +1,7 @@
-use crate::{value_try_from, value_vec_try_from};
+use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_parser::Value as ParsedValue;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
@@ -45,17 +45,32 @@ impl From<&Value> for Vec<u8> {
     }
 }
 
+impl TryFrom<&Value> for i64 {
+    type Error = Error;
+
+    fn try_from(val: &Value) -> Result<Self, Self::Error> {
+        match val {
+            Value::BigInteger(x) => (*x).try_into().map_err(|_| Error::NotANumber),
+            Value::Integer(x) => Ok(*x),
+            Value::Blob(x) => {
+                let x = unsafe { std::str::from_utf8_unchecked(x) };
+                x.parse::<i64>().map_err(|_| Error::NotANumber)
+            }
+            Value::String(x) => x.parse::<i64>().map_err(|_| Error::NotANumber),
+            _ => Err(Error::NotANumber),
+        }
+    }
+}
+
 impl From<Value> for Vec<u8> {
     fn from(value: Value) -> Vec<u8> {
         (&value).into()
     }
 }
 
-impl<'a> TryFrom<&ParsedValue<'a>> for Value {
-    type Error = &'static str;
-
-    fn try_from(value: &ParsedValue) -> Result<Self, Self::Error> {
-        Ok(match value {
+impl<'a> From<&ParsedValue<'a>> for Value {
+    fn from(value: &ParsedValue) -> Self {
+        match value {
             ParsedValue::String(x) => Self::String(x.to_string()),
             ParsedValue::Blob(x) => Self::Blob(Bytes::copy_from_slice(*x)),
             ParsedValue::Array(x) => {
@@ -67,7 +82,7 @@ impl<'a> TryFrom<&ParsedValue<'a>> for Value {
             ParsedValue::Float(x) => Self::Float(*x),
             ParsedValue::Error(x, y) => Self::Err(x.to_string(), y.to_string()),
             ParsedValue::Null => Self::Null,
-        })
+        }
     }
 }
 
