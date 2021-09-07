@@ -1,4 +1,4 @@
-mod commands;
+mod cmd;
 mod db;
 mod dispatcher;
 mod error;
@@ -9,6 +9,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use dispatcher::Dispatcher;
 use futures::SinkExt;
 use redis_zero_parser::{parse_server, Error as RedisError};
+use log::info;
 use std::env;
 use std::error::Error;
 use std::ops::Deref;
@@ -24,10 +25,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .nth(1)
         .unwrap_or_else(|| "127.0.0.1:8080".to_string());
 
-    let listener = TcpListener::bind(&addr).await?;
-    println!("Listening on: {}", addr);
+    env_logger::init();
 
-    let db = Arc::new(db::Db::new(12));
+
+    let listener = TcpListener::bind(&addr).await?;
+    info!("Listening on: {}", addr);
+
+    let db = Arc::new(db::Db::new(1000));
 
     loop {
         match listener.accept().await {

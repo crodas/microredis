@@ -13,4 +13,6 @@ tokio-util={version="^0.6", features = ["full"] }
 futures = { version = "0.3.0", features = ["thread-pool"]}
 tokio-stream="0.1"
 seahash = "4"
+log="0.4"
+env_logger = "0.8.4"
 bytes = "1"

@@ -1,4 +1,4 @@
-use crate::{commands, db::Db, dispatcher, error::Error, value::Value};
+use crate::{cmd, db::Db, dispatcher, error::Error, value::Value};
 use bytes::Bytes;
 use std::convert::TryInto;
 use std::time::SystemTime;
@@ -28,17 +28,22 @@ dispatcher! {
         1,
     },
     incr {
-        commands::string::incr,
+        cmd::string::incr,
+        ["write" "denyoom" "fast"],
+        2,
+    },
+    decr {
+        cmd::string::decr,
         ["write" "denyoom" "fast"],
         2,
     },
     get {
-        commands::string::get,
+        cmd::string::get,
         ["random" "loading" "stale"],
         2,
     },
     set {
-        commands::string::set,
+        cmd::string::set,
         ["random" "loading" "stale"],
         -3,
     },
