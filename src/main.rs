@@ -8,7 +8,7 @@ mod value;
 use bytes::{Buf, Bytes, BytesMut};
 use dispatcher::Dispatcher;
 use futures::SinkExt;
-use redis_zero_parser::{parse_server, Error as RedisError};
+use redis_zero_protocol_parser::{parse_server, Error as RedisError};
 use log::info;
 use std::env;
 use std::error::Error;

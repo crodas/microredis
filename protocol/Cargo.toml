@@ -1,5 +1,5 @@
 [package]
-name = "redis-zero-parser"
+name = "redis-zero-protocol-parser"
 version = "0.1.0"
 authors = ["Cesar Rodas <cesar@rodasm.com.py>"]
 edition = "2018"

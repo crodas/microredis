@@ -1,6 +1,6 @@
 use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
-use redis_zero_parser::Value as ParsedValue;
+use redis_zero_protocol_parser::Value as ParsedValue;
 use std::convert::{TryFrom, TryInto};
 
 #[derive(Debug, PartialEq, Clone)]

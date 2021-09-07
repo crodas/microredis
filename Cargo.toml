@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-redis-zero-parser = {path = "parser"}
+redis-zero-protocol-parser = {path = "protocol"}
 tokio={version="1", features = ["full", "tracing"] }
 tokio-util={version="^0.6", features = ["full"] }
 futures = { version = "0.3.0", features = ["thread-pool"]}
