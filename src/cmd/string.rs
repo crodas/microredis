@@ -16,3 +16,7 @@ pub fn get(db: &Db, args: &[Bytes]) -> Result<Value, Error> {
 pub fn set(db: &Db, args: &[Bytes]) -> Result<Value, Error> {
     db.set(&args[1], &Value::Blob(args[2].to_owned()))
 }
+
+pub fn getset(db: &Db, args: &[Bytes]) -> Result<Value, Error> {
+    db.getset(&args[1], &Value::Blob(args[2].to_owned()))
+}

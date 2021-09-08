@@ -59,6 +59,13 @@ impl Db {
         Ok(entries.get(key).cloned().unwrap_or(Value::Null))
     }
 
+    pub fn getset(&self, key: &Bytes, value: &Value) -> Result<Value, Error> {
+        let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        let prev = entries.get(key).cloned().unwrap_or(Value::Null);
+        entries.insert(key.clone(), value.clone());
+        Ok(prev)
+    }
+
     pub fn set(&self, key: &Bytes, value: &Value) -> Result<Value, Error> {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         entries.insert(key.clone(), value.clone());

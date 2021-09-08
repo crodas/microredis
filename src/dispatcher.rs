@@ -47,6 +47,11 @@ dispatcher! {
         ["random" "loading" "stale"],
         -3,
     },
+    getset {
+        cmd::string::getset,
+        ["random" "loading" "stale"],
+        -3,
+    },
     time {
         do_time,
         ["random" "loading" "stale"],
