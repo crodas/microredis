@@ -1,10 +1,10 @@
-use crate::{cmd, db::Db, dispatcher, error::Error, value::Value};
+use crate::{cmd, connection::Connection, dispatcher, error::Error, value::Value};
 use bytes::Bytes;
 use std::convert::TryInto;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-fn do_time(_db: &Db, _args: &[Bytes]) -> Result<Value, Error> {
+fn do_time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
     let seconds = format!("{}", since_the_epoch.as_secs());
@@ -13,7 +13,7 @@ fn do_time(_db: &Db, _args: &[Bytes]) -> Result<Value, Error> {
     Ok(vec![seconds.as_str(), millis.as_str()].into())
 }
 
-fn do_command(_db: &Db, _args: &[Bytes]) -> Result<Value, Error> {
+fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
     let in_ms: i128 =

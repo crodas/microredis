@@ -1,6 +1,6 @@
 use crate::{error::Error, value::Value};
-use log::trace;
 use bytes::Bytes;
+use log::trace;
 use seahash::hash;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
@@ -29,6 +29,7 @@ impl Db {
         }
     }
 
+    #[inline]
     fn get_slot(&self, key: &Bytes) -> usize {
         let id = (hash(key) as usize) % self.entries.len();
         trace!("selected slot {} for key {:?}", id, key);
@@ -50,7 +51,7 @@ impl Db {
             None => {
                 entries.insert(key.clone(), "1".into());
                 Ok((1 as i64).into())
-            },
+            }
         }
     }
 

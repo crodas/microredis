@@ -1,4 +1,5 @@
 mod cmd;
+mod connection;
 mod db;
 mod dispatcher;
 mod error;
@@ -6,10 +7,11 @@ mod macros;
 mod value;
 
 use bytes::{Buf, Bytes, BytesMut};
+use connection::Connection;
 use dispatcher::Dispatcher;
 use futures::SinkExt;
-use redis_zero_protocol_parser::{parse_server, Error as RedisError};
 use log::info;
+use redis_zero_protocol_parser::{parse_server, Error as RedisError};
 use std::env;
 use std::error::Error;
 use std::ops::Deref;
@@ -27,7 +29,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     env_logger::init();
 
-
     let listener = TcpListener::bind(&addr).await?;
     info!("Listening on: {}", addr);
 
@@ -36,7 +37,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         match listener.accept().await {
             Ok((socket, _)) => {
-                let db = db.clone();
+                let conn = Connection::new(db.clone());
+
                 tokio::spawn(async move {
                     let mut transport = Framed::new(socket, RedisParser);
 
@@ -46,7 +48,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Ok(handler) => {
                                     let r = handler
                                         .deref()
-                                        .execute(&db, &args)
+                                        .execute(&conn, &args)
                                         .unwrap_or_else(|x| x.into());
                                     transport.send(r).await;
                                 }
