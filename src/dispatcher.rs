@@ -27,19 +27,29 @@ dispatcher! {
         ["random" "loading" "stale"],
         1,
     },
-    incr {
-        cmd::string::incr,
-        ["write" "denyoom" "fast"],
-        2,
+    client {
+        cmd::client::client,
+        ["random" "loading" "stale"],
+        -2,
     },
     decr {
         cmd::string::decr,
         ["write" "denyoom" "fast"],
         2,
     },
+    echo {
+        cmd::client::echo,
+        ["random" "loading" "stale"],
+        2,
+    },
     get {
         cmd::string::get,
         ["random" "loading" "stale"],
+        2,
+    },
+    incr {
+        cmd::string::incr,
+        ["write" "denyoom" "fast"],
         2,
     },
     set {
@@ -51,6 +61,11 @@ dispatcher! {
         cmd::string::getset,
         ["random" "loading" "stale"],
         -3,
+    },
+    ping {
+        cmd::client::ping,
+        ["random" "loading" "stale"],
+        -1,
     },
     time {
         do_time,

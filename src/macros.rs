@@ -27,7 +27,7 @@ macro_rules! dispatcher {
                 }
 
                 impl ExecutableCommand for Command {
-                    fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+                    fn execute(&self, conn: &mut Connection, args: &[Bytes]) -> Result<Value, Error> {
                         $handler(conn, args)
                     }
 
@@ -49,7 +49,7 @@ macro_rules! dispatcher {
         use std::ops::Deref;
 
         pub trait ExecutableCommand {
-            fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error>;
+            fn execute(&self, conn: &mut Connection, args: &[Bytes]) -> Result<Value, Error>;
 
             fn check_number_args(&self, n: usize) -> bool;
 
@@ -116,6 +116,17 @@ macro_rules! value_vec_try_from {
             fn from(value: Vec<$type>) -> Value {
                 Value::Array(value.iter().map(|x| (*x).into()).collect())
             }
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! option {
+    {$type: expr} => {
+        if let Some(val) = $type {
+            val.into()
+        } else {
+            Value::Null
         }
     }
 }

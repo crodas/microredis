@@ -39,6 +39,7 @@ impl From<&Value> for Vec<u8> {
                 s.to_vec()
             }
             Value::Err(x, y) => format!("-{} {}\r\n", x, y).into(),
+            Value::String(x) => format!("+{}\r\n", x).into(),
             Value::OK => "+OK\r\n".into(),
             _ => b"*-1\r\n".to_vec(),
         }
@@ -96,3 +97,9 @@ impl From<&str> for Value {
 }
 
 value_vec_try_from!(&str);
+
+impl From<String> for Value {
+    fn from(value: String) -> Value {
+        value.as_str().into()
+    }
+}

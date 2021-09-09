@@ -7,15 +7,12 @@ mod macros;
 mod value;
 
 use bytes::{Buf, Bytes, BytesMut};
-use connection::Connection;
+use connection::Connections;
 use dispatcher::Dispatcher;
 use futures::SinkExt;
-use log::info;
+use log::{info, trace, warn};
 use redis_zero_protocol_parser::{parse_server, Error as RedisError};
-use std::env;
-use std::error::Error;
-use std::ops::Deref;
-use std::{io, sync::Arc};
+use std::{env, error::Error, io, ops::Deref, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, Encoder, Framed};
@@ -33,14 +30,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Listening on: {}", addr);
 
     let db = Arc::new(db::Db::new(1000));
+    let mut all_connections = Connections::new();
 
     loop {
         match listener.accept().await {
-            Ok((socket, _)) => {
-                let conn = Connection::new(db.clone());
+            Ok((socket, addr)) => {
+                let conn = all_connections.new_connection(db.clone(), addr);
 
                 tokio::spawn(async move {
                     let mut transport = Framed::new(socket, RedisParser);
+
+                    trace!("New connection {}", conn.lock().unwrap().id());
 
                     while let Some(result) = transport.next().await {
                         match result {
@@ -48,17 +48,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 Ok(handler) => {
                                     let r = handler
                                         .deref()
-                                        .execute(&conn, &args)
+                                        .execute(&mut conn.lock().unwrap(), &args)
                                         .unwrap_or_else(|x| x.into());
-                                    transport.send(r).await;
+                                    if transport.send(r).await.is_err() {
+                                        break;
+                                    }
                                 }
                                 Err(err) => {
-                                    let err: Value = err.into();
-                                    transport.send(err).await;
+                                    if transport.send(err.into()).await.is_err() {
+                                        break;
+                                    }
                                 }
                             },
                             Err(e) => {
-                                println!("error on decoding from socket; error = {:?}", e);
+                                warn!("error on decoding from socket; error = {:?}", e);
                                 break;
                             }
                         }
@@ -68,8 +71,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Err(e) => println!("error accepting socket; error = {:?}", e),
         }
     }
-
-    Ok(())
 }
 
 struct RedisParser;

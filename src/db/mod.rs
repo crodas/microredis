@@ -50,7 +50,7 @@ impl Db {
             }
             None => {
                 entries.insert(key.clone(), "1".into());
-                Ok((1 as i64).into())
+                Ok((1_i64).into())
             }
         }
     }
