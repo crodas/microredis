@@ -1,5 +1,11 @@
 use crate::{connection::Connection, error::Error, value::Value};
+use std::convert::TryInto;
 use bytes::Bytes;
+
+pub fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let by: i64 = (&Value::Blob(args[2].to_owned())).try_into()?;
+    conn.db().incr(&args[1], by)
+}
 
 pub fn incr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().incr(&args[1], 1)

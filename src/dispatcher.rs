@@ -52,6 +52,11 @@ dispatcher! {
         ["write" "denyoom" "fast"],
         2,
     },
+    incrby {
+        cmd::string::incr_by,
+        ["write" "denyoom" "fast"],
+        3,
+    },
     set {
         cmd::string::set,
         ["random" "loading" "stale"],

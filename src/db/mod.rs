@@ -49,8 +49,8 @@ impl Db {
                 Ok(val.into())
             }
             None => {
-                entries.insert(key.clone(), "1".into());
-                Ok((1_i64).into())
+                entries.insert(key.clone(), incr_by.into());
+                Ok((incr_by  as i64).into())
             }
         }
     }
