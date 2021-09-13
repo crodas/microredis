@@ -15,6 +15,13 @@ pub struct Entry {
     pub expires_at: Option<Instant>,
 }
 
+/// Database Entry
+///
+/// A database entry is a Value associated with an optional expiration time.
+///
+/// The database will never return an entry if has expired already, by having
+/// this promise we can run the purge process every few seconds instead of doing
+/// so more frequently.
 impl Entry {
     pub fn new(value: Value) -> Self {
         Self {
@@ -23,6 +30,8 @@ impl Entry {
         }
     }
 
+    /// Changes the value that is wrapped in this entry, the TTL (expired_at) is
+    /// not affected.
     pub fn change_value(&mut self, value: Value) {
         self.value = value;
     }
@@ -35,6 +44,10 @@ impl Entry {
         &self.value
     }
 
+    /// If the Entry should be taken as valid, if this function returns FALSE
+    /// the callee should behave as if the key was not found. By having this
+    /// behaviour we can schedule the purge thread to run every few seconds or
+    /// even minutes instead of once every second.
     pub fn is_valid(&self) -> bool {
         self.expires_at.map_or(true, |x| x > Instant::now())
     }
@@ -42,8 +55,24 @@ impl Entry {
 
 #[derive(Debug)]
 pub struct Db {
+    /// A vector of hashmaps.
+    ///
+    /// Instead of having a single HashMap, and having all threads fighting for
+    /// blocking the single HashMap, we have a vector of N HashMap
+    /// (configurable), which in theory allow to have faster reads and writes.
+    ///
+    /// Because all operations are always key specific, the key is used to hash
+    /// and select to which HashMap the data might be stored.
     entries: Vec<RwLock<HashMap<Bytes, Entry>>>,
+    /// B-Tree Map of expiring keys
+    ///
+    /// This B-Tree has the name of expiring entries, and they are sorted by the
+    /// Instant where the entries are expiring.
+    ///
+    /// Because it is possible that two entries expire at the same Instant, a
+    /// counter is introduced to avoid collisions on this B-Tree.
     expirations: RwLock<BTreeMap<(Instant, u64), String>>,
+    /// Number of HashMaps that are available.
     slots: usize,
 }
 
