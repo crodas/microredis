@@ -2,14 +2,47 @@ use crate::{error::Error, value::Value};
 use bytes::Bytes;
 use log::trace;
 use seahash::hash;
-use std::collections::{BTreeMap, HashMap};
-use std::convert::TryInto;
-use std::sync::RwLock;
-use tokio::time::Instant;
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+    sync::RwLock,
+};
+use tokio::time::{Duration, Instant};
+
+#[derive(Debug)]
+pub struct Entry {
+    pub value: Value,
+    pub expires_at: Option<Instant>,
+}
+
+impl Entry {
+    pub fn new(value: Value) -> Self {
+        Self {
+            value,
+            expires_at: None,
+        }
+    }
+
+    pub fn change_value(&mut self, value: Value) {
+        self.value = value;
+    }
+
+    pub fn get_mut(&mut self) -> &mut Value {
+        &mut self.value
+    }
+
+    pub fn get(&self) -> &Value {
+        &self.value
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.expires_at.map_or(true, |x| x > Instant::now())
+    }
+}
 
 #[derive(Debug)]
 pub struct Db {
-    entries: Vec<RwLock<HashMap<Bytes, Value>>>,
+    entries: Vec<RwLock<HashMap<Bytes, Entry>>>,
     expirations: RwLock<BTreeMap<(Instant, u64), String>>,
     slots: usize,
 }
@@ -38,38 +71,86 @@ impl Db {
 
     pub fn incr(&self, key: &Bytes, incr_by: i64) -> Result<Value, Error> {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-        match entries.get(key) {
+        match entries.get_mut(key) {
             Some(x) => {
-                let mut val: i64 = x.try_into()?;
+                let value = x.get();
+                let mut number: i64 = value.try_into()?;
 
-                val += incr_by;
+                number += incr_by;
 
-                entries.insert(key.clone(), format!("{}", val).as_str().into());
+                x.change_value(format!("{}", number).as_str().into());
 
-                Ok(val.into())
+                Ok(number.into())
             }
             None => {
-                entries.insert(key.clone(), incr_by.into());
-                Ok((incr_by  as i64).into())
+                entries.insert(key.clone(), Entry::new(incr_by.into()));
+                Ok((incr_by as i64).into())
             }
         }
     }
 
-    pub fn get(&self, key: &Bytes) -> Result<Value, Error> {
+    pub fn persist(&self, key: &Bytes) -> Value {
+        let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        entries
+            .get_mut(key)
+            .filter(|x| x.is_valid())
+            .map_or(0_i64.into(), |mut x| {
+                let ret = x.expires_at.map_or(0_i64, |_| 1_i64);
+                x.expires_at = None;
+                ret.into()
+            })
+    }
+
+    pub fn expire(&self, key: &Bytes, time: Duration) -> Value {
+        let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        entries
+            .get_mut(key)
+            .filter(|x| x.is_valid())
+            .map_or(0_i64.into(), |mut x| {
+                x.expires_at = Some(Instant::now() + time);
+                1_i64.into()
+            })
+    }
+
+    pub fn del(&self, keys: &[Bytes]) -> Value {
+        let mut deleted = 0_i64;
+        keys.iter().map(|key| {
+            let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+            if entries.remove(key).is_some() {
+                deleted += 1;
+            }
+        }).for_each(drop);
+
+        deleted.into()
+    }
+
+    pub fn get(&self, key: &Bytes) -> Value {
         let entries = self.entries[self.get_slot(key)].read().unwrap();
-        Ok(entries.get(key).cloned().unwrap_or(Value::Null))
+        entries
+            .get(key)
+            .filter(|x| x.is_valid())
+            .map_or(Value::Null, |x| x.get().clone())
     }
 
-    pub fn getset(&self, key: &Bytes, value: &Value) -> Result<Value, Error> {
+    pub fn getset(&self, key: &Bytes, value: &Value) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-        let prev = entries.get(key).cloned().unwrap_or(Value::Null);
-        entries.insert(key.clone(), value.clone());
-        Ok(prev)
+        entries
+            .insert(key.clone(), Entry::new(value.clone()))
+            .filter(|x| x.is_valid())
+            .map_or(Value::Null, |x| x.get().clone())
     }
 
-    pub fn set(&self, key: &Bytes, value: &Value) -> Result<Value, Error> {
+    pub fn set(&self, key: &Bytes, value: &Value) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-        entries.insert(key.clone(), value.clone());
-        Ok(Value::OK)
+        entries.insert(key.clone(), Entry::new(value.clone()));
+        Value::OK
+    }
+
+    pub fn ttl(&self, key: &Bytes) -> Option<Option<Instant>> {
+        let entries = self.entries[self.get_slot(key)].read().unwrap();
+        entries
+            .get(key)
+            .filter(|x| x.is_valid())
+            .map(|x| x.expires_at)
     }
 }
