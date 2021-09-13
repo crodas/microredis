@@ -42,6 +42,16 @@ dispatcher! {
         ["random" "loading" "stale"],
         2,
     },
+    expire {
+        cmd::key::expire,
+        ["read" "write" "fast"],
+        3,
+    },
+    del {
+        cmd::key::del,
+        ["random" "loading" "stale"],
+        -2,
+    },
     get {
         cmd::string::get,
         ["random" "loading" "stale"],
@@ -56,6 +66,16 @@ dispatcher! {
         cmd::string::incr_by,
         ["write" "denyoom" "fast"],
         3,
+    },
+    persist {
+        cmd::key::persist,
+        ["write" "fast"],
+        2,
+    },
+    ttl {
+        cmd::key::ttl,
+        ["read" "read"],
+        2,
     },
     set {
         cmd::string::set,

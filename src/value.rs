@@ -1,7 +1,10 @@
 use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    str::FromStr
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
@@ -53,14 +56,16 @@ impl TryFrom<&Value> for i64 {
         match val {
             Value::BigInteger(x) => (*x).try_into().map_err(|_| Error::NotANumber),
             Value::Integer(x) => Ok(*x),
-            Value::Blob(x) => {
-                let x = unsafe { std::str::from_utf8_unchecked(x) };
-                x.parse::<i64>().map_err(|_| Error::NotANumber)
-            }
+            Value::Blob(x) => bytes_to_number::<i64>(&x),
             Value::String(x) => x.parse::<i64>().map_err(|_| Error::NotANumber),
             _ => Err(Error::NotANumber),
         }
     }
+}
+
+pub fn bytes_to_number<T: FromStr>(bytes: &Bytes) -> Result<T, Error> {
+    let x = unsafe { std::str::from_utf8_unchecked(bytes) };
+    x.parse::<T>().map_err(|_| Error::NotANumber)
 }
 
 impl From<Value> for Vec<u8> {

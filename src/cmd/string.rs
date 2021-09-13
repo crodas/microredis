@@ -1,6 +1,6 @@
 use crate::{connection::Connection, error::Error, value::Value};
-use std::convert::TryInto;
 use bytes::Bytes;
+use std::convert::TryInto;
 
 pub fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let by: i64 = (&Value::Blob(args[2].to_owned())).try_into()?;
@@ -16,13 +16,13 @@ pub fn decr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 pub fn get(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get(&args[1])
+    Ok(conn.db().get(&args[1]))
 }
 
 pub fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().set(&args[1], &Value::Blob(args[2].to_owned()))
+    Ok(conn.db().set(&args[1], &Value::Blob(args[2].to_owned())))
 }
 
 pub fn getset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().getset(&args[1], &Value::Blob(args[2].to_owned()))
+    Ok(conn.db().getset(&args[1], &Value::Blob(args[2].to_owned())))
 }
