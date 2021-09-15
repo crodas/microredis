@@ -67,6 +67,16 @@ dispatcher! {
         ["random" "loading" "stale"],
         2,
     },
+    getdel {
+        cmd::string::getdel,
+        ["random" "loading" "stale"],
+        2,
+    },
+    getset {
+        cmd::string::getset,
+        ["random" "loading" "stale"],
+        -3,
+    },
     incr {
         cmd::string::incr,
         ["write" "denyoom" "fast"],
@@ -109,11 +119,6 @@ dispatcher! {
     },
     set {
         cmd::string::set,
-        ["random" "loading" "stale"],
-        -3,
-    },
-    getset {
-        cmd::string::getset,
         ["random" "loading" "stale"],
         -3,
     },

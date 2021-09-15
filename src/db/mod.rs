@@ -130,6 +130,12 @@ impl Db {
             .map_or(Value::Null, |x| x.get().clone())
     }
 
+    pub fn getdel(&self, key: &Bytes) -> Value {
+        let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        entries.remove(key)
+            .map_or(Value::Null, |x| x.get().clone())
+    }
+
     pub fn set(&self, key: &Bytes, value: &Value) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         entries.insert(key.clone(), Entry::new(value.clone()));
