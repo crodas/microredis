@@ -15,9 +15,7 @@ pub fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
     let expires_at = Duration::new(expires_at as u64, 0);
 
-    Ok(conn
-        .db()
-        .expire(&args[1], expires_at))
+    Ok(conn.db().expire(&args[1], expires_at))
 }
 
 pub fn persist(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {

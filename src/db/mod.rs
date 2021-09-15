@@ -143,12 +143,14 @@ impl Db {
 
     pub fn del(&self, keys: &[Bytes]) -> Value {
         let mut deleted = 0_i64;
-        keys.iter().map(|key| {
-            let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-            if entries.remove(key).is_some() {
-                deleted += 1;
-            }
-        }).for_each(drop);
+        keys.iter()
+            .map(|key| {
+                let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+                if entries.remove(key).is_some() {
+                    deleted += 1;
+                }
+            })
+            .for_each(drop);
 
         deleted.into()
     }

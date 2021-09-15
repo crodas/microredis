@@ -3,7 +3,7 @@ use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
 use std::{
     convert::{TryFrom, TryInto},
-    str::FromStr
+    str::FromStr,
 };
 
 #[derive(Debug, PartialEq, Clone)]
