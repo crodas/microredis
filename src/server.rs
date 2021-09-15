@@ -1,4 +1,4 @@
-use crate::{connection::Connections, dispatcher::Dispatcher, value::Value, db::Db};
+use crate::{connection::Connections, db::Db, dispatcher::Dispatcher, value::Value};
 use bytes::{Buf, Bytes, BytesMut};
 use futures::SinkExt;
 use log::{info, trace, warn};
@@ -26,13 +26,13 @@ impl Decoder for RedisParser {
 
     fn decode(&mut self, src: &mut BytesMut) -> io::Result<Option<Self::Item>> {
         let (frame, proccesed) = {
-            let (unused, mut val) = match parse_server(src) {
+            let (unused, val) = match parse_server(src) {
                 Ok((buf, val)) => (buf, val),
                 Err(RedisError::Partial) => return Ok(None),
                 Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "something")),
             };
             (
-                val.iter_mut().map(|e| Bytes::copy_from_slice(e)).collect(),
+                val.iter().map(|e| Bytes::copy_from_slice(e)).collect(),
                 src.len() - unused.len(),
             )
         };

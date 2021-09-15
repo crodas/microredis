@@ -47,6 +47,16 @@ dispatcher! {
         ["read" "write" "fast"],
         3,
     },
+    expireat {
+        cmd::key::expire_at,
+        ["read" "write" "fast"],
+        3,
+    },
+    expiretime {
+        cmd::key::expire_time,
+        ["read" "write" "fast"],
+        2,
+    },
     del {
         cmd::key::del,
         ["random" "loading" "stale"],
@@ -73,6 +83,26 @@ dispatcher! {
         2,
     },
     ttl {
+        cmd::key::ttl,
+        ["read" "read"],
+        2,
+    },
+    pexpire {
+        cmd::key::expire,
+        ["read" "write" "fast"],
+        3,
+    },
+    pexpireat {
+        cmd::key::expire_at,
+        ["read" "write" "fast"],
+        3,
+    },
+    pexpiretime {
+        cmd::key::expire_time,
+        ["read" "write" "fast"],
+        2,
+    },
+    pttl {
         cmd::key::ttl,
         ["read" "read"],
         2,

@@ -130,3 +130,16 @@ macro_rules! option {
         }
     }
 }
+
+#[macro_export]
+macro_rules! check_arg {
+    {$args: tt, $pos: tt, $command: tt} => {{
+        match $args.get($pos) {
+            Some(bytes) => {
+                let command = unsafe { std::str::from_utf8_unchecked(&bytes) };
+                command.to_uppercase() == $command
+            },
+            None => false,
+        }
+    }}
+}
