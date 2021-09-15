@@ -108,3 +108,9 @@ impl From<String> for Value {
         value.as_str().into()
     }
 }
+
+impl From<Vec<Value>> for Value {
+    fn from(value: Vec<Value>) -> Value {
+        Value::Array(value)
+    }
+}

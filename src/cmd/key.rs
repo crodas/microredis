@@ -16,6 +16,10 @@ pub fn del(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().del(&args[1..]))
 }
 
+pub fn exists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    Ok(conn.db().exists(&args[1..]))
+}
+
 pub fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let expires_in: i64 = bytes_to_number(&args[2])?;
 
@@ -30,7 +34,7 @@ pub fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         Duration::from_millis(expires_in as u64)
     };
 
-    Ok(conn.db().expire(&args[1], expires_at))
+    Ok(conn.db().add_expiration(&args[1], expires_at))
 }
 
 pub fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -53,7 +57,7 @@ pub fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         Duration::from_millis(expires_in as u64)
     };
 
-    Ok(conn.db().expire(&args[1], expires_at))
+    Ok(conn.db().add_expiration(&args[1], expires_at))
 }
 
 pub fn ttl(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -93,5 +97,5 @@ pub fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 pub fn persist(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().persist(&args[1]))
+    Ok(conn.db().remove_expiration(&args[1]))
 }

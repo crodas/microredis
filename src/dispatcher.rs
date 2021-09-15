@@ -28,6 +28,11 @@ dispatcher! {
             ["random" "loading" "stale"],
             -2,
         },
+        exists {
+            cmd::key::exists,
+            ["read" "fast"],
+            -2,
+        },
         expire {
             cmd::key::expire,
             ["read" "write" "fast"],
@@ -80,6 +85,11 @@ dispatcher! {
             ["write" "denyoom" "fast"],
             2,
         },
+        decrby {
+            cmd::string::decr_by,
+            ["write" "denyoom" "fast"],
+            3,
+        },
         get {
             cmd::string::get,
             ["random" "loading" "stale"],
@@ -104,6 +114,11 @@ dispatcher! {
             cmd::string::incr_by,
             ["write" "denyoom" "fast"],
             3,
+        },
+        mget {
+            cmd::string::mget,
+            ["random" "loading" "stale"],
+            -2,
         },
         set {
             cmd::string::set,

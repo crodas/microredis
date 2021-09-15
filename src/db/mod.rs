@@ -77,7 +77,7 @@ impl Db {
         }
     }
 
-    pub fn persist(&self, key: &Bytes) -> Value {
+    pub fn remove_expiration(&self, key: &Bytes) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         entries
             .get_mut(key)
@@ -89,7 +89,7 @@ impl Db {
             })
     }
 
-    pub fn expire(&self, key: &Bytes, time: Duration) -> Value {
+    pub fn add_expiration(&self, key: &Bytes, time: Duration) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         entries
             .get_mut(key)
@@ -114,12 +114,35 @@ impl Db {
         deleted.into()
     }
 
+    pub fn exists(&self, keys: &[Bytes]) -> Value {
+        let mut matches = 0_i64;
+        keys.iter()
+            .map(|key| {
+                let entries = self.entries[self.get_slot(key)].read().unwrap();
+                if entries.get(key).is_some() {
+                    matches += 1;
+                }
+            })
+            .for_each(drop);
+
+        matches.into()
+    }
+
     pub fn get(&self, key: &Bytes) -> Value {
         let entries = self.entries[self.get_slot(key)].read().unwrap();
         entries
             .get(key)
             .filter(|x| x.is_valid())
             .map_or(Value::Null, |x| x.get().clone())
+    }
+
+    pub fn get_multi(&self, keys: &[Bytes]) -> Value {
+        keys.iter()
+            .map(|key| {
+                let entries = self.entries[self.get_slot(key)].read().unwrap();
+                entries.get(key)
+                    .map_or(Value::Null, |x| x.get().clone())
+            }).collect::<Vec<Value>>().into()
     }
 
     pub fn getset(&self, key: &Bytes, value: &Value) -> Value {
