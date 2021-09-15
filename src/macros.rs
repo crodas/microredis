@@ -1,13 +1,15 @@
 #[macro_export]
 macro_rules! dispatcher {
     {
-        $($command:ident {
-            $handler:expr,
-            [$($tag:tt)+],
-            $min_args:expr,
-        },)+$(,)?
+        $($ns:ident {
+            $($command:ident {
+                $handler:expr,
+                [$($tag:tt)+],
+                $min_args:expr,
+            }),+$(,)?
+        }),+$(,)?
     }=>  {
-        $(
+        $($(
             #[allow(non_snake_case, non_camel_case_types)]
             pub mod $command {
                 use super::*;
@@ -40,12 +42,16 @@ macro_rules! dispatcher {
                         }
                     }
 
+                    fn group(&self) -> &'static str {
+                        stringify!($ns)
+                    }
+
                     fn name(&self) -> &'static str {
                         stringify!($command)
                     }
                 }
             }
-        )+
+        )+)+
         use std::ops::Deref;
 
         pub trait ExecutableCommand {
@@ -53,14 +59,16 @@ macro_rules! dispatcher {
 
             fn check_number_args(&self, n: usize) -> bool;
 
+            fn group(&self) -> &'static str;
+
             fn name(&self) -> &'static str;
         }
 
         #[allow(non_snake_case, non_camel_case_types)]
         pub enum Dispatcher {
-            $(
+            $($(
                 $command($command::Command),
-            )+
+            )+)+
         }
 
         impl Dispatcher {
@@ -68,9 +76,9 @@ macro_rules! dispatcher {
                 let command = unsafe { std::str::from_utf8_unchecked(&args[0]) };
 
                 let command = match command.to_lowercase().as_str() {
-                $(
+                $($(
                     stringify!($command) => Ok(Self::$command($command::Command::new())),
-                )+
+                )+)+
                     _ => Err(Error::CommandNotFound(command.into())),
                 }?;
 
@@ -87,9 +95,9 @@ macro_rules! dispatcher {
 
             fn deref(&self) -> &(dyn ExecutableCommand + Sync + Send + 'static) {
                 match self {
-                    $(
+                    $($(
                         Self::$command(v) => v as &(dyn ExecutableCommand + Sync + Send),
-                    )+
+                    )+)+
                 }
             }
         }

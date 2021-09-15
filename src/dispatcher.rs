@@ -22,114 +22,122 @@ fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
 }
 
 dispatcher! {
-    command  {
-        do_command,
-        ["random" "loading" "stale"],
-        1,
+    keys {
+        del {
+            cmd::key::del,
+            ["random" "loading" "stale"],
+            -2,
+        },
+        expire {
+            cmd::key::expire,
+            ["read" "write" "fast"],
+            3,
+        },
+        expireat {
+            cmd::key::expire_at,
+            ["read" "write" "fast"],
+            3,
+        },
+        expiretime {
+            cmd::key::expire_time,
+            ["read" "write" "fast"],
+            2,
+        },
+        persist {
+            cmd::key::persist,
+            ["write" "fast"],
+            2,
+        },
+        pexpire {
+            cmd::key::expire,
+            ["read" "write" "fast"],
+            3,
+        },
+        pexpireat {
+            cmd::key::expire_at,
+            ["read" "write" "fast"],
+            3,
+        },
+        pexpiretime {
+            cmd::key::expire_time,
+            ["read" "write" "fast"],
+            2,
+        },
+        pttl {
+            cmd::key::ttl,
+            ["read" "read"],
+            2,
+        },
+        ttl {
+            cmd::key::ttl,
+            ["read" "read"],
+            2,
+        },
     },
-    client {
-        cmd::client::client,
-        ["random" "loading" "stale"],
-        -2,
+    string {
+        decr {
+            cmd::string::decr,
+            ["write" "denyoom" "fast"],
+            2,
+        },
+        get {
+            cmd::string::get,
+            ["random" "loading" "stale"],
+            2,
+        },
+        getdel {
+            cmd::string::getdel,
+            ["random" "loading" "stale"],
+            2,
+        },
+        getset {
+            cmd::string::getset,
+            ["random" "loading" "stale"],
+            -3,
+        },
+        incr {
+            cmd::string::incr,
+            ["write" "denyoom" "fast"],
+            2,
+        },
+        incrby {
+            cmd::string::incr_by,
+            ["write" "denyoom" "fast"],
+            3,
+        },
+        set {
+            cmd::string::set,
+            ["random" "loading" "stale"],
+            -3,
+        },
     },
-    decr {
-        cmd::string::decr,
-        ["write" "denyoom" "fast"],
-        2,
+    connection {
+        client {
+            cmd::client::client,
+            ["random" "loading" "stale"],
+            -2,
+        },
+        echo {
+            cmd::client::echo,
+            ["random" "loading" "stale"],
+            2,
+        },
+        ping {
+            cmd::client::ping,
+            ["random" "loading" "stale"],
+            -1,
+        },
     },
-    echo {
-        cmd::client::echo,
-        ["random" "loading" "stale"],
-        2,
-    },
-    expire {
-        cmd::key::expire,
-        ["read" "write" "fast"],
-        3,
-    },
-    expireat {
-        cmd::key::expire_at,
-        ["read" "write" "fast"],
-        3,
-    },
-    expiretime {
-        cmd::key::expire_time,
-        ["read" "write" "fast"],
-        2,
-    },
-    del {
-        cmd::key::del,
-        ["random" "loading" "stale"],
-        -2,
-    },
-    get {
-        cmd::string::get,
-        ["random" "loading" "stale"],
-        2,
-    },
-    getdel {
-        cmd::string::getdel,
-        ["random" "loading" "stale"],
-        2,
-    },
-    getset {
-        cmd::string::getset,
-        ["random" "loading" "stale"],
-        -3,
-    },
-    incr {
-        cmd::string::incr,
-        ["write" "denyoom" "fast"],
-        2,
-    },
-    incrby {
-        cmd::string::incr_by,
-        ["write" "denyoom" "fast"],
-        3,
-    },
-    persist {
-        cmd::key::persist,
-        ["write" "fast"],
-        2,
-    },
-    ttl {
-        cmd::key::ttl,
-        ["read" "read"],
-        2,
-    },
-    pexpire {
-        cmd::key::expire,
-        ["read" "write" "fast"],
-        3,
-    },
-    pexpireat {
-        cmd::key::expire_at,
-        ["read" "write" "fast"],
-        3,
-    },
-    pexpiretime {
-        cmd::key::expire_time,
-        ["read" "write" "fast"],
-        2,
-    },
-    pttl {
-        cmd::key::ttl,
-        ["read" "read"],
-        2,
-    },
-    set {
-        cmd::string::set,
-        ["random" "loading" "stale"],
-        -3,
-    },
-    ping {
-        cmd::client::ping,
-        ["random" "loading" "stale"],
-        -1,
-    },
-    time {
-        do_time,
-        ["random" "loading" "stale"],
-        1,
-    },
+    server {
+        command  {
+            do_command,
+            ["random" "loading" "stale"],
+            1,
+        },
+        time {
+            do_time,
+            ["random" "loading" "stale"],
+            1,
+        },
+    }
 }
