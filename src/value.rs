@@ -34,6 +34,7 @@ impl From<&Value> for Vec<u8> {
             }
             Value::Integer(x) => format!(":{}\r\n", x).into(),
             Value::BigInteger(x) => format!("({}\r\n", x).into(),
+            Value::Float(x) => format!(",{}\r\n", x).into(),
             Value::Blob(x) => {
                 let s = format!("${}\r\n", x.len());
                 let mut s: BytesMut = s.as_str().as_bytes().into();
@@ -63,6 +64,18 @@ impl TryFrom<&Value> for i64 {
     }
 }
 
+impl TryFrom<&Value> for f64 {
+    type Error = Error;
+
+    fn try_from(val: &Value) -> Result<Self, Self::Error> {
+        match val {
+            Value::Float(x) => Ok(*x),
+            Value::Blob(x) => bytes_to_number::<f64>(&x),
+            Value::String(x) => x.parse::<f64>().map_err(|_| Error::NotANumber),
+            _ => Err(Error::NotANumber),
+        }
+    }
+}
 pub fn bytes_to_number<T: FromStr>(bytes: &Bytes) -> Result<T, Error> {
     let x = unsafe { std::str::from_utf8_unchecked(bytes) };
     x.parse::<T>().map_err(|_| Error::NotANumber)
@@ -92,6 +105,7 @@ impl<'a> From<&ParsedValue<'a>> for Value {
     }
 }
 
+value_try_from!(f64, Value::Float);
 value_try_from!(i64, Value::Integer);
 value_try_from!(i128, Value::BigInteger);
 

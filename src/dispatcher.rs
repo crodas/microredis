@@ -115,6 +115,11 @@ dispatcher! {
             ["write" "denyoom" "fast"],
             3,
         },
+        incrbyfloat {
+            cmd::string::incr_by_float,
+            ["write" "denyoom" "fast"],
+            3,
+        },
         mget {
             cmd::string::mget,
             ["random" "loading" "stale"],
@@ -125,6 +130,11 @@ dispatcher! {
             ["random" "loading" "stale"],
             -3,
         },
+        strlen {
+            cmd::string::strlen,
+            ["random" "fast"],
+            2,
+        }
     },
     connection {
         client {

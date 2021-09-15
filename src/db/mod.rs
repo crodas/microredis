@@ -7,7 +7,8 @@ use log::trace;
 use seahash::hash;
 use std::{
     collections::{BTreeMap, HashMap},
-    convert::TryInto,
+    convert::{TryFrom, TryInto},
+    ops::AddAssign,
     sync::RwLock,
 };
 use tokio::time::{Duration, Instant};
@@ -57,22 +58,28 @@ impl Db {
         id
     }
 
-    pub fn incr(&self, key: &Bytes, incr_by: i64) -> Result<Value, Error> {
+    pub fn incr<
+        T: ToString + AddAssign + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
+    >(
+        &self,
+        key: &Bytes,
+        incr_by: T,
+    ) -> Result<Value, Error> {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         match entries.get_mut(key) {
             Some(x) => {
                 let value = x.get();
-                let mut number: i64 = value.try_into()?;
+                let mut number: T = value.try_into()?;
 
                 number += incr_by;
 
-                x.change_value(format!("{}", number).as_str().into());
+                x.change_value(number.to_string().as_str().into());
 
                 Ok(number.into())
             }
             None => {
-                entries.insert(key.clone(), Entry::new(incr_by.into()));
-                Ok((incr_by as i64).into())
+                entries.insert(key.clone(), Entry::new(incr_by.to_string().as_str().into()));
+                Ok((incr_by as T).into())
             }
         }
     }
@@ -140,9 +147,10 @@ impl Db {
         keys.iter()
             .map(|key| {
                 let entries = self.entries[self.get_slot(key)].read().unwrap();
-                entries.get(key)
-                    .map_or(Value::Null, |x| x.get().clone())
-            }).collect::<Vec<Value>>().into()
+                entries.get(key).map_or(Value::Null, |x| x.get().clone())
+            })
+            .collect::<Vec<Value>>()
+            .into()
     }
 
     pub fn getset(&self, key: &Bytes, value: &Value) -> Value {
@@ -155,8 +163,7 @@ impl Db {
 
     pub fn getdel(&self, key: &Bytes) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-        entries.remove(key)
-            .map_or(Value::Null, |x| x.get().clone())
+        entries.remove(key).map_or(Value::Null, |x| x.get().clone())
     }
 
     pub fn set(&self, key: &Bytes, value: &Value) -> Value {
