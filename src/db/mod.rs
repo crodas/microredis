@@ -78,31 +78,37 @@ impl Db {
                 Ok(number.into())
             }
             None => {
-                entries.insert(key.clone(), Entry::new(incr_by.to_string().as_str().into()));
+                entries.insert(
+                    key.clone(),
+                    Entry::new(incr_by.to_string().as_str().into(), None),
+                );
                 Ok((incr_by as T).into())
             }
         }
     }
 
-    pub fn remove_expiration(&self, key: &Bytes) -> Value {
+    pub fn persist(&self, key: &Bytes) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         entries
             .get_mut(key)
             .filter(|x| x.is_valid())
-            .map_or(0_i64.into(), |mut x| {
-                let ret = x.expires_at.map_or(0_i64, |_| 1_i64);
-                x.expires_at = None;
-                ret.into()
+            .map_or(0_i64.into(), |x| {
+                if x.has_ttl() {
+                    x.persist();
+                    1_i64.into()
+                } else {
+                    0_i64.into()
+                }
             })
     }
 
-    pub fn add_expiration(&self, key: &Bytes, time: Duration) -> Value {
+    pub fn set_ttl(&self, key: &Bytes, expiration: Duration) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         entries
             .get_mut(key)
             .filter(|x| x.is_valid())
-            .map_or(0_i64.into(), |mut x| {
-                x.expires_at = Some(Instant::now() + time);
+            .map_or(0_i64.into(), |x| {
+                x.set_ttl(expiration);
                 1_i64.into()
             })
     }
@@ -156,7 +162,7 @@ impl Db {
     pub fn getset(&self, key: &Bytes, value: &Value) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         entries
-            .insert(key.clone(), Entry::new(value.clone()))
+            .insert(key.clone(), Entry::new(value.clone(), None))
             .filter(|x| x.is_valid())
             .map_or(Value::Null, |x| x.get().clone())
     }
@@ -166,9 +172,9 @@ impl Db {
         entries.remove(key).map_or(Value::Null, |x| x.get().clone())
     }
 
-    pub fn set(&self, key: &Bytes, value: &Value) -> Value {
+    pub fn set(&self, key: &Bytes, value: &Value, expires: Option<Duration>) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-        entries.insert(key.clone(), Entry::new(value.clone()));
+        entries.insert(key.clone(), Entry::new(value.clone(), expires));
         Value::OK
     }
 
@@ -177,6 +183,6 @@ impl Db {
         entries
             .get(key)
             .filter(|x| x.is_valid())
-            .map(|x| x.expires_at)
+            .map(|x| x.get_ttl())
     }
 }

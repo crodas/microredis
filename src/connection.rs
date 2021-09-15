@@ -56,6 +56,7 @@ impl Connection {
         self.name = Some(name);
     }
 
+    #[allow(dead_code)]
     pub fn current_db(&self) -> u32 {
         self.current_db
     }

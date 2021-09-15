@@ -130,6 +130,16 @@ dispatcher! {
             ["random" "loading" "stale"],
             -3,
         },
+        setex {
+            cmd::string::setex,
+            ["random" "loading" "stale"],
+            4,
+        },
+        psetex {
+            cmd::string::setex,
+            ["random" "loading" "stale"],
+            4,
+        },
         strlen {
             cmd::string::strlen,
             ["random" "fast"],

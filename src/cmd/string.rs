@@ -1,6 +1,9 @@
-use crate::{connection::Connection, error::Error, value::Value};
+use crate::{
+    check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
+};
 use bytes::Bytes;
 use std::{convert::TryInto, ops::Neg};
+use tokio::time::Duration;
 
 pub fn incr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().incr(&args[1], 1)
@@ -42,7 +45,21 @@ pub fn mget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 pub fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().set(&args[1], &Value::Blob(args[2].to_owned())))
+    Ok(conn
+        .db()
+        .set(&args[1], &Value::Blob(args[2].to_owned()), None))
+}
+
+pub fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let ttl = if check_arg!(args, 0, "SETEX") {
+        Duration::from_secs(bytes_to_number(&args[2])?)
+    } else {
+        Duration::from_millis(bytes_to_number(&args[2])?)
+    };
+
+    Ok(conn
+        .db()
+        .set(&args[1], &Value::Blob(args[2].to_owned()), Some(ttl)))
 }
 
 pub fn strlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
