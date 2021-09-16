@@ -1,5 +1,5 @@
 use crate::value::Value;
-use tokio::time::{Duration, Instant};
+use tokio::time::Instant;
 
 #[derive(Debug)]
 pub struct Entry {
@@ -15,11 +15,8 @@ pub struct Entry {
 /// this promise we can run the purge process every few seconds instead of doing
 /// so more frequently.
 impl Entry {
-    pub fn new(value: Value, expires_in: Option<Duration>) -> Self {
-        Self {
-            value,
-            expires_at: expires_in.map(|duration| Instant::now() + duration),
-        }
+    pub fn new(value: Value, expires_at: Option<Instant>) -> Self {
+        Self { value, expires_at }
     }
 
     pub fn persist(&mut self) {
@@ -34,8 +31,8 @@ impl Entry {
         self.expires_at.is_some()
     }
 
-    pub fn set_ttl(&mut self, expires_in: Duration) {
-        self.expires_at = Some(Instant::now() + expires_in);
+    pub fn set_ttl(&mut self, expires_at: Instant) {
+        self.expires_at = Some(expires_at);
     }
 
     /// Changes the value that is wrapped in this entry, the TTL (expired_at) is

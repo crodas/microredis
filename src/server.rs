@@ -4,7 +4,10 @@ use futures::SinkExt;
 use log::{info, trace, warn};
 use redis_zero_protocol_parser::{parse_server, Error as RedisError};
 use std::{error::Error, io, ops::Deref, sync::Arc};
-use tokio::net::TcpListener;
+use tokio::{
+    net::TcpListener,
+    time::{sleep, Duration},
+};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
@@ -49,6 +52,14 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
 
     let db = Arc::new(Db::new(1000));
     let mut all_connections = Connections::new();
+
+    let db_for_purging = db.clone();
+    tokio::spawn(async move {
+        loop {
+            db_for_purging.purge();
+            sleep(Duration::from_millis(5000)).await;
+        }
+    });
 
     loop {
         match listener.accept().await {

@@ -1,15 +1,17 @@
-pub mod entry;
+mod entry;
+mod expiration;
 
 use crate::{error::Error, value::Value};
 use bytes::Bytes;
 use entry::Entry;
+use expiration::ExpirationDb;
 use log::trace;
 use seahash::hash;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     convert::{TryFrom, TryInto},
     ops::AddAssign,
-    sync::RwLock,
+    sync::{Mutex, RwLock},
 };
 use tokio::time::{Duration, Instant};
 
@@ -24,14 +26,10 @@ pub struct Db {
     /// Because all operations are always key specific, the key is used to hash
     /// and select to which HashMap the data might be stored.
     entries: Vec<RwLock<HashMap<Bytes, Entry>>>,
-    /// B-Tree Map of expiring keys
-    ///
-    /// This B-Tree has the name of expiring entries, and they are sorted by the
-    /// Instant where the entries are expiring.
-    ///
-    /// Because it is possible that two entries expire at the same Instant, a
-    /// counter is introduced to avoid collisions on this B-Tree.
-    expirations: RwLock<BTreeMap<(Instant, u64), String>>,
+
+    /// Data structure to store all expiring keys
+    expirations: Mutex<ExpirationDb>,
+
     /// Number of HashMaps that are available.
     slots: usize,
 }
@@ -46,7 +44,7 @@ impl Db {
 
         Self {
             entries,
-            expirations: RwLock::new(BTreeMap::new()),
+            expirations: Mutex::new(ExpirationDb::new()),
             slots,
         }
     }
@@ -102,23 +100,28 @@ impl Db {
             })
     }
 
-    pub fn set_ttl(&self, key: &Bytes, expiration: Duration) -> Value {
+    pub fn set_ttl(&self, key: &Bytes, expires_in: Duration) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        let expires_at = Instant::now() + expires_in;
+
         entries
             .get_mut(key)
             .filter(|x| x.is_valid())
             .map_or(0_i64.into(), |x| {
-                x.set_ttl(expiration);
+                self.expirations.lock().unwrap().add(key, expires_at);
+                x.set_ttl(expires_at);
                 1_i64.into()
             })
     }
 
     pub fn del(&self, keys: &[Bytes]) -> Value {
         let mut deleted = 0_i64;
+        let mut expirations = self.expirations.lock().unwrap();
         keys.iter()
             .map(|key| {
                 let mut entries = self.entries[self.get_slot(key)].write().unwrap();
                 if entries.remove(key).is_some() {
+                    expirations.remove(&key);
                     deleted += 1;
                 }
             })
@@ -161,6 +164,7 @@ impl Db {
 
     pub fn getset(&self, key: &Bytes, value: &Value) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        self.expirations.lock().unwrap().remove(&key);
         entries
             .insert(key.clone(), Entry::new(value.clone(), None))
             .filter(|x| x.is_valid())
@@ -169,12 +173,20 @@ impl Db {
 
     pub fn getdel(&self, key: &Bytes) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-        entries.remove(key).map_or(Value::Null, |x| x.get().clone())
+        entries.remove(key).map_or(Value::Null, |x| {
+            self.expirations.lock().unwrap().remove(&key);
+            x.get().clone()
+        })
     }
 
-    pub fn set(&self, key: &Bytes, value: &Value, expires: Option<Duration>) -> Value {
+    pub fn set(&self, key: &Bytes, value: &Value, expires_in: Option<Duration>) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-        entries.insert(key.clone(), Entry::new(value.clone(), expires));
+        let expires_at = expires_in.map(|duration| Instant::now() + duration);
+
+        if let Some(expires_at) = expires_at {
+            self.expirations.lock().unwrap().add(&key, expires_at);
+        }
+        entries.insert(key.clone(), Entry::new(value.clone(), expires_at));
         Value::OK
     }
 
@@ -184,5 +196,23 @@ impl Db {
             .get(key)
             .filter(|x| x.is_valid())
             .map(|x| x.get_ttl())
+    }
+
+    pub fn purge(&self) {
+        let mut expirations = self.expirations.lock().unwrap();
+
+        trace!("Watching {} keys for expirations", expirations.len());
+
+        let keys = expirations.get_expired_keys(None);
+        drop(expirations);
+
+        keys.iter()
+            .map(|key| {
+                let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+                if entries.remove(key).is_some() {
+                    trace!("Removed key {:?} due timeout", key);
+                }
+            })
+            .for_each(drop);
     }
 }
