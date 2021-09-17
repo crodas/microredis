@@ -126,22 +126,10 @@ mod test {
     fn get_expiration() {
         let mut db = ExpirationDb::new();
         let keys = vec![
-            (
-                bytes!(b"hix"),
-                Instant::now() + Duration::from_secs(15),
-            ),
-            (
-                bytes!(b"key"),
-                Instant::now() + Duration::from_secs(2),
-            ),
-            (
-                bytes!(b"bar"),
-                Instant::now() + Duration::from_secs(3),
-            ),
-            (
-                bytes!(b"hi"),
-                Instant::now() + Duration::from_secs(3),
-            ),
+            (bytes!(b"hix"), Instant::now() + Duration::from_secs(15)),
+            (bytes!(b"key"), Instant::now() + Duration::from_secs(2)),
+            (bytes!(b"bar"), Instant::now() + Duration::from_secs(3)),
+            (bytes!(b"hi"), Instant::now() + Duration::from_secs(3)),
         ];
 
         keys.iter()
@@ -172,22 +160,10 @@ mod test {
     pub fn remove() {
         let mut db = ExpirationDb::new();
         let keys = vec![
-            (
-                bytes!(b"hix"),
-                Instant::now() + Duration::from_secs(15),
-            ),
-            (
-                bytes!(b"key"),
-                Instant::now() + Duration::from_secs(2),
-            ),
-            (
-                bytes!(b"bar"),
-                Instant::now() + Duration::from_secs(3),
-            ),
-            (
-                bytes!(b"hi"),
-                Instant::now() + Duration::from_secs(3),
-            ),
+            (bytes!(b"hix"), Instant::now() + Duration::from_secs(15)),
+            (bytes!(b"key"), Instant::now() + Duration::from_secs(2)),
+            (bytes!(b"bar"), Instant::now() + Duration::from_secs(3)),
+            (bytes!(b"hi"), Instant::now() + Duration::from_secs(3)),
         ];
 
         keys.iter()

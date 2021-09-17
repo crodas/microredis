@@ -38,7 +38,7 @@ impl From<&Value> for Vec<u8> {
             Value::Blob(x) => {
                 let s = format!("${}\r\n", x.len());
                 let mut s: BytesMut = s.as_str().as_bytes().into();
-                s.extend_from_slice(&x);
+                s.extend_from_slice(x);
                 s.extend_from_slice(b"\r\n");
                 s.to_vec()
             }
@@ -57,7 +57,7 @@ impl TryFrom<&Value> for i64 {
         match val {
             Value::BigInteger(x) => (*x).try_into().map_err(|_| Error::NotANumber),
             Value::Integer(x) => Ok(*x),
-            Value::Blob(x) => bytes_to_number::<i64>(&x),
+            Value::Blob(x) => bytes_to_number::<i64>(x),
             Value::String(x) => x.parse::<i64>().map_err(|_| Error::NotANumber),
             _ => Err(Error::NotANumber),
         }
@@ -70,7 +70,7 @@ impl TryFrom<&Value> for f64 {
     fn try_from(val: &Value) -> Result<Self, Self::Error> {
         match val {
             Value::Float(x) => Ok(*x),
-            Value::Blob(x) => bytes_to_number::<f64>(&x),
+            Value::Blob(x) => bytes_to_number::<f64>(x),
             Value::String(x) => x.parse::<f64>().map_err(|_| Error::NotANumber),
             _ => Err(Error::NotANumber),
         }

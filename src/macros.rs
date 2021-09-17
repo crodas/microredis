@@ -155,6 +155,6 @@ macro_rules! check_arg {
 #[macro_export]
 macro_rules! bytes {
     ($content:tt) => {
-        Bytes::from(& $content [..])
-    }
+        Bytes::from(&$content[..])
+    };
 }
