@@ -58,3 +58,45 @@ impl Entry {
         self.expires_at.map_or(true, |x| x > Instant::now())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tokio::time::Duration;
+
+    #[test]
+    fn is_valid_without_expiration() {
+        let e = Entry::new(Value::Null, None);
+        assert!(e.is_valid());
+    }
+
+    #[test]
+    fn is_valid() {
+        let e = (
+            Entry::new(Value::Null, Some(Instant::now() - Duration::from_secs(5))),
+            Entry::new(Value::Null, Some(Instant::now())),
+            Entry::new(Value::Null, Some(Instant::now() + Duration::from_secs(5))),
+        );
+        assert!(!e.0.is_valid());
+        assert!(!e.1.is_valid());
+        assert!(e.2.is_valid());
+    }
+
+    #[test]
+    fn persist() {
+        let mut e = Entry::new(Value::Null, Some(Instant::now()));
+        assert!(!e.is_valid());
+        e.persist();
+        assert!(e.is_valid());
+    }
+
+    #[test]
+    fn update_ttl() {
+        let mut e = Entry::new(Value::Null, Some(Instant::now()));
+        assert!(!e.is_valid());
+        e.persist();
+        assert!(e.is_valid());
+        e.set_ttl(Instant::now());
+        assert!(!e.is_valid());
+    }
+}

@@ -90,14 +90,15 @@ impl ExpirationDb {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::bytes;
     use tokio::time::{Duration, Instant};
 
     #[test]
     fn two_entires_same_expiration() {
         let mut db = ExpirationDb::new();
-        let key1 = Bytes::from(&b"key"[..]);
-        let key2 = Bytes::from(&b"bar"[..]);
-        let key3 = Bytes::from(&b"xxx"[..]);
+        let key1 = bytes!(b"key");
+        let key2 = bytes!(b"bar");
+        let key3 = bytes!(b"xxx");
         let expiration = Instant::now() + Duration::from_secs(5);
 
         db.add(&key1, expiration);
@@ -110,8 +111,8 @@ mod test {
     #[test]
     fn remove_prev_expiration() {
         let mut db = ExpirationDb::new();
-        let key1 = Bytes::from(&b"key"[..]);
-        let key2 = Bytes::from(&b"bar"[..]);
+        let key1 = bytes!(b"key");
+        let key2 = bytes!(b"bar");
         let expiration = Instant::now() + Duration::from_secs(5);
 
         db.add(&key1, expiration);
@@ -126,19 +127,19 @@ mod test {
         let mut db = ExpirationDb::new();
         let keys = vec![
             (
-                Bytes::from(&b"hix"[..]),
+                bytes!(b"hix"),
                 Instant::now() + Duration::from_secs(15),
             ),
             (
-                Bytes::from(&b"key"[..]),
+                bytes!(b"key"),
                 Instant::now() + Duration::from_secs(2),
             ),
             (
-                Bytes::from(&b"bar"[..]),
+                bytes!(b"bar"),
                 Instant::now() + Duration::from_secs(3),
             ),
             (
-                Bytes::from(&b"hi"[..]),
+                bytes!(b"hi"),
                 Instant::now() + Duration::from_secs(3),
             ),
         ];
@@ -172,19 +173,19 @@ mod test {
         let mut db = ExpirationDb::new();
         let keys = vec![
             (
-                Bytes::from(&b"hix"[..]),
+                bytes!(b"hix"),
                 Instant::now() + Duration::from_secs(15),
             ),
             (
-                Bytes::from(&b"key"[..]),
+                bytes!(b"key"),
                 Instant::now() + Duration::from_secs(2),
             ),
             (
-                Bytes::from(&b"bar"[..]),
+                bytes!(b"bar"),
                 Instant::now() + Duration::from_secs(3),
             ),
             (
-                Bytes::from(&b"hi"[..]),
+                bytes!(b"hi"),
                 Instant::now() + Duration::from_secs(3),
             ),
         ];

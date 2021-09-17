@@ -198,8 +198,9 @@ impl Db {
             .map(|x| x.get_ttl())
     }
 
-    pub fn purge(&self) {
+    pub fn purge(&self) -> u64 {
         let mut expirations = self.expirations.lock().unwrap();
+        let mut removed = 0;
 
         trace!("Watching {} keys for expirations", expirations.len());
 
@@ -211,8 +212,47 @@ impl Db {
                 let mut entries = self.entries[self.get_slot(key)].write().unwrap();
                 if entries.remove(key).is_some() {
                     trace!("Removed key {:?} due timeout", key);
+                    removed += 1;
                 }
             })
             .for_each(drop);
+
+        removed
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::bytes;
+
+    #[test]
+    fn purge_keys() {
+        let db = Db::new(100);
+        db.set(& bytes!(b"one"), &Value::OK, Some(Duration::from_secs(0)));
+        // Expired keys should not be returned, even if they are not yet
+        // removed by the purge process.
+        assert_eq!(Value::Null, db.get(& bytes!(b"one")));
+
+        // Purge twice
+        assert_eq!(1, db.purge());
+        assert_eq!(0, db.purge());
+
+        assert_eq!(Value::Null, db.get(& bytes!(b"one")));
+    }
+
+    #[test]
+    fn replace_purge_keys() {
+        let db = Db::new(100);
+        db.set(& bytes!(b"one"), &Value::OK, Some(Duration::from_secs(0)));
+        // Expired keys should not be returned, even if they are not yet
+        // removed by the purge process.
+        assert_eq!(Value::Null, db.get(& bytes!(b"one")));
+
+        db.set(& bytes!(b"one"), &Value::OK, Some(Duration::from_secs(5)));
+        assert_eq!(Value::OK, db.get(& bytes!(b"one")));
+
+        // Purge should return 0 as the expired key has been removed already
+        assert_eq!(0, db.purge());
     }
 }
