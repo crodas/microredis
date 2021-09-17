@@ -2,12 +2,44 @@ use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
 use std::{
+    collections::HashMap,
     convert::{TryFrom, TryInto},
     str::FromStr,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
+
+#[derive(Debug)]
+pub struct LockedValue<T: Clone + PartialEq>(pub RwLock<T>);
+
+impl<T: Clone + PartialEq> Clone for LockedValue<T> {
+    fn clone(&self) -> Self {
+        Self(RwLock::new(self.0.read().unwrap().clone()))
+    }
+}
+
+impl<T: PartialEq + Clone> PartialEq for LockedValue<T> {
+    fn eq(&self, other: &LockedValue<T>) -> bool {
+        self.0.read().unwrap().eq(&other.0.read().unwrap())
+    }
+}
+
+impl<T: PartialEq + Clone> LockedValue<T> {
+    pub fn new(obj: T) -> Self {
+        Self(RwLock::new(obj))
+    }
+
+    pub fn write(&self) -> RwLockWriteGuard<'_, T> {
+        self.0.write().unwrap()
+    }
+
+    pub fn read(&self) -> RwLockReadGuard<'_, T> {
+        self.0.read().unwrap()
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
+    Hash(LockedValue<HashMap<Bytes, Bytes>>),
     Array(Vec<Value>),
     Blob(Bytes),
     String(String),
@@ -45,7 +77,7 @@ impl From<&Value> for Vec<u8> {
             Value::Err(x, y) => format!("-{} {}\r\n", x, y).into(),
             Value::String(x) => format!("+{}\r\n", x).into(),
             Value::OK => "+OK\r\n".into(),
-            _ => b"*-1\r\n".to_vec(),
+            _ => b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".to_vec(),
         }
     }
 }
@@ -112,6 +144,12 @@ value_try_from!(i128, Value::BigInteger);
 impl From<&str> for Value {
     fn from(value: &str) -> Value {
         Value::Blob(Bytes::copy_from_slice(value.as_bytes()))
+    }
+}
+
+impl From<HashMap<Bytes, Bytes>> for Value {
+    fn from(value: HashMap<Bytes, Bytes>) -> Value {
+        Value::Hash(LockedValue::new(value))
     }
 }
 

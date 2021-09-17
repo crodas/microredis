@@ -21,7 +21,11 @@ impl Connections {
         self.connections.write().unwrap().remove(&id);
     }
 
-    pub fn new_connection(self: &Arc<Connections>, db: Arc<Db>, addr: SocketAddr) -> Arc<Connection> {
+    pub fn new_connection(
+        self: &Arc<Connections>,
+        db: Arc<Db>,
+        addr: SocketAddr,
+    ) -> Arc<Connection> {
         let mut id = self.counter.write().unwrap();
 
         let conn = Arc::new(Connection {
@@ -87,7 +91,10 @@ impl Connection {
     pub fn info(&self) -> String {
         format!(
             "id={} addr={} name={:?} db={}\r\n",
-            self.id, self.addr, self.name.read().unwrap(), self.current_db
+            self.id,
+            self.addr,
+            self.name.read().unwrap(),
+            self.current_db
         )
     }
 }

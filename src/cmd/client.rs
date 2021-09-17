@@ -1,6 +1,6 @@
 use crate::{connection::Connection, error::Error, option, value::Value};
-use std::sync::Arc;
 use bytes::Bytes;
+use std::sync::Arc;
 
 pub fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let sub = unsafe { std::str::from_utf8_unchecked(&args[1]) }.to_string();
@@ -23,11 +23,10 @@ pub fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         "getname" => Ok(option!(conn.name())),
         "list" => {
             let mut v: Vec<Value> = vec![];
-            conn.all_connections().iter(&mut |conn: Arc<Connection>| {
-                v.push(conn.info().as_str().into())
-            });
+            conn.all_connections()
+                .iter(&mut |conn: Arc<Connection>| v.push(conn.info().as_str().into()));
             Ok(v.into())
-        },
+        }
         "setname" => {
             let name = unsafe { std::str::from_utf8_unchecked(&args[2]) }.to_string();
             conn.set_name(name);

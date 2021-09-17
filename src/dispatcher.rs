@@ -22,6 +22,83 @@ fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
 }
 
 dispatcher! {
+    hash {
+        hdel {
+            cmd::hash::hdel,
+            [""],
+            -2,
+        },
+        hexists {
+            cmd::hash::hexists,
+            [""],
+            3,
+        },
+        hget {
+            cmd::hash::hget,
+            [""],
+            3,
+        },
+        hgetall {
+            cmd::hash::hgetall,
+            [""],
+            2,
+        },
+        hincrby {
+            cmd::hash::hincrby::<i64>,
+            [""],
+            4,
+        },
+        hincrbyfloat {
+            cmd::hash::hincrby::<f64>,
+            [""],
+            4,
+        },
+        hkeys {
+            cmd::hash::hkeys,
+            [""],
+            2,
+        },
+        hlen {
+            cmd::hash::hlen,
+            [""],
+            2,
+        },
+        hmget {
+            cmd::hash::hmget,
+            [""],
+            -3,
+        },
+        hmset {
+            cmd::hash::hset,
+            [""],
+            -3,
+        },
+        hrandfield {
+            cmd::hash::hrandfield,
+            [""],
+            -2,
+        },
+        hset {
+            cmd::hash::hset,
+            [""],
+            -4,
+        },
+        hsetnx {
+            cmd::hash::hsetnx,
+            [""],
+            -4,
+        },
+        hstrlen {
+            cmd::hash::hstrlen,
+            [""],
+            3,
+        },
+        hvals {
+            cmd::hash::hvals,
+            [""],
+            2,
+        },
+    },
     keys {
         del {
             cmd::key::del,

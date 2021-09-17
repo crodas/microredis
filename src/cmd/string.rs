@@ -10,12 +10,12 @@ pub fn incr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 pub fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let by: i64 = (&Value::Blob(args[2].to_owned())).try_into()?;
+    let by: i64 = bytes_to_number(&args[2])?;
     conn.db().incr(&args[1], by)
 }
 
 pub fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let by: f64 = (&Value::Blob(args[2].to_owned())).try_into()?;
+    let by: f64 = bytes_to_number(&args[2])?;
     conn.db().incr(&args[1], by)
 }
 
@@ -47,7 +47,7 @@ pub fn mget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 pub fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn
         .db()
-        .set(&args[1], &Value::Blob(args[2].to_owned()), None))
+        .set(&args[1], Value::Blob(args[2].to_owned()), None))
 }
 
 pub fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -59,7 +59,7 @@ pub fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
     Ok(conn
         .db()
-        .set(&args[1], &Value::Blob(args[2].to_owned()), Some(ttl)))
+        .set(&args[1], Value::Blob(args[2].to_owned()), Some(ttl)))
 }
 
 pub fn strlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
