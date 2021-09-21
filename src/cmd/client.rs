@@ -1,7 +1,8 @@
 use crate::{connection::Connection, error::Error, option, value::Value};
+use std::sync::Arc;
 use bytes::Bytes;
 
-pub fn client(conn: &mut Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let sub = unsafe { std::str::from_utf8_unchecked(&args[1]) }.to_string();
 
     let expected = match sub.to_lowercase().as_str() {
@@ -19,7 +20,14 @@ pub fn client(conn: &mut Connection, args: &[Bytes]) -> Result<Value, Error> {
     match sub.to_lowercase().as_str() {
         "id" => Ok((conn.id() as i64).into()),
         "info" => Ok(conn.info().as_str().into()),
-        "getname" => Ok(option!(conn.name().to_owned())),
+        "getname" => Ok(option!(conn.name())),
+        "list" => {
+            let mut v: Vec<Value> = vec![];
+            conn.all_connections().iter(&mut |conn: Arc<Connection>| {
+                v.push(conn.info().as_str().into())
+            });
+            Ok(v.into())
+        },
         "setname" => {
             let name = unsafe { std::str::from_utf8_unchecked(&args[2]) }.to_string();
             conn.set_name(name);

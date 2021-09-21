@@ -51,7 +51,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     info!("Listening on: {}", addr);
 
     let db = Arc::new(Db::new(1000));
-    let mut all_connections = Connections::new();
+    let all_connections = Arc::new(Connections::new());
 
     let db_for_purging = db.clone();
     tokio::spawn(async move {
@@ -69,7 +69,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                 tokio::spawn(async move {
                     let mut transport = Framed::new(socket, RedisParser);
 
-                    trace!("New connection {}", conn.lock().unwrap().id());
+                    trace!("New connection {}", conn.id());
 
                     while let Some(result) = transport.next().await {
                         match result {
@@ -77,7 +77,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                                 Ok(handler) => {
                                     let r = handler
                                         .deref()
-                                        .execute(&mut conn.lock().unwrap(), &args)
+                                        .execute(&conn, &args)
                                         .unwrap_or_else(|x| x.into());
                                     if transport.send(r).await.is_err() {
                                         break;
@@ -95,9 +95,13 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                             }
                         }
                     }
+
+                    conn.destroy();
                 });
             }
             Err(e) => println!("error accepting socket; error = {:?}", e),
         }
+
+
     }
 }
