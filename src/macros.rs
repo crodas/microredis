@@ -29,7 +29,7 @@ macro_rules! dispatcher {
                 }
 
                 impl ExecutableCommand for Command {
-                    fn execute(&self, conn: &mut Connection, args: &[Bytes]) -> Result<Value, Error> {
+                    fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                         $handler(conn, args)
                     }
 
@@ -55,7 +55,7 @@ macro_rules! dispatcher {
         use std::ops::Deref;
 
         pub trait ExecutableCommand {
-            fn execute(&self, conn: &mut Connection, args: &[Bytes]) -> Result<Value, Error>;
+            fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error>;
 
             fn check_number_args(&self, n: usize) -> bool;
 
