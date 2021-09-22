@@ -101,7 +101,5 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
             }
             Err(e) => println!("error accepting socket; error = {:?}", e),
         }
-
-
     }
 }

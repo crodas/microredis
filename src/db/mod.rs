@@ -146,6 +146,24 @@ impl Db {
         matches.into()
     }
 
+    pub fn get_map<F1, F2>(&self, key: &Bytes, found: F1, not_found: F2) -> Result<Value, Error>
+    where
+        F1: FnOnce(&Value) -> Result<Value, Error>,
+        F2: FnOnce() -> Result<Value, Error>,
+    {
+        let entries = self.entries[self.get_slot(key)].read().unwrap();
+        let entry = entries.get(key).filter(|x| x.is_valid()).map(|e| e.get());
+
+        if let Some(entry) = entry {
+            found(entry)
+        } else {
+            // drop lock
+            drop(entries);
+
+            not_found()
+        }
+    }
+
     pub fn get(&self, key: &Bytes) -> Value {
         let entries = self.entries[self.get_slot(key)].read().unwrap();
         entries
@@ -181,14 +199,14 @@ impl Db {
         })
     }
 
-    pub fn set(&self, key: &Bytes, value: &Value, expires_in: Option<Duration>) -> Value {
+    pub fn set(&self, key: &Bytes, value: Value, expires_in: Option<Duration>) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         let expires_at = expires_in.map(|duration| Instant::now() + duration);
 
         if let Some(expires_at) = expires_at {
             self.expirations.lock().unwrap().add(key, expires_at);
         }
-        entries.insert(key.clone(), Entry::new(value.clone(), expires_at));
+        entries.insert(key.clone(), Entry::new(value, expires_at));
         Value::OK
     }
 
@@ -231,7 +249,7 @@ mod test {
     #[test]
     fn incr_wrong_type() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), &Value::Blob(bytes!("some string")), None);
+        db.set(&bytes!(b"num"), Value::Blob(bytes!("some string")), None);
 
         let r = db.incr(&bytes!("num"), 1);
 
@@ -243,7 +261,7 @@ mod test {
     #[test]
     fn incr_blob_float() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), &Value::Blob(bytes!("1.1")), None);
+        db.set(&bytes!(b"num"), Value::Blob(bytes!("1.1")), None);
 
         assert_eq!(Value::Float(2.2), db.incr(&bytes!("num"), 1.1).unwrap());
         assert_eq!(Value::Blob(bytes!("2.2")), db.get(&bytes!("num")));
@@ -252,7 +270,7 @@ mod test {
     #[test]
     fn incr_blob_int_float() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), &Value::Blob(bytes!("1")), None);
+        db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
         assert_eq!(Value::Float(2.1), db.incr(&bytes!("num"), 1.1).unwrap());
         assert_eq!(Value::Blob(bytes!("2.1")), db.get(&bytes!("num")));
@@ -261,7 +279,7 @@ mod test {
     #[test]
     fn incr_blob_int() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), &Value::Blob(bytes!("1")), None);
+        db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
         assert_eq!(Value::Integer(2), db.incr(&bytes!("num"), 1).unwrap());
         assert_eq!(Value::Blob(bytes!("2")), db.get(&bytes!("num")));
@@ -284,15 +302,11 @@ mod test {
     #[test]
     fn del() {
         let db = Db::new(100);
-        db.set(
-            &bytes!(b"expired"),
-            &Value::OK,
-            Some(Duration::from_secs(0)),
-        );
-        db.set(&bytes!(b"valid"), &Value::OK, None);
+        db.set(&bytes!(b"expired"), Value::OK, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"valid"), Value::OK, None);
         db.set(
             &bytes!(b"expiring"),
-            &Value::OK,
+            Value::OK,
             Some(Duration::from_secs(5)),
         );
 
@@ -310,15 +324,11 @@ mod test {
     #[test]
     fn ttl() {
         let db = Db::new(100);
-        db.set(
-            &bytes!(b"expired"),
-            &Value::OK,
-            Some(Duration::from_secs(0)),
-        );
-        db.set(&bytes!(b"valid"), &Value::OK, None);
+        db.set(&bytes!(b"expired"), Value::OK, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"valid"), Value::OK, None);
         db.set(
             &bytes!(b"expiring"),
-            &Value::OK,
+            Value::OK,
             Some(Duration::from_secs(5)),
         );
 
@@ -334,7 +344,7 @@ mod test {
     #[test]
     fn purge_keys() {
         let db = Db::new(100);
-        db.set(&bytes!(b"one"), &Value::OK, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"one"), Value::OK, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
         assert_eq!(Value::Null, db.get(&bytes!(b"one")));
@@ -349,12 +359,12 @@ mod test {
     #[test]
     fn replace_purge_keys() {
         let db = Db::new(100);
-        db.set(&bytes!(b"one"), &Value::OK, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"one"), Value::OK, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
         assert_eq!(Value::Null, db.get(&bytes!(b"one")));
 
-        db.set(&bytes!(b"one"), &Value::OK, Some(Duration::from_secs(5)));
+        db.set(&bytes!(b"one"), Value::OK, Some(Duration::from_secs(5)));
         assert_eq!(Value::OK, db.get(&bytes!(b"one")));
 
         // Purge should return 0 as the expired key has been removed already
