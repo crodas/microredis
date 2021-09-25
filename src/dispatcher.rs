@@ -22,6 +22,18 @@ fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
 }
 
 dispatcher! {
+    list {
+        lrange {
+            cmd::list::lrange,
+            [""],
+            4,
+        },
+        rpush {
+            cmd::list::rpush,
+            [""],
+            -3,
+        },
+    },
     hash {
         hdel {
             cmd::hash::hdel,

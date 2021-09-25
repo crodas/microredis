@@ -66,7 +66,7 @@ pub fn strlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match conn.db().get(&args[1]) {
         Value::Blob(x) => Ok((x.len() as i64).into()),
         Value::String(x) => Ok((x.len() as i64).into()),
-        Value::Null => Ok(0_i64.into()),
+        Value::Null => Ok(0.into()),
         _ => Ok(Error::WrongType.into()),
     }
 }

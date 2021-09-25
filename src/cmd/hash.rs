@@ -28,7 +28,7 @@ pub fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(0_i64.into()),
+        || Ok(0.into()),
     )
 }
 
@@ -37,13 +37,13 @@ pub fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         &args[1],
         |v| match v {
             Value::Hash(h) => Ok(if h.read().get(&args[2]).is_some() {
-                1_i64.into()
+                1.into()
             } else {
-                0_i64.into()
+                0.into()
             }),
             _ => Err(Error::WrongType),
         },
-        || Ok(0_i64.into()),
+        || Ok(0.into()),
     )
 }
 
@@ -141,7 +141,7 @@ pub fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             Value::Hash(h) => Ok((h.read().len() as i64).into()),
             _ => Err(Error::WrongType),
         },
-        || Ok(0_i64.into()),
+        || Ok(0.into()),
     )
 }
 
@@ -277,10 +277,10 @@ pub fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 let mut h = h.write();
 
                 if h.get(&args[2]).is_some() {
-                    Ok(0_i64.into())
+                    Ok(0.into())
                 } else {
                     h.insert(args[2].clone(), args[3].clone());
-                    Ok(1_i64.into())
+                    Ok(1.into())
                 }
             }
             _ => Err(Error::WrongType),
@@ -305,11 +305,11 @@ pub fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
                 (v.len() as i64).into()
             } else {
-                0_i64.into()
+                0.into()
             }),
             _ => Err(Error::WrongType),
         },
-        || Ok(0_i64.into()),
+        || Ok(0.into()),
     )
 }
 
