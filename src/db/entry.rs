@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::{error::Error, value::Value};
 use tokio::time::Instant;
 
 #[derive(Debug)]
@@ -56,6 +56,31 @@ impl Entry {
     /// even minutes instead of once every second.
     pub fn is_valid(&self) -> bool {
         self.expires_at.map_or(true, |x| x > Instant::now())
+    }
+
+    /// Whether or not the value is clonable. Special types like hashes should
+    /// not be clonable because those types cannot be returned to the user with
+    /// the `get` command.
+    pub fn is_clonable(&self) -> bool {
+        matches!(
+            &self.value,
+            Value::Boolean(_)
+                | Value::Blob(_)
+                | Value::BigInteger(_)
+                | Value::Integer(_)
+                | Value::Float(_)
+                | Value::String(_)
+                | Value::Null
+                | Value::OK
+        )
+    }
+
+    pub fn clone_value(&self) -> Value {
+        if self.is_clonable() {
+            self.value.clone()
+        } else {
+            Error::WrongType.into()
+        }
     }
 }
 
