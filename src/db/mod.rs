@@ -146,7 +146,7 @@ impl Db {
         matches.into()
     }
 
-    pub fn get_map<F1, F2>(&self, key: &Bytes, found: F1, not_found: F2) -> Result<Value, Error>
+    pub fn get_map_or<F1, F2>(&self, key: &Bytes, found: F1, not_found: F2) -> Result<Value, Error>
     where
         F1: FnOnce(&Value) -> Result<Value, Error>,
         F2: FnOnce() -> Result<Value, Error>,
@@ -169,14 +169,17 @@ impl Db {
         entries
             .get(key)
             .filter(|x| x.is_valid())
-            .map_or(Value::Null, |x| x.get().clone())
+            .map_or(Value::Null, |x| x.clone_value())
     }
 
     pub fn get_multi(&self, keys: &[Bytes]) -> Value {
         keys.iter()
             .map(|key| {
                 let entries = self.entries[self.get_slot(key)].read().unwrap();
-                entries.get(key).map_or(Value::Null, |x| x.get().clone())
+                entries
+                    .get(key)
+                    .filter(|x| x.is_valid() && x.is_clonable())
+                    .map_or(Value::Null, |x| x.clone_value())
             })
             .collect::<Vec<Value>>()
             .into()
@@ -188,14 +191,14 @@ impl Db {
         entries
             .insert(key.clone(), Entry::new(value.clone(), None))
             .filter(|x| x.is_valid())
-            .map_or(Value::Null, |x| x.get().clone())
+            .map_or(Value::Null, |x| x.clone_value())
     }
 
     pub fn getdel(&self, key: &Bytes) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write().unwrap();
         entries.remove(key).map_or(Value::Null, |x| {
             self.expirations.lock().unwrap().remove(key);
-            x.get().clone()
+            x.clone_value()
         })
     }
 

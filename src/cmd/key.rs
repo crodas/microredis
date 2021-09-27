@@ -28,7 +28,7 @@ pub fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         return Ok(conn.db().del(&args[1..2]));
     }
 
-    let expires_at = if check_arg!(args, 0, "EXPIRES") {
+    let expires_at = if check_arg!(args, 0, "EXPIRE") {
         Duration::from_secs(expires_in as u64)
     } else {
         Duration::from_millis(expires_in as u64)
@@ -98,4 +98,37 @@ pub fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 pub fn persist(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().persist(&args[1]))
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        cmd::test::{create_connection, run_command},
+        value::Value,
+    };
+
+    #[test]
+    fn del() {
+        let c = create_connection();
+        assert_eq!(Ok(Value::Integer(1)), run_command(&c, &["incr", "foo"]));
+        assert_eq!(Ok(Value::Integer(1)), run_command(&c, &["exists", "foo"]));
+        assert_eq!(Ok(Value::Integer(1)), run_command(&c, &["del", "foo"]));
+        assert_eq!(Ok(Value::Integer(0)), run_command(&c, &["del", "foo"]));
+        assert_eq!(Ok(Value::Integer(0)), run_command(&c, &["exists", "foo"]));
+    }
+
+    #[test]
+    fn expire_and_persist() {
+        let c = create_connection();
+        assert_eq!(Ok(Value::Integer(1)), run_command(&c, &["incr", "foo"]));
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["pexpire", "foo", "6000"])
+        );
+        assert_eq!(Ok(Value::Integer(5999)), run_command(&c, &["pttl", "foo"]));
+        assert_eq!(Ok(Value::Integer(1)), run_command(&c, &["persist", "foo"]));
+        assert_eq!(Ok(Value::Integer(-1)), run_command(&c, &["pttl", "foo"]));
+        assert_eq!(Ok(Value::Integer(1)), run_command(&c, &["del", "foo"]));
+        assert_eq!(Ok(Value::Integer(-2)), run_command(&c, &["pttl", "foo"]));
+    }
 }
