@@ -23,12 +23,37 @@ fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
 
 dispatcher! {
     list {
+        llen {
+            cmd::list::llen,
+            [""],
+            2,
+        },
+        lpop {
+            cmd::list::lpop,
+            [""],
+            -2,
+        },
+        lpush {
+            cmd::list::lpush,
+            [""],
+            -3,
+        },
+        lpushx {
+            cmd::list::lpush,
+            [""],
+            -3,
+        },
         lrange {
             cmd::list::lrange,
             [""],
             4,
         },
         rpush {
+            cmd::list::rpush,
+            [""],
+            -3,
+        },
+        rpushx {
             cmd::list::rpush,
             [""],
             -3,

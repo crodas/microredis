@@ -11,12 +11,6 @@ use std::{
 };
 
 #[derive(Debug, PartialEq, Clone)]
-/// Stores binary data as Bytes but has built-in verification to make
-/// comparisions faster. The verification (CRC32) is a quicker process to
-/// compare two objects, which will return MAYBE or NOT.
-pub struct BytesWithChecksum((Bytes, u32));
-
-#[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     Hash(locked::Value<HashMap<Bytes, Bytes>>),
     List(locked::Value<LinkedList<checksum::Value>>),
