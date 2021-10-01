@@ -36,7 +36,7 @@ impl From<&Value> for Vec<u8> {
                     let b: Vec<u8> = i.into();
                     s.extend(b);
                 }
-                s.to_vec()
+                s
             }
             Value::Integer(x) => format!(":{}\r\n", x).into(),
             Value::BigInteger(x) => format!("({}\r\n", x).into(),
@@ -96,7 +96,7 @@ impl From<Value> for Vec<u8> {
 impl<'a> From<&ParsedValue<'a>> for Value {
     fn from(value: &ParsedValue) -> Self {
         match value {
-            ParsedValue::String(x) => Self::String(x.to_string()),
+            ParsedValue::String(x) => Self::String((*x).to_string()),
             ParsedValue::Blob(x) => Self::Blob(Bytes::copy_from_slice(*x)),
             ParsedValue::Array(x) => {
                 Self::Array(x.iter().map(|x| Value::try_from(x).unwrap()).collect())
@@ -105,7 +105,7 @@ impl<'a> From<&ParsedValue<'a>> for Value {
             ParsedValue::BigInteger(x) => Self::BigInteger(*x),
             ParsedValue::Integer(x) => Self::Integer(*x),
             ParsedValue::Float(x) => Self::Float(*x),
-            ParsedValue::Error(x, y) => Self::Err(x.to_string(), y.to_string()),
+            ParsedValue::Error(x, y) => Self::Err((*x).to_string(), (*y).to_string()),
             ParsedValue::Null => Self::Null,
         }
     }

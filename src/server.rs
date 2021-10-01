@@ -78,6 +78,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                                     let r = handler
                                         .deref()
                                         .execute(&conn, &args)
+                                        .await
                                         .unwrap_or_else(|x| x.into());
                                     if transport.send(r).await.is_err() {
                                         break;

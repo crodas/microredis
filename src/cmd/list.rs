@@ -4,7 +4,9 @@ use crate::{
 };
 use bytes::Bytes;
 use std::collections::LinkedList;
+use tokio::time::{sleep, Duration, Instant};
 
+#[allow(clippy::needless_range_loop)]
 fn remove_element(
     conn: &Connection,
     key: &Bytes,
@@ -12,7 +14,7 @@ fn remove_element(
     front: bool,
 ) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &key,
+        key,
         |v| match v {
             Value::List(x) => {
                 let mut x = x.write();
@@ -39,7 +41,7 @@ fn remove_element(
                     .map(|x| x.as_ref().unwrap().clone_value())
                     .collect();
 
-                Ok(if ret.len() == 0 {
+                Ok(if ret.is_empty() {
                     Value::Null
                 } else {
                     ret.into()
@@ -51,8 +53,51 @@ fn remove_element(
     )
 }
 
+pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let timeout = Instant::now() + Duration::from_secs(bytes_to_number(&args[args.len() - 1])?);
+    let len = args.len() - 1;
 
-pub fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    loop {
+        for key in args[1..len].iter() {
+            match remove_element(conn, key, 0, true)? {
+                Value::Null => (),
+                n => return Ok(vec![Value::Blob(key.clone()), n].into()),
+            };
+        }
+
+        if Instant::now() >= timeout {
+            break;
+        }
+
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    Ok(Value::Null)
+}
+
+pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let timeout = Instant::now() + Duration::from_secs(bytes_to_number(&args[args.len() - 1])?);
+    let len = args.len() - 1;
+
+    loop {
+        for key in args[1..len].iter() {
+            match remove_element(conn, key, 0, false)? {
+                Value::Null => (),
+                n => return Ok(vec![Value::Blob(key.clone()), n].into()),
+            };
+        }
+
+        if Instant::now() >= timeout {
+            break;
+        }
+
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    Ok(Value::Null)
+}
+
+pub async fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -63,7 +108,7 @@ pub fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let count = if args.len() > 2 {
         bytes_to_number(&args[2])?
     } else {
@@ -73,7 +118,7 @@ pub fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     remove_element(conn, &args[1], count, true)
 }
 
-pub fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let is_push_x = check_arg!(args, 0, "LPUSHX");
 
     conn.db().get_map_or(
@@ -105,7 +150,7 @@ pub fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -136,7 +181,17 @@ pub fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let count = if args.len() > 2 {
+        bytes_to_number(&args[2])?
+    } else {
+        0
+    };
+
+    remove_element(conn, &args[1], count, false)
+}
+
+pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let is_push_x = check_arg!(args, 0, "RPUSHX");
 
     conn.db().get_map_or(
@@ -175,279 +230,321 @@ mod test {
         value::Value,
     };
 
-    #[test]
-    fn llen() {
+    #[tokio::test]
+    async fn llen() {
         let c = create_connection();
 
         assert_eq!(
-            run_command(&c, &["lpush", "foo", "1", "2", "3", "4", "5"]),
-            run_command(&c, &["llen", "foo"])
-        );
-
-        assert_eq!(Ok(Value::Integer(0)), run_command(&c, &["llen", "foobar"]));
-    }
-
-    #[test]
-    fn lpop() {
-        let c = create_connection();
-
-        assert_eq!(
-            Ok(Value::Integer(5)),
-            run_command(&c, &["lpush", "foo", "1", "2", "3", "4", "5"]),
-        );
-
-        assert_eq!(
-            Ok(Value::Blob("5".into())),
-            run_command(&c, &["lpop", "foo"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("4".into())
-            ])),
-            run_command(&c, &["lpop", "foo", "1"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("3".into()),
-                Value::Blob("2".into()),
-                Value::Blob("1".into()),
-            ])),
-            run_command(&c, &["lpop", "foo", "55"])
-        );
-
-        assert_eq!(
-            Ok(Value::Null),
-            run_command(&c, &["lpop", "foo", "55"])
-        );
-
-        assert_eq!(
-            Ok(Value::Null),
-            run_command(&c, &["lpop", "foo"])
-        );
-
-        assert_eq!(Ok(Value::Integer(0)), run_command(&c, &["llen", "foobar"]));
-    }
-
-    #[test]
-    fn lpush() {
-        let c = create_connection();
-
-        assert_eq!(
-            Ok(Value::Integer(5)),
-            run_command(&c, &["lpush", "foo", "1", "2", "3", "4", "5"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("5".into()),
-                Value::Blob("4".into()),
-                Value::Blob("3".into()),
-                Value::Blob("2".into()),
-                Value::Blob("1".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
-        );
-
-        assert_eq!(
-            Ok(Value::Integer(10)),
-            run_command(&c, &["lpush", "foo", "6", "7", "8", "9", "10"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("10".into()),
-                Value::Blob("9".into()),
-                Value::Blob("8".into()),
-                Value::Blob("7".into()),
-                Value::Blob("6".into()),
-                Value::Blob("5".into()),
-                Value::Blob("4".into()),
-                Value::Blob("3".into()),
-                Value::Blob("2".into()),
-                Value::Blob("1".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
-        );
-    }
-
-    #[test]
-    fn lpush_simple() {
-        let c = create_connection();
-
-        assert_eq!(
-            Ok(Value::Integer(1)),
-            run_command(&c, &["lpush", "foo", "world"])
-        );
-
-        assert_eq!(
-            Ok(Value::Integer(2)),
-            run_command(&c, &["lpush", "foo", "hello"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("hello".into()),
-                Value::Blob("world".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
-        );
-    }
-
-    #[test]
-    fn rpush_simple() {
-        let c = create_connection();
-
-        assert_eq!(
-            Ok(Value::Integer(1)),
-            run_command(&c, &["rpush", "foo", "world"])
-        );
-
-        assert_eq!(
-            Ok(Value::Integer(2)),
-            run_command(&c, &["rpush", "foo", "hello"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("world".into()),
-                Value::Blob("hello".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
-        );
-    }
-
-    #[test]
-    fn lrange() {
-        let c = create_connection();
-
-        assert_eq!(
-            Ok(Value::Integer(5)),
-            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("1".into()),
-                Value::Blob("2".into()),
-                Value::Blob("3".into()),
-                Value::Blob("4".into()),
-                Value::Blob("5".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("1".into()),
-                Value::Blob("2".into()),
-                Value::Blob("3".into()),
-                Value::Blob("4".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-2"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("4".into()),
-                Value::Blob("5".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "-2", "-1"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![Value::Blob("3".into()),])),
-            run_command(&c, &["lrange", "foo", "-3", "-3"])
-        );
-    }
-
-    #[test]
-    fn rpush() {
-        let c = create_connection();
-
-        assert_eq!(
-            Ok(Value::Integer(5)),
-            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("1".into()),
-                Value::Blob("2".into()),
-                Value::Blob("3".into()),
-                Value::Blob("4".into()),
-                Value::Blob("5".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
-        );
-
-        assert_eq!(
-            Ok(Value::Integer(10)),
-            run_command(&c, &["rpush", "foo", "6", "7", "8", "9", "10"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("1".into()),
-                Value::Blob("2".into()),
-                Value::Blob("3".into()),
-                Value::Blob("4".into()),
-                Value::Blob("5".into()),
-                Value::Blob("6".into()),
-                Value::Blob("7".into()),
-                Value::Blob("8".into()),
-                Value::Blob("9".into()),
-                Value::Blob("10".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
-        );
-    }
-
-    #[test]
-    fn rpushx() {
-        let c = create_connection();
-
-        assert_eq!(
-            Ok(Value::Integer(5)),
-            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("1".into()),
-                Value::Blob("2".into()),
-                Value::Blob("3".into()),
-                Value::Blob("4".into()),
-                Value::Blob("5".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
-        );
-
-        assert_eq!(
-            Ok(Value::Integer(10)),
-            run_command(&c, &["rpushx", "foo", "6", "7", "8", "9", "10"])
-        );
-
-        assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Blob("1".into()),
-                Value::Blob("2".into()),
-                Value::Blob("3".into()),
-                Value::Blob("4".into()),
-                Value::Blob("5".into()),
-                Value::Blob("6".into()),
-                Value::Blob("7".into()),
-                Value::Blob("8".into()),
-                Value::Blob("9".into()),
-                Value::Blob("10".into()),
-            ])),
-            run_command(&c, &["lrange", "foo", "0", "-1"])
+            run_command(&c, &["lpush", "foo", "1", "2", "3", "4", "5"]).await,
+            run_command(&c, &["llen", "foo"]).await
         );
 
         assert_eq!(
             Ok(Value::Integer(0)),
-            run_command(&c, &["rpushx", "foobar", "6", "7", "8", "9", "10"])
+            run_command(&c, &["llen", "foobar"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lpop() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["lpush", "foo", "1", "2", "3", "4", "5"]).await,
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("5".into())),
+            run_command(&c, &["lpop", "foo"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Blob("4".into())])),
+            run_command(&c, &["lpop", "foo", "1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("3".into()),
+                Value::Blob("2".into()),
+                Value::Blob("1".into()),
+            ])),
+            run_command(&c, &["lpop", "foo", "55"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Null),
+            run_command(&c, &["lpop", "foo", "55"]).await
+        );
+
+        assert_eq!(Ok(Value::Null), run_command(&c, &["lpop", "foo"]).await);
+
+        assert_eq!(
+            Ok(Value::Integer(0)),
+            run_command(&c, &["llen", "foobar"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lpush() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["lpush", "foo", "1", "2", "3", "4", "5"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("5".into()),
+                Value::Blob("4".into()),
+                Value::Blob("3".into()),
+                Value::Blob("2".into()),
+                Value::Blob("1".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(10)),
+            run_command(&c, &["lpush", "foo", "6", "7", "8", "9", "10"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("10".into()),
+                Value::Blob("9".into()),
+                Value::Blob("8".into()),
+                Value::Blob("7".into()),
+                Value::Blob("6".into()),
+                Value::Blob("5".into()),
+                Value::Blob("4".into()),
+                Value::Blob("3".into()),
+                Value::Blob("2".into()),
+                Value::Blob("1".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lpush_simple() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["lpush", "foo", "world"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(2)),
+            run_command(&c, &["lpush", "foo", "hello"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("hello".into()),
+                Value::Blob("world".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn rpop() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("5".into())),
+            run_command(&c, &["rpop", "foo"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Blob("4".into())])),
+            run_command(&c, &["rpop", "foo", "1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("3".into()),
+                Value::Blob("2".into()),
+                Value::Blob("1".into()),
+            ])),
+            run_command(&c, &["rpop", "foo", "55"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Null),
+            run_command(&c, &["rpop", "foo", "55"]).await
+        );
+
+        assert_eq!(Ok(Value::Null), run_command(&c, &["rpop", "foo"]).await);
+
+        assert_eq!(
+            Ok(Value::Integer(0)),
+            run_command(&c, &["llen", "foobar"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn rpush_simple() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["rpush", "foo", "world"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(2)),
+            run_command(&c, &["rpush", "foo", "hello"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("world".into()),
+                Value::Blob("hello".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lrange() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("1".into()),
+                Value::Blob("2".into()),
+                Value::Blob("3".into()),
+                Value::Blob("4".into()),
+                Value::Blob("5".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("1".into()),
+                Value::Blob("2".into()),
+                Value::Blob("3".into()),
+                Value::Blob("4".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-2"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("4".into()),
+                Value::Blob("5".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "-2", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Blob("3".into()),])),
+            run_command(&c, &["lrange", "foo", "-3", "-3"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn rpush() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("1".into()),
+                Value::Blob("2".into()),
+                Value::Blob("3".into()),
+                Value::Blob("4".into()),
+                Value::Blob("5".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(10)),
+            run_command(&c, &["rpush", "foo", "6", "7", "8", "9", "10"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("1".into()),
+                Value::Blob("2".into()),
+                Value::Blob("3".into()),
+                Value::Blob("4".into()),
+                Value::Blob("5".into()),
+                Value::Blob("6".into()),
+                Value::Blob("7".into()),
+                Value::Blob("8".into()),
+                Value::Blob("9".into()),
+                Value::Blob("10".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn rpushx() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("1".into()),
+                Value::Blob("2".into()),
+                Value::Blob("3".into()),
+                Value::Blob("4".into()),
+                Value::Blob("5".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(10)),
+            run_command(&c, &["rpushx", "foo", "6", "7", "8", "9", "10"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("1".into()),
+                Value::Blob("2".into()),
+                Value::Blob("3".into()),
+                Value::Blob("4".into()),
+                Value::Blob("5".into()),
+                Value::Blob("6".into()),
+                Value::Blob("7".into()),
+                Value::Blob("8".into()),
+                Value::Blob("9".into()),
+                Value::Blob("10".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(0)),
+            run_command(&c, &["rpushx", "foobar", "6", "7", "8", "9", "10"]).await
         );
     }
 }

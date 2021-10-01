@@ -2,7 +2,7 @@ use crate::{connection::Connection, error::Error, option, value::Value};
 use bytes::Bytes;
 use std::sync::Arc;
 
-pub fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let sub = unsafe { std::str::from_utf8_unchecked(&args[1]) }.to_string();
 
     let expected = match sub.to_lowercase().as_str() {
@@ -39,11 +39,11 @@ pub fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     }
 }
 
-pub fn echo(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn echo(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(Value::Blob(args[1].to_owned()))
 }
 
-pub fn ping(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn ping(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match args.len() {
         1 => Ok(Value::String("PONG".to_owned())),
         2 => Ok(Value::Blob(args[1].to_owned())),

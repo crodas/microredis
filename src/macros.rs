@@ -13,6 +13,7 @@ macro_rules! dispatcher {
             #[allow(non_snake_case, non_camel_case_types)]
             pub mod $command {
                 use super::*;
+                use async_trait::async_trait;
 
                 pub struct Command {
                     pub tags: &'static [&'static str],
@@ -28,9 +29,10 @@ macro_rules! dispatcher {
                     }
                 }
 
+                #[async_trait]
                 impl ExecutableCommand for Command {
-                    fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-                        $handler(conn, args)
+                    async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+                        $handler(conn, args).await
                     }
 
                     fn check_number_args(&self, n: usize) -> bool {
@@ -53,9 +55,11 @@ macro_rules! dispatcher {
             }
         )+)+
         use std::ops::Deref;
+        use async_trait::async_trait;
 
+        #[async_trait]
         pub trait ExecutableCommand {
-            fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error>;
+            async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error>;
 
             fn check_number_args(&self, n: usize) -> bool;
 

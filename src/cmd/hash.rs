@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
 };
 
-pub fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -32,7 +32,7 @@ pub fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -47,7 +47,7 @@ pub fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -62,7 +62,7 @@ pub fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -82,7 +82,7 @@ pub fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hincrby<
+pub async fn hincrby<
     T: ToString + FromStr + AddAssign + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
 >(
     conn: &Connection,
@@ -115,7 +115,7 @@ pub fn hincrby<
     )
 }
 
-pub fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -134,7 +134,7 @@ pub fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -145,7 +145,7 @@ pub fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -170,7 +170,7 @@ pub fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let (count, with_values) = match args.len() {
         2 => (None, false),
         3 => (Some(bytes_to_number::<i64>(&args[2])?), false),
@@ -237,7 +237,7 @@ pub fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if args.len() % 2 == 1 {
         return Err(Error::InvalidArgsCount("hset".to_owned()));
     }
@@ -269,7 +269,7 @@ pub fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -298,7 +298,7 @@ pub fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -313,7 +313,7 @@ pub fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
-pub fn hvals(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hvals(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -339,25 +339,25 @@ mod test {
         value::Value,
     };
 
-    #[test]
-    fn hget() {
+    #[tokio::test]
+    async fn hget() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]).await;
 
         assert_eq!(Ok(Value::Integer(3)), r);
 
-        let r = run_command(&c, &["hget", "foo", "f1"]);
+        let r = run_command(&c, &["hget", "foo", "f1"]).await;
         assert_eq!(Ok(Value::Blob("1".into())), r);
     }
 
-    #[test]
-    fn hgetall() {
+    #[tokio::test]
+    async fn hgetall() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]).await;
 
         assert_eq!(Ok(Value::Integer(3)), r);
 
-        let r = run_command(&c, &["hgetall", "foo"]);
+        let r = run_command(&c, &["hgetall", "foo"]).await;
         match r {
             Ok(Value::Array(x)) => {
                 assert_eq!(6, x.len());
@@ -371,14 +371,14 @@ mod test {
         };
     }
 
-    #[test]
-    fn hrandfield() {
+    #[tokio::test]
+    async fn hrandfield() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]).await;
 
         assert_eq!(Ok(Value::Integer(3)), r);
 
-        let r = run_command(&c, &["hrandfield", "foo"]);
+        let r = run_command(&c, &["hrandfield", "foo"]).await;
         match r {
             Ok(Value::Blob(x)) => {
                 let x = unsafe { std::str::from_utf8_unchecked(&x) };
@@ -388,14 +388,14 @@ mod test {
         };
     }
 
-    #[test]
-    fn hmget() {
+    #[tokio::test]
+    async fn hmget() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]).await;
 
         assert_eq!(Ok(Value::Integer(3)), r);
 
-        let r = run_command(&c, &["hmget", "foo", "f1", "f2"]);
+        let r = run_command(&c, &["hmget", "foo", "f1", "f2"]).await;
         assert_eq!(
             Ok(Value::Array(vec![
                 Value::Blob("1".into()),
@@ -405,70 +405,70 @@ mod test {
         );
     }
 
-    #[test]
-    fn hexists() {
+    #[tokio::test]
+    async fn hexists() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]).await;
 
         assert_eq!(Ok(Value::Integer(3)), r);
 
         assert_eq!(
             Ok(Value::Integer(1)),
-            run_command(&c, &["hexists", "foo", "f1"])
+            run_command(&c, &["hexists", "foo", "f1"]).await
         );
         assert_eq!(
             Ok(Value::Integer(1)),
-            run_command(&c, &["hexists", "foo", "f3"])
+            run_command(&c, &["hexists", "foo", "f3"]).await
         );
         assert_eq!(
             Ok(Value::Integer(0)),
-            run_command(&c, &["hexists", "foo", "f4"])
+            run_command(&c, &["hexists", "foo", "f4"]).await
         );
     }
-    #[test]
-    fn hstrlen() {
+    #[tokio::test]
+    async fn hstrlen() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]).await;
 
         assert_eq!(Ok(Value::Integer(3)), r);
 
-        let r = run_command(&c, &["hstrlen", "foo", "f1"]);
+        let r = run_command(&c, &["hstrlen", "foo", "f1"]).await;
         assert_eq!(Ok(Value::Integer(1)), r);
     }
 
-    #[test]
-    fn hlen() {
+    #[tokio::test]
+    async fn hlen() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1", "f2", "2", "f3", "3"]).await;
 
         assert_eq!(Ok(Value::Integer(3)), r);
 
-        let r = run_command(&c, &["hset", "foo", "f1", "2", "f4", "2", "f5", "3"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "2", "f4", "2", "f5", "3"]).await;
         assert_eq!(Ok(Value::Integer(2)), r);
 
-        let r = run_command(&c, &["hlen", "foo"]);
+        let r = run_command(&c, &["hlen", "foo"]).await;
         assert_eq!(Ok(Value::Integer(5)), r);
     }
 
-    #[test]
-    fn hkeys() {
+    #[tokio::test]
+    async fn hkeys() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1"]).await;
 
         assert_eq!(Ok(Value::Integer(1)), r);
 
-        let r = run_command(&c, &["hkeys", "foo"]);
+        let r = run_command(&c, &["hkeys", "foo"]).await;
         assert_eq!(Ok(Value::Array(vec![Value::Blob("f1".into()),])), r);
     }
 
-    #[test]
-    fn hvals() {
+    #[tokio::test]
+    async fn hvals() {
         let c = create_connection();
-        let r = run_command(&c, &["hset", "foo", "f1", "1"]);
+        let r = run_command(&c, &["hset", "foo", "f1", "1"]).await;
 
         assert_eq!(Ok(Value::Integer(1)), r);
 
-        let r = run_command(&c, &["hvals", "foo"]);
+        let r = run_command(&c, &["hvals", "foo"]).await;
         assert_eq!(Ok(Value::Array(vec![Value::Blob("1".into()),])), r);
     }
 }
