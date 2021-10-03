@@ -3,7 +3,7 @@ use crate::{
     value::Value,
 };
 use bytes::Bytes;
-use std::collections::LinkedList;
+use std::collections::VecDeque;
 use tokio::time::{sleep, Duration, Instant};
 
 #[allow(clippy::needless_range_loop)]
@@ -137,7 +137,7 @@ pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             if is_push_x {
                 return Ok(0.into());
             }
-            let mut h = LinkedList::new();
+            let mut h = VecDeque::new();
 
             for val in args.iter().skip(2) {
                 h.push_front(checksum::Value::new(val.clone()));
@@ -210,7 +210,7 @@ pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             if is_push_x {
                 return Ok(0.into());
             }
-            let mut h = LinkedList::new();
+            let mut h = VecDeque::new();
 
             for val in args.iter().skip(2) {
                 h.push_back(checksum::Value::new(val.clone()));
