@@ -33,6 +33,11 @@ dispatcher! {
             [""],
             -3,
         },
+        lindex {
+            cmd::list::lindex,
+            [""],
+            3,
+        },
         llen {
             cmd::list::llen,
             [""],

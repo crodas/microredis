@@ -97,6 +97,27 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(Value::Null)
 }
 
+pub async fn lindex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().get_map_or(
+        &args[1],
+        |v| match v {
+            Value::List(x) => {
+                let mut index: i64 = bytes_to_number(&args[2])?;
+                let x = x.read();
+
+                if index < 0 {
+                    index += x.len() as i64;
+                }
+
+                Ok(x.get(index as usize)
+                    .map_or(Value::Null, |x| x.clone_value()))
+            }
+            _ => Err(Error::WrongType),
+        },
+        || Ok(0.into()),
+    )
+}
+
 pub async fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -229,6 +250,47 @@ mod test {
         cmd::test::{create_connection, run_command},
         value::Value,
     };
+
+    #[tokio::test]
+    async fn lindex() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["lpush", "foo", "1", "2", "3", "4", "5"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("5".into()),
+                Value::Blob("4".into()),
+                Value::Blob("3".into()),
+                Value::Blob("2".into()),
+                Value::Blob("1".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("5".into())),
+            run_command(&c, &["lindex", "foo", "0"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("1".into())),
+            run_command(&c, &["lindex", "foo", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Null),
+            run_command(&c, &["lindex", "foo", "-100"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Null),
+            run_command(&c, &["lindex", "foo", "100"]).await
+        );
+    }
 
     #[tokio::test]
     async fn llen() {
