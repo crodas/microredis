@@ -38,6 +38,11 @@ dispatcher! {
             [""],
             3,
         },
+        linsert {
+            cmd::list::linsert,
+            [""],
+            5,
+        },
         llen {
             cmd::list::llen,
             [""],
@@ -45,6 +50,11 @@ dispatcher! {
         },
         lpop {
             cmd::list::lpop,
+            [""],
+            -2,
+        },
+        lpos {
+            cmd::list::lpos,
             [""],
             -2,
         },
