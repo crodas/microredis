@@ -322,6 +322,55 @@ pub async fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().get_map_or(
+        &args[1],
+        |v| match v {
+            Value::List(x) => {
+                let element = checksum::Value::new(args[3].clone());
+                let limit: i64 = bytes_to_number(&args[2])?;
+                let mut x = x.write();
+
+                let (is_reverse, limit) = if limit < 0 {
+                    (true, -limit)
+                } else {
+                    (false, limit)
+                };
+
+                let mut keep = vec![true; x.len()];
+                let mut removed = 0;
+                let len = x.len();
+
+                for i in 0..len {
+                    let i = if is_reverse { len - 1 - i } else { i };
+
+                    println!("{}", i);
+                    if let Some(value) = x.get(i) {
+                        println!("{} {:?} {:?}", i, *value, element);
+                        if *value == element {
+                            keep[i] = false;
+                            removed += 1;
+                            if removed == limit {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                let mut i = 0;
+                x.retain(|_| {
+                    i += 1;
+                    keep[i - 1]
+                });
+
+                Ok(removed.into())
+            }
+            _ => Err(Error::WrongType),
+        },
+        || Ok(0.into()),
+    )
+}
+
 pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let count = if args.len() > 2 {
         bytes_to_number(&args[2])?
@@ -435,6 +484,122 @@ mod test {
 
         assert!(Instant::now() - x > Duration::from_millis(1000));
         assert!(Instant::now() - x < Duration::from_millis(5000));
+    }
+
+    #[tokio::test]
+    async fn lrem_1() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(
+                &c,
+                &["rpush", "mylist", "hello", "hello", "world", "hello", "hello"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(3)),
+            run_command(&c, &["lrem", "mylist", "3", "hello"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("world".into()),
+                Value::Blob("hello".into()),
+            ])),
+            run_command(&c, &["lrange", "mylist", "0", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lrem_2() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(
+                &c,
+                &["rpush", "mylist", "hello", "hello", "world", "hello", "hello"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(2)),
+            run_command(&c, &["lrem", "mylist", "-2", "hello"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("hello".into()),
+                Value::Blob("hello".into()),
+                Value::Blob("world".into()),
+            ])),
+            run_command(&c, &["lrange", "mylist", "0", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["lrem", "mylist", "1", "hello"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("hello".into()),
+                Value::Blob("world".into()),
+            ])),
+            run_command(&c, &["lrange", "mylist", "0", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lrem_3() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(
+                &c,
+                &["rpush", "mylist", "hello", "hello", "world", "hello", "hello"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(4)),
+            run_command(&c, &["lrem", "mylist", "-100", "hello"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Blob("world".into()),])),
+            run_command(&c, &["lrange", "mylist", "0", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lrem_4() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(
+                &c,
+                &["rpush", "mylist", "hello", "hello", "world", "hello", "hello"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(4)),
+            run_command(&c, &["lrem", "mylist", "100", "hello"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Blob("world".into()),])),
+            run_command(&c, &["lrange", "mylist", "0", "-1"]).await
+        );
     }
 
     #[tokio::test]

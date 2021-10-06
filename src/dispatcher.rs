@@ -73,6 +73,11 @@ dispatcher! {
             [""],
             4,
         },
+        lrem {
+            cmd::list::lrem,
+            [""],
+            4,
+        },
         rpop {
             cmd::list::rpop,
             [""],
