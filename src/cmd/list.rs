@@ -371,6 +371,31 @@ pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().get_map_or(
+        &args[1],
+        |v| match v {
+            Value::List(x) => {
+                let mut index: i64 = bytes_to_number(&args[2])?;
+                let mut x = x.write();
+
+                if index < 0 {
+                    index += x.len() as i64;
+                }
+
+                if let Some(x) = x.get_mut(index as usize) {
+                    *x = checksum::Value::new(args[3].clone());
+                    Ok(Value::OK)
+                } else {
+                    Err(Error::OutOfRange)
+                }
+            }
+            _ => Err(Error::WrongType),
+        },
+        || Err(Error::NotFound),
+    )
+}
+
 pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let count = if args.len() > 2 {
         bytes_to_number(&args[2])?
@@ -1027,6 +1052,61 @@ mod test {
                 Value::Blob("world".into()),
             ])),
             run_command(&c, &["lrange", "foo", "0", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lset() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::OK),
+            run_command(&c, &["lset", "foo", "-1", "6"]).await,
+        );
+
+        assert_eq!(
+            Ok(Value::OK),
+            run_command(&c, &["lset", "foo", "-2", "7"]).await,
+        );
+
+        assert_eq!(
+            Ok(Value::OK),
+            run_command(&c, &["lset", "foo", "0", "8"]).await,
+        );
+
+        assert_eq!(
+            Err(Error::OutOfRange),
+            run_command(&c, &["lset", "foo", "55", "8"]).await,
+        );
+
+        assert_eq!(
+            Err(Error::OutOfRange),
+            run_command(&c, &["lset", "foo", "-55", "8"]).await,
+        );
+
+        assert_eq!(
+            Err(Error::NotFound),
+            run_command(&c, &["lset", "key_not_exists", "-55", "8"]).await,
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("6".into())),
+            run_command(&c, &["rpop", "foo"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("7".into())),
+            run_command(&c, &["rpop", "foo"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("8".into())),
+            run_command(&c, &["lpop", "foo"]).await
         );
     }
 

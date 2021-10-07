@@ -78,6 +78,11 @@ dispatcher! {
             [""],
             4,
         },
+        lset {
+            cmd::list::lset,
+            [""],
+            4,
+        },
         rpop {
             cmd::list::rpop,
             [""],

@@ -6,6 +6,8 @@ pub enum Error {
     InvalidArgsCount(String),
     Protocol(String, String),
     WrongArgument(String, String),
+    NotFound,
+    OutOfRange,
     Syntax,
     NotANumber,
     WrongType,
@@ -23,7 +25,9 @@ impl From<Error> for Value {
             Error::InvalidArgsCount(x) => format!("wrong number of arguments for '{}' command", x),
             Error::Protocol(x, y) => format!("Protocol error: expected '{}', got '{}'", x, y),
             Error::NotANumber => "value is not an integer or out of range".to_owned(),
+            Error::OutOfRange => "index out of range".to_owned(),
             Error::Syntax => "syntax error".to_owned(),
+            Error::NotFound => "no such key".to_owned(),
             Error::WrongArgument(x, y) => format!(
                 "Unknown subcommand or wrong number of arguments for '{}'. Try {} HELP.",
                 y, x
