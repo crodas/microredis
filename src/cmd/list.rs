@@ -396,6 +396,38 @@ pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+pub async fn ltrim(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().get_map_or(
+        &args[1],
+        |v| match v {
+            Value::List(x) => {
+                let mut start: i64 = bytes_to_number(&args[2])?;
+                let mut end: i64 = bytes_to_number(&args[3])?;
+                let mut x = x.write();
+
+                if start < 0 {
+                    start += x.len() as i64;
+                }
+
+                if end < 0 {
+                    end += x.len() as i64;
+                }
+
+                let mut i = 0;
+                x.retain(|_| {
+                    let retain = i >= start && i <= end;
+                    i += 1;
+                    retain
+                });
+
+                Ok(Value::OK)
+            }
+            _ => Err(Error::WrongType),
+        },
+        || Ok(Value::OK),
+    )
+}
+
 pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let count = if args.len() > 2 {
         bytes_to_number(&args[2])?
@@ -1107,6 +1139,30 @@ mod test {
         assert_eq!(
             Ok(Value::Blob("8".into())),
             run_command(&c, &["lpop", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn ltrim() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(5)),
+            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::OK),
+            run_command(&c, &["ltrim", "foo", "1", "-2"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("2".into()),
+                Value::Blob("3".into()),
+                Value::Blob("4".into()),
+            ])),
+            run_command(&c, &["lrange", "foo", "0", "-1"]).await
         );
     }
 
