@@ -90,12 +90,12 @@ impl Db {
         entries
             .get_mut(key)
             .filter(|x| x.is_valid())
-            .map_or(0_i64.into(), |x| {
+            .map_or(0.into(), |x| {
                 if x.has_ttl() {
                     x.persist();
-                    1_i64.into()
+                    1.into()
                 } else {
-                    0_i64.into()
+                    0.into()
                 }
             })
     }
@@ -107,15 +107,15 @@ impl Db {
         entries
             .get_mut(key)
             .filter(|x| x.is_valid())
-            .map_or(0_i64.into(), |x| {
+            .map_or(0.into(), |x| {
                 self.expirations.lock().unwrap().add(key, expires_at);
                 x.set_ttl(expires_at);
-                1_i64.into()
+                1.into()
             })
     }
 
     pub fn del(&self, keys: &[Bytes]) -> Value {
-        let mut deleted = 0_i64;
+        let mut deleted = 0;
         let mut expirations = self.expirations.lock().unwrap();
         keys.iter()
             .map(|key| {
@@ -133,7 +133,7 @@ impl Db {
     }
 
     pub fn exists(&self, keys: &[Bytes]) -> Value {
-        let mut matches = 0_i64;
+        let mut matches = 0;
         keys.iter()
             .map(|key| {
                 let entries = self.entries[self.get_slot(key)].read().unwrap();

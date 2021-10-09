@@ -1,45 +1,19 @@
+pub mod checksum;
+pub mod locked;
+
 use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     convert::{TryFrom, TryInto},
     str::FromStr,
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
-
-#[derive(Debug)]
-pub struct LockedValue<T: Clone + PartialEq>(pub RwLock<T>);
-
-impl<T: Clone + PartialEq> Clone for LockedValue<T> {
-    fn clone(&self) -> Self {
-        Self(RwLock::new(self.0.read().unwrap().clone()))
-    }
-}
-
-impl<T: PartialEq + Clone> PartialEq for LockedValue<T> {
-    fn eq(&self, other: &LockedValue<T>) -> bool {
-        self.0.read().unwrap().eq(&other.0.read().unwrap())
-    }
-}
-
-impl<T: PartialEq + Clone> LockedValue<T> {
-    pub fn new(obj: T) -> Self {
-        Self(RwLock::new(obj))
-    }
-
-    pub fn write(&self) -> RwLockWriteGuard<'_, T> {
-        self.0.write().unwrap()
-    }
-
-    pub fn read(&self) -> RwLockReadGuard<'_, T> {
-        self.0.read().unwrap()
-    }
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
-    Hash(LockedValue<HashMap<Bytes, Bytes>>),
+    Hash(locked::Value<HashMap<Bytes, Bytes>>),
+    List(locked::Value<VecDeque<checksum::Value>>),
     Array(Vec<Value>),
     Blob(Bytes),
     String(String),
@@ -62,7 +36,7 @@ impl From<&Value> for Vec<u8> {
                     let b: Vec<u8> = i.into();
                     s.extend(b);
                 }
-                s.to_vec()
+                s
             }
             Value::Integer(x) => format!(":{}\r\n", x).into(),
             Value::BigInteger(x) => format!("({}\r\n", x).into(),
@@ -122,7 +96,7 @@ impl From<Value> for Vec<u8> {
 impl<'a> From<&ParsedValue<'a>> for Value {
     fn from(value: &ParsedValue) -> Self {
         match value {
-            ParsedValue::String(x) => Self::String(x.to_string()),
+            ParsedValue::String(x) => Self::String((*x).to_string()),
             ParsedValue::Blob(x) => Self::Blob(Bytes::copy_from_slice(*x)),
             ParsedValue::Array(x) => {
                 Self::Array(x.iter().map(|x| Value::try_from(x).unwrap()).collect())
@@ -131,13 +105,14 @@ impl<'a> From<&ParsedValue<'a>> for Value {
             ParsedValue::BigInteger(x) => Self::BigInteger(*x),
             ParsedValue::Integer(x) => Self::Integer(*x),
             ParsedValue::Float(x) => Self::Float(*x),
-            ParsedValue::Error(x, y) => Self::Err(x.to_string(), y.to_string()),
+            ParsedValue::Error(x, y) => Self::Err((*x).to_string(), (*y).to_string()),
             ParsedValue::Null => Self::Null,
         }
     }
 }
 
 value_try_from!(f64, Value::Float);
+value_try_from!(i32, Value::Integer);
 value_try_from!(i64, Value::Integer);
 value_try_from!(i128, Value::BigInteger);
 
@@ -149,7 +124,13 @@ impl From<&str> for Value {
 
 impl From<HashMap<Bytes, Bytes>> for Value {
     fn from(value: HashMap<Bytes, Bytes>) -> Value {
-        Value::Hash(LockedValue::new(value))
+        Value::Hash(locked::Value::new(value))
+    }
+}
+
+impl From<VecDeque<checksum::Value>> for Value {
+    fn from(value: VecDeque<checksum::Value>) -> Value {
+        Value::List(locked::Value::new(value))
     }
 }
 

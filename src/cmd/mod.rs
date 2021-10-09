@@ -1,6 +1,7 @@
 pub mod client;
 pub mod hash;
 pub mod key;
+pub mod list;
 pub mod string;
 
 #[cfg(test)]
@@ -28,11 +29,11 @@ mod test {
         all_connections.new_connection(db.clone(), client)
     }
 
-    pub fn run_command(conn: &Connection, cmd: &[&str]) -> Result<Value, Error> {
+    pub async fn run_command(conn: &Connection, cmd: &[&str]) -> Result<Value, Error> {
         let args: Vec<Bytes> = cmd.iter().map(|s| Bytes::from(s.to_string())).collect();
 
         let handler = Dispatcher::new(&args)?;
 
-        handler.deref().execute(&conn, &args)
+        handler.deref().execute(&conn, &args).await
     }
 }

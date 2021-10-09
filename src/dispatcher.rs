@@ -4,7 +4,7 @@ use std::convert::TryInto;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-fn do_time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
+async fn do_time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
     let seconds = format!("{}", since_the_epoch.as_secs());
@@ -13,7 +13,7 @@ fn do_time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
     Ok(vec![seconds.as_str(), millis.as_str()].into())
 }
 
-fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
+async fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
     let in_ms: i128 =
@@ -22,6 +22,98 @@ fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
 }
 
 dispatcher! {
+    list {
+        blpop {
+            cmd::list::blpop,
+            [""],
+            -3,
+        },
+        brpop {
+            cmd::list::brpop,
+            [""],
+            -3,
+        },
+        lindex {
+            cmd::list::lindex,
+            [""],
+            3,
+        },
+        linsert {
+            cmd::list::linsert,
+            [""],
+            5,
+        },
+        llen {
+            cmd::list::llen,
+            [""],
+            2,
+        },
+        lmove {
+            cmd::list::lmove,
+            [""],
+            5,
+        },
+        lpop {
+            cmd::list::lpop,
+            [""],
+            -2,
+        },
+        lpos {
+            cmd::list::lpos,
+            [""],
+            -2,
+        },
+        lpush {
+            cmd::list::lpush,
+            [""],
+            -3,
+        },
+        lpushx {
+            cmd::list::lpush,
+            [""],
+            -3,
+        },
+        lrange {
+            cmd::list::lrange,
+            [""],
+            4,
+        },
+        lrem {
+            cmd::list::lrem,
+            [""],
+            4,
+        },
+        lset {
+            cmd::list::lset,
+            [""],
+            4,
+        },
+        ltrim {
+            cmd::list::ltrim,
+            [""],
+            4,
+        },
+        rpop {
+            cmd::list::rpop,
+            [""],
+            -2,
+        },
+        rpoplpush {
+            cmd::list::rpoplpush,
+            [""],
+            3,
+        },
+        rpush {
+            cmd::list::rpush,
+            [""],
+            -3,
+        },
+        rpushx {
+            cmd::list::rpush,
+            [""],
+            -3,
+        },
+    },
     hash {
         hdel {
             cmd::hash::hdel,
