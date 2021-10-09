@@ -175,6 +175,74 @@ pub async fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let source_is_left = if check_arg!(args, 3, "LEFT") {
+        true
+    } else if check_arg!(args, 3, "RIGHT") {
+        false
+    } else {
+        return Err(Error::Syntax);
+    };
+
+    let target_is_left = if check_arg!(args, 4, "LEFT") {
+        true
+    } else if check_arg!(args, 4, "RIGHT") {
+        false
+    } else {
+        return Err(Error::Syntax);
+    };
+
+    conn.db().get_map_or(
+        &args[1],
+        |v| match v {
+            Value::List(source) => conn.db().get_map_or(
+                &args[2],
+                |v| match v {
+                    Value::List(target) => {
+                        let element = if source_is_left {
+                            source.write().pop_front()
+                        } else {
+                            source.write().pop_back()
+                        };
+
+                        if let Some(element) = element {
+                            let ret = element.clone_value();
+                            if target_is_left {
+                                target.write().push_front(element);
+                            } else {
+                                target.write().push_back(element);
+                            }
+                            Ok(ret)
+                        } else {
+                            Ok(Value::Null)
+                        }
+                    }
+                    _ => Err(Error::WrongType),
+                },
+                || {
+                    let element = if source_is_left {
+                        source.write().pop_front()
+                    } else {
+                        source.write().pop_back()
+                    };
+
+                    if let Some(element) = element {
+                        let ret = element.clone_value();
+                        let mut h = VecDeque::new();
+                        h.push_front(element);
+                        conn.db().set(&args[2], h.into(), None);
+                        Ok(ret)
+                    } else {
+                        Ok(Value::Null)
+                    }
+                },
+            ),
+            _ => Err(Error::WrongType),
+        },
+        || Ok(Value::Null),
+    )
+}
+
 pub async fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let count = if args.len() > 2 {
         bytes_to_number(&args[2])?
@@ -436,6 +504,20 @@ pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     };
 
     remove_element(conn, &args[1], count, false)
+}
+
+pub async fn rpoplpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    lmove(
+        conn,
+        &[
+            "lmove".into(),
+            args[1].clone(),
+            args[2].clone(),
+            "RIGHT".into(),
+            "LEFT".into(),
+        ],
+    )
+    .await
 }
 
 pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -889,6 +971,39 @@ mod test {
         assert_eq!(
             Ok(Value::Integer(0)),
             run_command(&c, &["llen", "foobar"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lmove_1() {
+        let c = create_connection();
+
+        assert_eq!(
+            run_command(&c, &["rpush", "foo", "1", "2", "3", "4", "5"]).await,
+            run_command(&c, &["llen", "foo"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("1".into())),
+            run_command(&c, &["lmove", "foo", "bar", "left", "left"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Blob("1".into()),])),
+            run_command(&c, &["lrange", "bar", "0", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("5".into())),
+            run_command(&c, &["lmove", "foo", "bar", "right", "left"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("5".into()),
+                Value::Blob("1".into()),
+            ])),
+            run_command(&c, &["lrange", "bar", "0", "-1"]).await
         );
     }
 

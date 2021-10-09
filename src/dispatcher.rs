@@ -48,6 +48,11 @@ dispatcher! {
             [""],
             2,
         },
+        lmove {
+            cmd::list::lmove,
+            [""],
+            5,
+        },
         lpop {
             cmd::list::lpop,
             [""],
@@ -92,6 +97,11 @@ dispatcher! {
             cmd::list::rpop,
             [""],
             -2,
+        },
+        rpoplpush {
+            cmd::list::rpoplpush,
+            [""],
+            3,
         },
         rpush {
             cmd::list::rpush,
