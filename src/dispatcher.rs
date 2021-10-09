@@ -22,6 +22,28 @@ async fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error>
 }
 
 dispatcher! {
+    set {
+        sadd {
+            cmd::set::sadd,
+            [""],
+            -3,
+        },
+        scard {
+            cmd::set::scard,
+            [""],
+            2,
+        },
+        sismember {
+            cmd::set::sismember,
+            [""],
+            3,
+        },
+        smembers {
+            cmd::set::smembers,
+            [""],
+            2,
+        },
+    },
     list {
         blpop {
             cmd::list::blpop,

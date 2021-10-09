@@ -2,6 +2,7 @@ pub mod client;
 pub mod hash;
 pub mod key;
 pub mod list;
+pub mod set;
 pub mod string;
 
 #[cfg(test)]

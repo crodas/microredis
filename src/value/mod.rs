@@ -5,7 +5,7 @@ use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     convert::{TryFrom, TryInto},
     str::FromStr,
 };
@@ -14,6 +14,7 @@ use std::{
 pub enum Value {
     Hash(locked::Value<HashMap<Bytes, Bytes>>),
     List(locked::Value<VecDeque<checksum::Value>>),
+    Set(locked::Value<HashSet<checksum::Value>>),
     Array(Vec<Value>),
     Blob(Bytes),
     String(String),
@@ -131,6 +132,12 @@ impl From<HashMap<Bytes, Bytes>> for Value {
 impl From<VecDeque<checksum::Value>> for Value {
     fn from(value: VecDeque<checksum::Value>) -> Value {
         Value::List(locked::Value::new(value))
+    }
+}
+
+impl From<HashSet<checksum::Value>> for Value {
+    fn from(value: HashSet<checksum::Value>) -> Value {
+        Value::Set(locked::Value::new(value))
     }
 }
 
