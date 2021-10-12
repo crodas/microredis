@@ -33,6 +33,31 @@ dispatcher! {
             [""],
             2,
         },
+        sdiff {
+            cmd::set::sdiff,
+            [""],
+            -2,
+        },
+        sdiffstore {
+            cmd::set::sdiffstore,
+            [""],
+            -3,
+        },
+        sinter {
+            cmd::set::sinter,
+            [""],
+            -2,
+        },
+        sintercard {
+            cmd::set::sintercard,
+            [""],
+            -2,
+        },
+        sinterstore {
+            cmd::set::sinterstore,
+            [""],
+            -3,
+        },
         sismember {
             cmd::set::sismember,
             [""],
