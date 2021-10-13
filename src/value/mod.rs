@@ -14,7 +14,7 @@ use std::{
 pub enum Value {
     Hash(locked::Value<HashMap<Bytes, Bytes>>),
     List(locked::Value<VecDeque<checksum::Value>>),
-    Set(locked::Value<HashSet<checksum::Value>>),
+    Set(locked::Value<HashSet<Bytes>>),
     Array(Vec<Value>),
     Blob(Bytes),
     String(String),
@@ -135,8 +135,8 @@ impl From<VecDeque<checksum::Value>> for Value {
     }
 }
 
-impl From<HashSet<checksum::Value>> for Value {
-    fn from(value: HashSet<checksum::Value>) -> Value {
+impl From<HashSet<Bytes>> for Value {
+    fn from(value: HashSet<Bytes>) -> Value {
         Value::Set(locked::Value::new(value))
     }
 }

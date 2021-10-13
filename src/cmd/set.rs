@@ -1,10 +1,10 @@
-use crate::{connection::Connection, error::Error, value::checksum, value::Value};
+use crate::{connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
 use std::collections::HashSet;
 
 async fn compare_sets<F1>(conn: &Connection, keys: &[Bytes], op: F1) -> Result<Value, Error>
 where
-    F1: Fn(&mut HashSet<checksum::Value>, &HashSet<checksum::Value>) -> bool,
+    F1: Fn(&mut HashSet<Bytes>, &HashSet<Bytes>) -> bool,
 {
     conn.db().get_map_or(
         &keys[0],
@@ -34,7 +34,7 @@ where
 
                 Ok(all_entries
                     .iter()
-                    .map(|entry| entry.clone_value())
+                    .map(|entry| Value::Blob(entry.clone()))
                     .collect::<Vec<Value>>()
                     .into())
             }
@@ -54,7 +54,7 @@ pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 let mut len = 0;
 
                 for val in (&args[2..]).iter() {
-                    if x.insert(checksum::Value::new(val.clone())) {
+                    if x.insert(val.clone()) {
                         len += 1;
                     }
                 }
@@ -69,7 +69,7 @@ pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             let mut len = 0;
 
             for val in (&args[2..]).iter() {
-                if x.insert(checksum::Value::new(val.clone())) {
+                if x.insert(val.clone()) {
                     len += 1;
                 }
             }
@@ -112,7 +112,7 @@ pub async fn sdiffstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 
         for val in values.iter() {
             if let Value::Blob(blob) = val {
-                if x.insert(checksum::Value::new(blob.clone())) {
+                if x.insert(blob.clone()) {
                     len += 1;
                 }
             }
@@ -157,7 +157,7 @@ pub async fn sinterstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 
         for val in values.iter() {
             if let Value::Blob(blob) = val {
-                if x.insert(checksum::Value::new(blob.clone())) {
+                if x.insert(blob.clone()) {
                     len += 1;
                 }
             }
@@ -176,7 +176,7 @@ pub async fn sismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
         &args[1],
         |v| match v {
             Value::Set(x) => {
-                if x.read().contains(&checksum::Value::new(args[2].clone())) {
+                if x.read().contains(&args[2]) {
                     Ok(1.into())
                 } else {
                     Ok(0.into())
@@ -195,7 +195,7 @@ pub async fn smembers(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
             Value::Set(x) => Ok(x
                 .read()
                 .iter()
-                .map(|x| x.clone_value())
+                .map(|x| Value::Blob(x.clone()))
                 .collect::<Vec<Value>>()
                 .into()),
             _ => Err(Error::WrongType),
@@ -213,7 +213,7 @@ pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
                 Ok((&args[2..])
                     .iter()
                     .map(|member| {
-                        if x.contains(&checksum::Value::new(member.clone())) {
+                        if x.contains(member) {
                             1
                         } else {
                             0
