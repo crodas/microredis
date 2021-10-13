@@ -68,6 +68,11 @@ dispatcher! {
             [""],
             2,
         },
+        smismember {
+            cmd::set::smismember,
+            [""],
+            -3,
+        },
     },
     list {
         blpop {

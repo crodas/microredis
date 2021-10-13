@@ -204,6 +204,30 @@ pub async fn smembers(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
     )
 }
 
+pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().get_map_or(
+        &args[1],
+        |v| match v {
+            Value::Set(x) => {
+                let x = x.read();
+                Ok((&args[2..])
+                    .iter()
+                    .map(|member| {
+                        if x.contains(&checksum::Value::new(member.clone())) {
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                    .collect::<Vec<i32>>()
+                    .into())
+            }
+            _ => Err(Error::WrongType),
+        },
+        || Ok(0.into()),
+    )
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
@@ -420,6 +444,25 @@ mod test {
         assert_eq!(
             Ok(Value::Integer(0)),
             run_command(&c, &["sismember", "foobar", "5"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn smismember() {
+        let c = create_connection();
+
+        assert_eq!(
+            run_command(&c, &["sadd", "foo", "1", "2", "3", "4", "5", "5"]).await,
+            run_command(&c, &["scard", "foo"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Integer(1),
+                Value::Integer(0),
+                Value::Integer(1),
+            ])),
+            run_command(&c, &["smismember", "foo", "5", "6", "3"]).await
         );
     }
 }
