@@ -131,7 +131,7 @@ pub async fn linsert(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
         &args[1],
         |v| match v {
             Value::List(x) => {
-                let pivot = checksum::Value::new(args[3].clone());
+                let pivot = checksum::Ref::new(&args[3]);
                 let mut x = x.write();
                 let mut found = false;
 
@@ -255,7 +255,7 @@ pub async fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 pub async fn lpos(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let mut index = 3;
-    let element = checksum::Value::new(args[2].clone());
+    let element = checksum::Ref::new(&args[2]);
     let rank = if check_arg!(args, index, "RANK") {
         index += 2;
         Some(bytes_to_number::<usize>(&args[index - 1])?)
@@ -395,7 +395,7 @@ pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         &args[1],
         |v| match v {
             Value::List(x) => {
-                let element = checksum::Value::new(args[3].clone());
+                let element = checksum::Ref::new(&args[3]);
                 let limit: i64 = bytes_to_number(&args[2])?;
                 let mut x = x.write();
 
@@ -412,9 +412,7 @@ pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 for i in 0..len {
                     let i = if is_reverse { len - 1 - i } else { i };
 
-                    println!("{}", i);
                     if let Some(value) = x.get(i) {
-                        println!("{} {:?} {:?}", i, *value, element);
                         if *value == element {
                             keep[i] = false;
                             removed += 1;
