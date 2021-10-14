@@ -73,6 +73,16 @@ dispatcher! {
             [""],
             -3,
         },
+        sunion {
+            cmd::set::sunion,
+            [""],
+            -2,
+        },
+        sunionstore {
+            cmd::set::sunionstore,
+            [""],
+            -2,
+        },
     },
     list {
         blpop {
