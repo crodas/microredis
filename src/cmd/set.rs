@@ -211,6 +211,44 @@ pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
     )
 }
 
+pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().get_map_or(
+        &args[1],
+        |v| match v {
+            Value::Set(set1) => {
+                if !set1.read().contains(&args[3]) {
+                    return Ok(0.into());
+                }
+
+                conn.db().get_map_or(
+                    &args[2],
+                    |v| match v {
+                        Value::Set(set2) => {
+                            let mut set2 = set2.write();
+                            set1.write().remove(&args[3]);
+                            if set2.insert(args[3].clone()) {
+                                Ok(1.into())
+                            } else {
+                                Ok(0.into())
+                            }
+                        }
+                        _ => Err(Error::WrongType),
+                    },
+                    || {
+                        set1.write().remove(&args[3]);
+                        let mut x = HashSet::new();
+                        x.insert(args[3].clone());
+                        conn.db().set(&args[2], x.into(), None);
+                        Ok(1.into())
+                    },
+                )
+            }
+            _ => Err(Error::WrongType),
+        },
+        || Ok(0.into()),
+    )
+}
+
 pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let rand = srandmember(conn, args).await?;
     conn.db().get_map_or(
@@ -548,6 +586,36 @@ mod test {
                 Value::Integer(1),
             ])),
             run_command(&c, &["smismember", "foo", "5", "6", "3"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn smove() {
+        let c = create_connection();
+
+        assert_eq!(
+            run_command(&c, &["sadd", "1", "a", "b", "c", "d"]).await,
+            run_command(&c, &["scard", "1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["smove", "1", "2", "d"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(0)),
+            run_command(&c, &["smove", "1", "2", "f"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(3)),
+            run_command(&c, &["scard", "1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["scard", "2"]).await
         );
     }
 

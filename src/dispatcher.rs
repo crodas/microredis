@@ -73,6 +73,11 @@ dispatcher! {
             [""],
             -3,
         },
+        smove {
+            cmd::set::smove,
+            [""],
+            4,
+        },
         spop {
             cmd::set::spop,
             [""],
