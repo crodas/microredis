@@ -22,6 +22,88 @@ async fn do_command(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error>
 }
 
 dispatcher! {
+    set {
+        sadd {
+            cmd::set::sadd,
+            [""],
+            -3,
+        },
+        scard {
+            cmd::set::scard,
+            [""],
+            2,
+        },
+        sdiff {
+            cmd::set::sdiff,
+            [""],
+            -2,
+        },
+        sdiffstore {
+            cmd::set::sdiffstore,
+            [""],
+            -3,
+        },
+        sinter {
+            cmd::set::sinter,
+            [""],
+            -2,
+        },
+        sintercard {
+            cmd::set::sintercard,
+            [""],
+            -2,
+        },
+        sinterstore {
+            cmd::set::sinterstore,
+            [""],
+            -3,
+        },
+        sismember {
+            cmd::set::sismember,
+            [""],
+            3,
+        },
+        smembers {
+            cmd::set::smembers,
+            [""],
+            2,
+        },
+        smismember {
+            cmd::set::smismember,
+            [""],
+            -3,
+        },
+        smove {
+            cmd::set::smove,
+            [""],
+            4,
+        },
+        spop {
+            cmd::set::spop,
+            [""],
+            -2,
+        },
+        srandmember {
+            cmd::set::srandmember,
+            [""],
+            -2,
+        },
+        srem {
+            cmd::set::srem,
+            [""],
+            -3,
+        },
+        sunion {
+            cmd::set::sunion,
+            [""],
+            -2,
+        },
+        sunionstore {
+            cmd::set::sunionstore,
+            [""],
+            -2,
+        },
+    },
     list {
         blpop {
             cmd::list::blpop,

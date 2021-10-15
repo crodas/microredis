@@ -4,13 +4,13 @@ use crc32fast::Hasher as Crc32Hasher;
 use std::hash::{Hash, Hasher};
 
 fn calculate_checksum(bytes: &Bytes) -> Option<u32> {
-        if bytes.len() < 1024 {
-            None
-        } else {
-            let mut hasher = Crc32Hasher::new();
-            hasher.update(bytes);
-            Some(hasher.finalize())
-        }
+    if bytes.len() < 1024 {
+        None
+    } else {
+        let mut hasher = Crc32Hasher::new();
+        hasher.update(bytes);
+        Some(hasher.finalize())
+    }
 }
 
 pub struct Ref<'a> {
