@@ -73,6 +73,16 @@ dispatcher! {
             [""],
             -3,
         },
+        spop {
+            cmd::set::spop,
+            [""],
+            -2,
+        },
+        srandmember {
+            cmd::set::srandmember,
+            [""],
+            -2,
+        },
         sunion {
             cmd::set::sunion,
             [""],
