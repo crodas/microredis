@@ -272,6 +272,28 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
     )
 }
 
+pub async fn srem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().get_map_or(
+        &args[1],
+        |v| match v {
+            Value::Set(x) => {
+                let mut set = x.write();
+                let mut i = 0;
+
+                for value in (&args[2..]).iter() {
+                    if set.remove(value) {
+                        i += 1;
+                    }
+                }
+
+                Ok(i.into())
+            }
+            _ => Err(Error::WrongType),
+        },
+        || Ok(0.into()),
+    )
+}
+
 pub async fn sunion(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     compare_sets(conn, &args[1..], |all_entries, elements| {
         for element in elements.iter() {
@@ -548,6 +570,36 @@ mod test {
         if let Ok(Value::Array(x)) = run_command(&c, &["spop", "1", "2"]).await {
             assert_eq!(2, x.len());
         }
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["scard", "1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn srem() {
+        let c = create_connection();
+
+        assert_eq!(
+            run_command(&c, &["sadd", "1", "a", "b", "c", "d"]).await,
+            run_command(&c, &["scard", "1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["srem", "1", "b"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(3)),
+            run_command(&c, &["scard", "1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(2)),
+            run_command(&c, &["srem", "1", "a", "b", "c"]).await
+        );
 
         assert_eq!(
             Ok(Value::Integer(1)),

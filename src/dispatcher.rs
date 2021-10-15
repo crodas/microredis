@@ -83,6 +83,11 @@ dispatcher! {
             [""],
             -2,
         },
+        srem {
+            cmd::set::srem,
+            [""],
+            -3,
+        },
         sunion {
             cmd::set::sunion,
             [""],
