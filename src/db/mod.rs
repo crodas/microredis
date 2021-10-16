@@ -3,7 +3,7 @@ mod expiration;
 
 use crate::{error::Error, value::Value};
 use bytes::Bytes;
-use entry::Entry;
+use entry::{Entry, new_version};
 use expiration::ExpirationDb;
 use log::trace;
 use seahash::hash;
@@ -162,6 +162,25 @@ impl Db {
 
             not_found()
         }
+    }
+
+    pub fn bump_version(&self, key: &Bytes) -> bool {
+        let mut entries = self.entries[self.get_slot(key)].write().unwrap();
+        entries
+            .get_mut(key)
+            .filter(|x| x.is_valid())
+            .map(|entry| {
+                entry.bump_version();
+            }).is_some()
+    }
+
+    pub fn get_version(&self, key: &Bytes) -> u128 {
+        let entries = self.entries[self.get_slot(key)].read().unwrap();
+        entries
+            .get(key)
+            .filter(|x| x.is_valid())
+            .map(|entry|  entry.version())
+            .unwrap_or_else(new_version)
     }
 
     pub fn get(&self, key: &Bytes) -> Value {

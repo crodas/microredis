@@ -1,10 +1,19 @@
 use crate::{error::Error, value::Value};
+use std::time::SystemTime;
 use tokio::time::Instant;
 
 #[derive(Debug)]
 pub struct Entry {
     pub value: Value,
+    pub version: u128,
     expires_at: Option<Instant>,
+}
+
+pub fn new_version() -> u128 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("get millis error")
+        .as_nanos()
 }
 
 /// Database Entry
@@ -16,7 +25,15 @@ pub struct Entry {
 /// so more frequently.
 impl Entry {
     pub fn new(value: Value, expires_at: Option<Instant>) -> Self {
-        Self { value, expires_at }
+        Self {
+            value,
+            expires_at,
+            version: new_version(),
+        }
+    }
+
+    pub fn bump_version(&mut self) {
+        self.version = new_version();
     }
 
     pub fn persist(&mut self) {
@@ -33,16 +50,23 @@ impl Entry {
 
     pub fn set_ttl(&mut self, expires_at: Instant) {
         self.expires_at = Some(expires_at);
+        self.version = new_version();
+    }
+
+    pub fn version(&self) -> u128 {
+        self.version
     }
 
     /// Changes the value that is wrapped in this entry, the TTL (expired_at) is
     /// not affected.
     pub fn change_value(&mut self, value: Value) {
         self.value = value;
+        self.version = new_version();
     }
 
     #[allow(dead_code)]
     pub fn get_mut(&mut self) -> &mut Value {
+        self.version = new_version();
         &mut self.value
     }
 

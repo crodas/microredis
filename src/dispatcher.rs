@@ -414,6 +414,13 @@ dispatcher! {
             -1,
         },
     },
+    transaction {
+        watch {
+            cmd::transaction::watch,
+            [""],
+            -2,
+        },
+    },
     server {
         command  {
             do_command,
