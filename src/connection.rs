@@ -1,4 +1,5 @@
 use crate::db::Db;
+use bytes::Bytes;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
@@ -35,6 +36,7 @@ impl Connections {
             connections: self.clone(),
             current_db: 0,
             name: RwLock::new(None),
+            watch_keys: RwLock::new(vec![]),
         });
         self.connections.write().unwrap().insert(*id, conn.clone());
         *id += 1;
@@ -55,6 +57,7 @@ pub struct Connection {
     connections: Arc<Connections>,
     addr: SocketAddr,
     name: RwLock<Option<String>>,
+    watch_keys: RwLock<Vec<(Bytes, u128)>>,
 }
 
 impl Connection {
@@ -64,6 +67,20 @@ impl Connection {
 
     pub fn id(&self) -> u128 {
         self.id
+    }
+
+    pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
+        let mut watch_keys = self.watch_keys.write().unwrap();
+        keys.iter()
+            .map(|(bytes, version)| {
+                watch_keys.push(((*bytes).clone(), *version));
+            })
+            .for_each(drop);
+    }
+
+    pub fn discard_watched_keys(&self) {
+        let mut watch_keys = self.watch_keys.write().unwrap();
+        watch_keys.clear();
     }
 
     pub fn destroy(self: Arc<Connection>) {

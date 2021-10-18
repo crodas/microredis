@@ -3,7 +3,7 @@ mod expiration;
 
 use crate::{error::Error, value::Value};
 use bytes::Bytes;
-use entry::{Entry, new_version};
+use entry::{new_version, Entry};
 use expiration::ExpirationDb;
 use log::trace;
 use seahash::hash;
@@ -171,7 +171,8 @@ impl Db {
             .filter(|x| x.is_valid())
             .map(|entry| {
                 entry.bump_version();
-            }).is_some()
+            })
+            .is_some()
     }
 
     pub fn get_version(&self, key: &Bytes) -> u128 {
@@ -179,7 +180,7 @@ impl Db {
         entries
             .get(key)
             .filter(|x| x.is_valid())
-            .map(|entry|  entry.version())
+            .map(|entry| entry.version())
             .unwrap_or_else(new_version)
     }
 

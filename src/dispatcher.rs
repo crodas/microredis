@@ -420,6 +420,11 @@ dispatcher! {
             [""],
             -2,
         },
+        unwatch {
+            cmd::transaction::unwatch,
+            [""],
+            1,
+        },
     },
     server {
         command  {

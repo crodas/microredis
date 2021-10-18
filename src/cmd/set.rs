@@ -345,7 +345,6 @@ pub async fn srem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         || Ok(0.into()),
     )?;
 
-
     conn.db().bump_version(&args[1]);
 
     Ok(result)

@@ -455,7 +455,6 @@ pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().bump_version(&args[1]);
 
     Ok(result)
-
 }
 
 pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
