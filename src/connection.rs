@@ -35,8 +35,7 @@ impl Connections {
             addr,
             connections: self.clone(),
             current_db: 0,
-            name: RwLock::new(None),
-            watch_keys: RwLock::new(vec![]),
+            info: RwLock::new(ConnectionInfo::new()),
         });
         self.connections.write().unwrap().insert(*id, conn.clone());
         *id += 1;
@@ -50,14 +49,27 @@ impl Connections {
     }
 }
 
+pub struct ConnectionInfo {
+    pub name: Option<String>,
+    pub watch_keys: Vec<(Bytes, u128)>,
+}
+
+impl ConnectionInfo {
+    fn new() -> Self {
+        Self {
+            name: None,
+            watch_keys: vec![],
+        }
+    }
+}
+
 pub struct Connection {
     id: u128,
     db: Arc<Db>,
     current_db: u32,
     connections: Arc<Connections>,
     addr: SocketAddr,
-    name: RwLock<Option<String>>,
-    watch_keys: RwLock<Vec<(Bytes, u128)>>,
+    info: RwLock<ConnectionInfo>,
 }
 
 impl Connection {
@@ -69,8 +81,13 @@ impl Connection {
         self.id
     }
 
+    pub fn in_transaction(&self) -> bool {
+        false
+    }
+
     pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
-        let mut watch_keys = self.watch_keys.write().unwrap();
+        #[allow(unused_mut)]
+        let mut watch_keys = &mut self.info.write().unwrap().watch_keys;
         keys.iter()
             .map(|(bytes, version)| {
                 watch_keys.push(((*bytes).clone(), *version));
@@ -79,7 +96,8 @@ impl Connection {
     }
 
     pub fn discard_watched_keys(&self) {
-        let mut watch_keys = self.watch_keys.write().unwrap();
+        #[allow(unused_mut)]
+        let mut watch_keys = &mut self.info.write().unwrap().watch_keys;
         watch_keys.clear();
     }
 
@@ -92,12 +110,12 @@ impl Connection {
     }
 
     pub fn name(&self) -> Option<String> {
-        self.name.read().unwrap().clone()
+        self.info.read().unwrap().name.clone()
     }
 
     pub fn set_name(&self, name: String) {
-        let mut r = self.name.write().unwrap();
-        *r = Some(name);
+        let mut r = self.info.write().unwrap();
+        r.name = Some(name);
     }
 
     #[allow(dead_code)]
@@ -110,7 +128,7 @@ impl Connection {
             "id={} addr={} name={:?} db={}\r\n",
             self.id,
             self.addr,
-            self.name.read().unwrap(),
+            self.info.read().unwrap().name,
             self.current_db
         )
     }

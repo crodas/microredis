@@ -471,7 +471,7 @@ pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
                 if let Some(x) = x.get_mut(index as usize) {
                     *x = checksum::Value::new(args[3].clone());
-                    Ok(Value::OK)
+                    Ok(Value::Ok)
                 } else {
                     Err(Error::OutOfRange)
                 }
@@ -510,11 +510,11 @@ pub async fn ltrim(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     retain
                 });
 
-                Ok(Value::OK)
+                Ok(Value::Ok)
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(Value::OK),
+        || Ok(Value::Ok),
     )?;
 
     conn.db().bump_version(&args[1]);
@@ -1242,17 +1242,17 @@ mod test {
         );
 
         assert_eq!(
-            Ok(Value::OK),
+            Ok(Value::Ok),
             run_command(&c, &["lset", "foo", "-1", "6"]).await,
         );
 
         assert_eq!(
-            Ok(Value::OK),
+            Ok(Value::Ok),
             run_command(&c, &["lset", "foo", "-2", "7"]).await,
         );
 
         assert_eq!(
-            Ok(Value::OK),
+            Ok(Value::Ok),
             run_command(&c, &["lset", "foo", "0", "8"]).await,
         );
 
@@ -1297,7 +1297,7 @@ mod test {
         );
 
         assert_eq!(
-            Ok(Value::OK),
+            Ok(Value::Ok),
             run_command(&c, &["ltrim", "foo", "1", "-2"]).await
         );
 

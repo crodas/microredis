@@ -6,6 +6,9 @@ macro_rules! dispatcher {
                 $handler:expr,
                 [$($tag:tt)+],
                 $min_args:expr,
+                $key_start:expr,
+                $key_stop:expr,
+                $key_step:expr,
             }),+$(,)?
         }),+$(,)?
     }=>  {
@@ -18,6 +21,9 @@ macro_rules! dispatcher {
                 pub struct Command {
                     pub tags: &'static [&'static str],
                     pub min_args: i32,
+                    pub key_start: i32,
+                    pub key_stop: i32,
+                    pub key_step: usize,
                 }
 
                 impl Command {
@@ -25,6 +31,9 @@ macro_rules! dispatcher {
                         Self {
                             tags: &[$($tag,)+],
                             min_args: $min_args,
+                            key_start: $key_start,
+                            key_stop: $key_stop,
+                            key_step: $key_step,
                         }
                     }
                 }
@@ -33,6 +42,27 @@ macro_rules! dispatcher {
                 impl ExecutableCommand for Command {
                     async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                         $handler(conn, args).await
+                    }
+
+                    fn get_keys<'a>(&self, args: &'a [Bytes]) -> Vec<&'a Bytes> {
+                        let start = self.key_start;
+                        let stop  = if self.key_stop > 0 {
+                            self.key_stop
+                        } else {
+                            (args.len() as i32) + self.key_stop
+                        };
+
+                        if start == 0 {
+                            return vec![];
+                        }
+
+                        let mut result = vec![];
+
+                        for i in (start .. stop).step_by(self.key_step) {
+                            result.push(&args[i as usize]);
+                        }
+
+                        result
                     }
 
                     fn check_number_args(&self, n: usize) -> bool {
@@ -60,6 +90,8 @@ macro_rules! dispatcher {
         #[async_trait]
         pub trait ExecutableCommand {
             async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error>;
+
+            fn get_keys<'a>(&self, args: &'a [Bytes]) -> Vec<&'a Bytes>;
 
             fn check_number_args(&self, n: usize) -> bool;
 

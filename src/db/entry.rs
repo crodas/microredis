@@ -95,7 +95,7 @@ impl Entry {
                 | Value::Float(_)
                 | Value::String(_)
                 | Value::Null
-                | Value::OK
+                | Value::Ok
         )
     }
 

@@ -75,8 +75,21 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                         match result {
                             Ok(args) => match Dispatcher::new(&args) {
                                 Ok(handler) => {
+                                    let handler = handler.deref();
+
+                                    if conn.in_transaction() {
+                                        handler
+                                            .get_keys(&args)
+                                            .iter()
+                                            .map(|key| {})
+                                            .for_each(drop);
+                                        if transport.send(Value::Queued).await.is_err() {
+                                            break;
+                                        }
+                                        continue;
+                                    }
+
                                     let r = handler
-                                        .deref()
                                         .execute(&conn, &args)
                                         .await
                                         .unwrap_or_else(|x| x.into());

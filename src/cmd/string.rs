@@ -144,7 +144,7 @@ mod test {
     async fn get_and_set() {
         let c = create_connection();
         let x = run_command(&c, &["set", "foo", "bar"]).await;
-        assert_eq!(Ok(Value::OK), x);
+        assert_eq!(Ok(Value::Ok), x);
 
         let x = run_command(&c, &["get", "foo"]).await;
         assert_eq!(Ok(Value::Blob("bar".into())), x);
@@ -154,7 +154,7 @@ mod test {
     async fn getdel() {
         let c = create_connection();
         let x = run_command(&c, &["set", "foo", "bar"]).await;
-        assert_eq!(Ok(Value::OK), x);
+        assert_eq!(Ok(Value::Ok), x);
 
         assert_eq!(
             Ok(Value::Blob("bar".into())),
@@ -168,7 +168,7 @@ mod test {
     async fn getset() {
         let c = create_connection();
         let x = run_command(&c, &["set", "foo", "bar"]).await;
-        assert_eq!(Ok(Value::OK), x);
+        assert_eq!(Ok(Value::Ok), x);
 
         assert_eq!(
             Ok(Value::Blob("bar".into())),
@@ -185,7 +185,7 @@ mod test {
     async fn strlen() {
         let c = create_connection();
         let x = run_command(&c, &["set", "foo", "bar"]).await;
-        assert_eq!(Ok(Value::OK), x);
+        assert_eq!(Ok(Value::Ok), x);
 
         let x = run_command(&c, &["strlen", "foo"]).await;
         assert_eq!(Ok(Value::Integer(3)), x);

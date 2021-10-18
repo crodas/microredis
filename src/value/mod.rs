@@ -24,7 +24,8 @@ pub enum Value {
     Float(f64),
     BigInteger(i128),
     Null,
-    OK,
+    Queued,
+    Ok,
 }
 
 impl From<&Value> for Vec<u8> {
@@ -51,7 +52,8 @@ impl From<&Value> for Vec<u8> {
             }
             Value::Err(x, y) => format!("-{} {}\r\n", x, y).into(),
             Value::String(x) => format!("+{}\r\n", x).into(),
-            Value::OK => "+OK\r\n".into(),
+            Value::Queued => "+QUEUED\r\n".into(),
+            Value::Ok => "+OK\r\n".into(),
             _ => b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".to_vec(),
         }
     }

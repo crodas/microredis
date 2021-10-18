@@ -230,7 +230,7 @@ impl Db {
             self.expirations.lock().unwrap().add(key, expires_at);
         }
         entries.insert(key.clone(), Entry::new(value, expires_at));
-        Value::OK
+        Value::Ok
     }
 
     pub fn ttl(&self, key: &Bytes) -> Option<Option<Instant>> {
@@ -325,11 +325,11 @@ mod test {
     #[test]
     fn del() {
         let db = Db::new(100);
-        db.set(&bytes!(b"expired"), Value::OK, Some(Duration::from_secs(0)));
-        db.set(&bytes!(b"valid"), Value::OK, None);
+        db.set(&bytes!(b"expired"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"valid"), Value::Ok, None);
         db.set(
             &bytes!(b"expiring"),
-            Value::OK,
+            Value::Ok,
             Some(Duration::from_secs(5)),
         );
 
@@ -347,11 +347,11 @@ mod test {
     #[test]
     fn ttl() {
         let db = Db::new(100);
-        db.set(&bytes!(b"expired"), Value::OK, Some(Duration::from_secs(0)));
-        db.set(&bytes!(b"valid"), Value::OK, None);
+        db.set(&bytes!(b"expired"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"valid"), Value::Ok, None);
         db.set(
             &bytes!(b"expiring"),
-            Value::OK,
+            Value::Ok,
             Some(Duration::from_secs(5)),
         );
 
@@ -367,7 +367,7 @@ mod test {
     #[test]
     fn purge_keys() {
         let db = Db::new(100);
-        db.set(&bytes!(b"one"), Value::OK, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
         assert_eq!(Value::Null, db.get(&bytes!(b"one")));
@@ -382,13 +382,13 @@ mod test {
     #[test]
     fn replace_purge_keys() {
         let db = Db::new(100);
-        db.set(&bytes!(b"one"), Value::OK, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
         assert_eq!(Value::Null, db.get(&bytes!(b"one")));
 
-        db.set(&bytes!(b"one"), Value::OK, Some(Duration::from_secs(5)));
-        assert_eq!(Value::OK, db.get(&bytes!(b"one")));
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(5)));
+        assert_eq!(Value::Ok, db.get(&bytes!(b"one")));
 
         // Purge should return 0 as the expired key has been removed already
         assert_eq!(0, db.purge());

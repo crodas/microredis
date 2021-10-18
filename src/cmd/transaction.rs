@@ -8,10 +8,10 @@ pub async fn watch(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             .map(|key| (key, conn.db().get_version(key)))
             .collect::<Vec<(&Bytes, u128)>>(),
     );
-    Ok(Value::OK)
+    Ok(Value::Ok)
 }
 
 pub async fn unwatch(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     conn.discard_watched_keys();
-    Ok(Value::OK)
+    Ok(Value::Ok)
 }
