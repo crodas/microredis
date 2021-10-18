@@ -1,12 +1,28 @@
 use crate::db::Db;
 use bytes::Bytes;
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 
 pub struct Connections {
     connections: RwLock<BTreeMap<u128, Arc<Connection>>>,
     counter: RwLock<u128>,
+}
+
+pub struct ConnectionInfo {
+    pub name: Option<String>,
+    pub watch_keys: Vec<(Bytes, u128)>,
+    pub tx_keys: HashSet<Bytes>,
+}
+
+pub struct Connection {
+    id: u128,
+    db: Arc<Db>,
+    current_db: u32,
+    connections: Arc<Connections>,
+    addr: SocketAddr,
+    info: RwLock<ConnectionInfo>,
 }
 
 impl Connections {
@@ -49,27 +65,14 @@ impl Connections {
     }
 }
 
-pub struct ConnectionInfo {
-    pub name: Option<String>,
-    pub watch_keys: Vec<(Bytes, u128)>,
-}
-
 impl ConnectionInfo {
     fn new() -> Self {
         Self {
             name: None,
             watch_keys: vec![],
+            tx_keys: HashSet::new(),
         }
     }
-}
-
-pub struct Connection {
-    id: u128,
-    db: Arc<Db>,
-    current_db: u32,
-    connections: Arc<Connections>,
-    addr: SocketAddr,
-    info: RwLock<ConnectionInfo>,
 }
 
 impl Connection {
@@ -86,8 +89,7 @@ impl Connection {
     }
 
     pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
-        #[allow(unused_mut)]
-        let mut watch_keys = &mut self.info.write().unwrap().watch_keys;
+        let watch_keys = &mut self.info.write().unwrap().watch_keys;
         keys.iter()
             .map(|(bytes, version)| {
                 watch_keys.push(((*bytes).clone(), *version));
@@ -95,9 +97,28 @@ impl Connection {
             .for_each(drop);
     }
 
+    pub fn tx_keys(&self, keys: Vec<&Bytes>) {
+        #[allow(clippy::mutable_key_type)]
+        let tx_keys = &mut self.info.write().unwrap().tx_keys;
+        keys.iter()
+            .map(|k| {
+                tx_keys.insert((*k).clone());
+            })
+            .for_each(drop);
+    }
+
+    pub fn get_tx_keys(&self) -> Vec<Bytes> {
+        self.info
+            .read()
+            .unwrap()
+            .tx_keys
+            .iter()
+            .map(|key| key.clone())
+            .collect::<Vec<Bytes>>()
+    }
+
     pub fn discard_watched_keys(&self) {
-        #[allow(unused_mut)]
-        let mut watch_keys = &mut self.info.write().unwrap().watch_keys;
+        let watch_keys = &mut self.info.write().unwrap().watch_keys;
         watch_keys.clear();
     }
 

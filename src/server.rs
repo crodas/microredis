@@ -78,11 +78,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                                     let handler = handler.deref();
 
                                     if conn.in_transaction() {
-                                        handler
-                                            .get_keys(&args)
-                                            .iter()
-                                            .map(|key| {})
-                                            .for_each(drop);
+                                        conn.tx_keys(handler.get_keys(&args));
                                         if transport.send(Value::Queued).await.is_err() {
                                             break;
                                         }
