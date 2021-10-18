@@ -77,7 +77,8 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                                 Ok(handler) => {
                                     let handler = handler.deref();
 
-                                    if conn.in_transaction() {
+                                    if conn.in_transaction() && handler.is_queueable() {
+                                        conn.queue_command(&args);
                                         conn.tx_keys(handler.get_keys(&args));
                                         if transport.send(Value::Queued).await.is_err() {
                                             break;

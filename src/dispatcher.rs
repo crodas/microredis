@@ -22,6 +22,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         scard {
             cmd::set::scard,
@@ -30,6 +31,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         sdiff {
             cmd::set::sdiff,
@@ -38,6 +40,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         sdiffstore {
             cmd::set::sdiffstore,
@@ -46,6 +49,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         sinter {
             cmd::set::sinter,
@@ -54,6 +58,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         sintercard {
             cmd::set::sintercard,
@@ -62,6 +67,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         sinterstore {
             cmd::set::sinterstore,
@@ -70,6 +76,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         sismember {
             cmd::set::sismember,
@@ -78,6 +85,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         smembers {
             cmd::set::smembers,
@@ -86,6 +94,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         smismember {
             cmd::set::smismember,
@@ -94,6 +103,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         smove {
             cmd::set::smove,
@@ -102,6 +112,7 @@ dispatcher! {
             1,
             2,
             1,
+            true,
         },
         spop {
             cmd::set::spop,
@@ -110,6 +121,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         srandmember {
             cmd::set::srandmember,
@@ -118,6 +130,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         srem {
             cmd::set::srem,
@@ -126,6 +139,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         sunion {
             cmd::set::sunion,
@@ -134,6 +148,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         sunionstore {
             cmd::set::sunionstore,
@@ -142,6 +157,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
     },
     list {
@@ -152,6 +168,7 @@ dispatcher! {
             1,
             -2,
             1,
+            true,
         },
         brpop {
             cmd::list::brpop,
@@ -160,6 +177,7 @@ dispatcher! {
             1,
             -2,
             1,
+            true,
         },
         lindex {
             cmd::list::lindex,
@@ -168,6 +186,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         linsert {
             cmd::list::linsert,
@@ -176,6 +195,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         llen {
             cmd::list::llen,
@@ -184,6 +204,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         lmove {
             cmd::list::lmove,
@@ -192,6 +213,7 @@ dispatcher! {
             1,
             2,
             1,
+            true,
         },
         lpop {
             cmd::list::lpop,
@@ -200,6 +222,7 @@ dispatcher! {
             1,
             -2,
             1,
+            true,
         },
         lpos {
             cmd::list::lpos,
@@ -208,6 +231,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         lpush {
             cmd::list::lpush,
@@ -216,6 +240,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         lpushx {
             cmd::list::lpush,
@@ -224,6 +249,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         lrange {
             cmd::list::lrange,
@@ -232,6 +258,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         lrem {
             cmd::list::lrem,
@@ -240,6 +267,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         lset {
             cmd::list::lset,
@@ -248,6 +276,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         ltrim {
             cmd::list::ltrim,
@@ -256,6 +285,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         rpop {
             cmd::list::rpop,
@@ -264,6 +294,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         rpoplpush {
             cmd::list::rpoplpush,
@@ -272,6 +303,7 @@ dispatcher! {
             1,
             2,
             1,
+            true,
         },
         rpush {
             cmd::list::rpush,
@@ -280,6 +312,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         rpushx {
             cmd::list::rpush,
@@ -288,6 +321,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
     },
     hash {
@@ -298,6 +332,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hexists {
             cmd::hash::hexists,
@@ -306,6 +341,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hget {
             cmd::hash::hget,
@@ -314,6 +350,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hgetall {
             cmd::hash::hgetall,
@@ -322,6 +359,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hincrby {
             cmd::hash::hincrby::<i64>,
@@ -330,6 +368,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hincrbyfloat {
             cmd::hash::hincrby::<f64>,
@@ -338,6 +377,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hkeys {
             cmd::hash::hkeys,
@@ -346,6 +386,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hlen {
             cmd::hash::hlen,
@@ -354,6 +395,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hmget {
             cmd::hash::hmget,
@@ -362,6 +404,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hmset {
             cmd::hash::hset,
@@ -370,6 +413,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hrandfield {
             cmd::hash::hrandfield,
@@ -378,6 +422,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hset {
             cmd::hash::hset,
@@ -386,6 +431,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hsetnx {
             cmd::hash::hsetnx,
@@ -394,6 +440,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hstrlen {
             cmd::hash::hstrlen,
@@ -402,6 +449,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         hvals {
             cmd::hash::hvals,
@@ -410,6 +458,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
     },
     keys {
@@ -420,6 +469,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         exists {
             cmd::key::exists,
@@ -428,6 +478,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         expire {
             cmd::key::expire,
@@ -436,6 +487,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         expireat {
             cmd::key::expire_at,
@@ -444,6 +496,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         expiretime {
             cmd::key::expire_time,
@@ -452,6 +505,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         persist {
             cmd::key::persist,
@@ -460,6 +514,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         pexpire {
             cmd::key::expire,
@@ -468,6 +523,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         pexpireat {
             cmd::key::expire_at,
@@ -476,6 +532,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         pexpiretime {
             cmd::key::expire_time,
@@ -484,6 +541,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         pttl {
             cmd::key::ttl,
@@ -492,6 +550,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         ttl {
             cmd::key::ttl,
@@ -500,6 +559,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
     },
     string {
@@ -510,6 +570,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         decrby {
             cmd::string::decr_by,
@@ -518,6 +579,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         get {
             cmd::string::get,
@@ -526,6 +588,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         getdel {
             cmd::string::getdel,
@@ -534,6 +597,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         getset {
             cmd::string::getset,
@@ -542,6 +606,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         incr {
             cmd::string::incr,
@@ -550,6 +615,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         incrby {
             cmd::string::incr_by,
@@ -558,6 +624,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         incrbyfloat {
             cmd::string::incr_by_float,
@@ -566,6 +633,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         mget {
             cmd::string::mget,
@@ -574,6 +642,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         set {
             cmd::string::set,
@@ -582,6 +651,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         setex {
             cmd::string::setex,
@@ -590,6 +660,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         psetex {
             cmd::string::setex,
@@ -598,6 +669,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         },
         strlen {
             cmd::string::strlen,
@@ -606,6 +678,7 @@ dispatcher! {
             1,
             1,
             1,
+            true,
         }
     },
     connection {
@@ -616,6 +689,7 @@ dispatcher! {
             0,
             0,
             0,
+            true,
         },
         echo {
             cmd::client::echo,
@@ -624,6 +698,7 @@ dispatcher! {
             0,
             0,
             0,
+            true,
         },
         ping {
             cmd::client::ping,
@@ -632,9 +707,37 @@ dispatcher! {
             0,
             0,
             0,
+            true,
         },
     },
     transaction {
+        discard {
+            cmd::transaction::discard,
+            [""],
+            1,
+            0,
+            0,
+            0,
+            false,
+        },
+        exec {
+            cmd::transaction::exec,
+            [""],
+            1,
+            0,
+            0,
+            0,
+            true,
+        },
+        multi {
+            cmd::transaction::multi,
+            [""],
+            1,
+            0,
+            0,
+            0,
+            false,
+        },
         watch {
             cmd::transaction::watch,
             [""],
@@ -642,6 +745,7 @@ dispatcher! {
             1,
             -1,
             1,
+            true,
         },
         unwatch {
             cmd::transaction::unwatch,
@@ -650,6 +754,7 @@ dispatcher! {
             0,
             0,
             0,
+            true,
         },
     },
     server {
@@ -660,6 +765,7 @@ dispatcher! {
             0,
             0,
             0,
+            true,
         },
     }
 }

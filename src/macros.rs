@@ -9,6 +9,7 @@ macro_rules! dispatcher {
                 $key_start:expr,
                 $key_stop:expr,
                 $key_step:expr,
+                $queueable:expr,
             }),+$(,)?
         }),+$(,)?
     }=>  {
@@ -44,6 +45,10 @@ macro_rules! dispatcher {
                         $handler(conn, args).await
                     }
 
+                    fn is_queueable(&self) -> bool {
+                        $queueable
+                    }
+
                     fn get_keys<'a>(&self, args: &'a [Bytes]) -> Vec<&'a Bytes> {
                         let start = self.key_start;
                         let stop  = if self.key_stop > 0 {
@@ -58,7 +63,7 @@ macro_rules! dispatcher {
 
                         let mut result = vec![];
 
-                        for i in (start .. stop).step_by(self.key_step) {
+                        for i in (start .. stop+1).step_by(self.key_step) {
                             result.push(&args[i as usize]);
                         }
 
@@ -90,6 +95,8 @@ macro_rules! dispatcher {
         #[async_trait]
         pub trait ExecutableCommand {
             async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error>;
+
+            fn is_queueable(&self) -> bool;
 
             fn get_keys<'a>(&self, args: &'a [Bytes]) -> Vec<&'a Bytes>;
 

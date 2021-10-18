@@ -1,9 +1,10 @@
-use crate::db::Db;
+use crate::{db::Db, error::Error, value::Value};
 use bytes::Bytes;
-use std::collections::BTreeMap;
-use std::collections::HashSet;
-use std::net::SocketAddr;
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::{BTreeMap, HashSet},
+    net::SocketAddr,
+    sync::{Arc, RwLock},
+};
 
 pub struct Connections {
     connections: RwLock<BTreeMap<u128, Arc<Connection>>>,
@@ -14,6 +15,8 @@ pub struct ConnectionInfo {
     pub name: Option<String>,
     pub watch_keys: Vec<(Bytes, u128)>,
     pub tx_keys: HashSet<Bytes>,
+    pub in_transaction: bool,
+    pub commands: Option<Vec<Vec<Bytes>>>,
 }
 
 pub struct Connection {
@@ -71,6 +74,8 @@ impl ConnectionInfo {
             name: None,
             watch_keys: vec![],
             tx_keys: HashSet::new(),
+            commands: None,
+            in_transaction: false,
         }
     }
 }
@@ -84,8 +89,30 @@ impl Connection {
         self.id
     }
 
+    pub fn stop_transaction(&self) -> Result<Value, Error> {
+        let info = &mut self.info.write().unwrap();
+        if info.in_transaction {
+            let _ = info.commands.take();
+            info.in_transaction = false;
+
+            Ok(Value::Ok)
+        } else {
+            Err(Error::NotInTx)
+        }
+    }
+
+    pub fn start_transaction(&self) -> Result<Value, Error> {
+        let mut info = self.info.write().unwrap();
+        if !info.in_transaction {
+            info.in_transaction = true;
+            Ok(Value::Ok)
+        } else {
+            Err(Error::NestedTx)
+        }
+    }
+
     pub fn in_transaction(&self) -> bool {
-        false
+        self.info.read().unwrap().in_transaction
     }
 
     pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
@@ -97,14 +124,21 @@ impl Connection {
             .for_each(drop);
     }
 
-    pub fn tx_keys(&self, keys: Vec<&Bytes>) {
-        #[allow(clippy::mutable_key_type)]
-        let tx_keys = &mut self.info.write().unwrap().tx_keys;
-        keys.iter()
-            .map(|k| {
-                tx_keys.insert((*k).clone());
-            })
-            .for_each(drop);
+    pub fn did_keys_change(&self) -> bool {
+        let watch_keys = &self.info.read().unwrap().watch_keys;
+
+        for key in watch_keys.iter() {
+            if self.db.get_version(&key.0) != key.1 {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn discard_watched_keys(&self) {
+        let watch_keys = &mut self.info.write().unwrap().watch_keys;
+        watch_keys.clear();
     }
 
     pub fn get_tx_keys(&self) -> Vec<Bytes> {
@@ -113,13 +147,31 @@ impl Connection {
             .unwrap()
             .tx_keys
             .iter()
-            .map(|key| key.clone())
+            .cloned()
             .collect::<Vec<Bytes>>()
     }
 
-    pub fn discard_watched_keys(&self) {
-        let watch_keys = &mut self.info.write().unwrap().watch_keys;
-        watch_keys.clear();
+    pub fn queue_command(&self, args: &[Bytes]) {
+        let info = &mut self.info.write().unwrap();
+        let commands = info.commands.get_or_insert(vec![]);
+        commands.push(args.iter().map(|m| (*m).clone()).collect());
+    }
+
+    pub fn get_queue_commands(&self) -> Option<Vec<Vec<Bytes>>> {
+        let info = &mut self.info.write().unwrap();
+        info.watch_keys = vec![];
+        info.in_transaction = false;
+        info.commands.take()
+    }
+
+    pub fn tx_keys(&self, keys: Vec<&Bytes>) {
+        #[allow(clippy::mutable_key_type)]
+        let tx_keys = &mut self.info.write().unwrap().tx_keys;
+        keys.iter()
+            .map(|k| {
+                tx_keys.insert((*k).clone());
+            })
+            .for_each(drop);
     }
 
     pub fn destroy(self: Arc<Connection>) {
