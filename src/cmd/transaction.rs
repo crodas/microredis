@@ -1,6 +1,5 @@
 use crate::{connection::Connection, dispatcher::Dispatcher, error::Error, value::Value};
 use bytes::Bytes;
-use std::ops::Deref;
 
 pub async fn discard(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     conn.stop_transaction()
@@ -28,7 +27,6 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
         for args in commands.iter() {
             let result = match Dispatcher::new(args) {
                 Ok(handler) => handler
-                    .deref()
                     .execute(conn, args)
                     .await
                     .unwrap_or_else(|x| x.into()),
@@ -60,7 +58,6 @@ pub async fn unwatch(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 mod test {
     use crate::dispatcher::Dispatcher;
     use bytes::Bytes;
-    use std::ops::Deref;
 
     #[test]
     fn test_extract_keys() {
@@ -77,7 +74,6 @@ mod test {
         let args: Vec<Bytes> = args.iter().map(|s| Bytes::from(s.to_string())).collect();
         Dispatcher::new(&args)
             .unwrap()
-            .deref()
             .get_keys(&args)
             .iter()
             .map(|k| (*k).clone())
