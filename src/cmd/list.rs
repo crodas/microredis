@@ -69,7 +69,7 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if Instant::now() >= timeout {
+        if Instant::now() >= timeout || conn.is_executing_transaction() {
             break;
         }
 
@@ -91,7 +91,7 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if Instant::now() >= timeout {
+        if Instant::now() >= timeout || conn.is_executing_transaction() {
             break;
         }
 

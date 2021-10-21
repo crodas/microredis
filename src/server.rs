@@ -75,15 +75,6 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                         match result {
                             Ok(args) => match Dispatcher::new(&args) {
                                 Ok(handler) => {
-                                    if conn.in_transaction() && handler.is_queueable() {
-                                        conn.queue_command(&args);
-                                        conn.tx_keys(handler.get_keys(&args));
-                                        if transport.send(Value::Queued).await.is_err() {
-                                            break;
-                                        }
-                                        continue;
-                                    }
-
                                     let r = handler
                                         .execute(&conn, &args)
                                         .await

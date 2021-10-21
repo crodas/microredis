@@ -42,7 +42,13 @@ macro_rules! dispatcher {
                 #[async_trait]
                 impl ExecutableCommand for Command {
                     async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-                        $handler(conn, args).await
+                        if conn.in_transaction() && self.is_queueable() {
+                            conn.queue_command(args);
+                            conn.tx_keys(self.get_keys(args));
+                            Ok(Value::Queued)
+                        } else {
+                            $handler(conn, args).await
+                        }
                     }
 
                     fn is_queueable(&self) -> bool {

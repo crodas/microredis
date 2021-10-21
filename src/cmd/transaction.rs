@@ -19,7 +19,12 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
         return Ok(Value::Null);
     }
 
-    let keys_to_block = conn.get_tx_keys();
+    let db = conn.db();
+    let locked_keys = conn.get_tx_keys();
+
+    conn.start_executing_transaction();
+
+    db.lock_keys(&locked_keys);
 
     let mut results = vec![];
 
@@ -35,6 +40,9 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
             results.push(result);
         }
     }
+
+    db.unlock_keys(&locked_keys);
+    let _ = conn.stop_transaction();
 
     Ok(results.into())
 }
@@ -57,7 +65,92 @@ pub async fn unwatch(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 #[cfg(test)]
 mod test {
     use crate::dispatcher::Dispatcher;
+    use crate::{
+        cmd::test::{create_connection, run_command},
+        error::Error,
+        value::Value,
+    };
     use bytes::Bytes;
+
+    #[tokio::test]
+    async fn test_exec() {
+        let c = create_connection();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Queued),
+            run_command(&c, &["set", "foo", "foo"]).await
+        );
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Null,
+                Value::Ok,
+                Value::Blob("foo".into()),
+            ])),
+            run_command(&c, &["exec"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_nested_multi() {
+        let c = create_connection();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Err(Error::NestedTx), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Queued),
+            run_command(&c, &["set", "foo", "foo"]).await
+        );
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Null,
+                Value::Ok,
+                Value::Blob("foo".into()),
+            ])),
+            run_command(&c, &["exec"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_discard() {
+        let c = create_connection();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Queued),
+            run_command(&c, &["set", "foo", "foo"]).await
+        );
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["discard"]).await);
+        assert_eq!(
+            Err(Error::NotInTx),
+            run_command(&c, &["exec"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_exec_watch_changes() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["watch", "foo", "bar"]).await
+        );
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["set", "foo", "bar"]).await);
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Queued),
+            run_command(&c, &["set", "foo", "foo"]).await
+        );
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(Ok(Value::Null), run_command(&c, &["exec"]).await);
+    }
 
     #[test]
     fn test_extract_keys() {
@@ -67,6 +160,34 @@ mod test {
         assert_eq!(
             vec!["key", "key1", "key2"],
             get_keys(&["SINTERSTORE", "key", "key1", "key2"])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_exec_brpop_not_waiting() {
+        let c = create_connection();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["brpop", "foo", "1000"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Null,
+            ])),
+            run_command(&c, &["exec"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_exec_blpop_not_waiting() {
+        let c = create_connection();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["blpop", "foo", "1000"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Null,
+            ])),
+            run_command(&c, &["exec"]).await
         );
     }
 

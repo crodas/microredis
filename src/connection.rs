@@ -6,22 +6,26 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+#[derive(Debug)]
 pub struct Connections {
     connections: RwLock<BTreeMap<u128, Arc<Connection>>>,
     counter: RwLock<u128>,
 }
 
+#[derive(Debug)]
 pub struct ConnectionInfo {
     pub name: Option<String>,
     pub watch_keys: Vec<(Bytes, u128)>,
     pub tx_keys: HashSet<Bytes>,
     pub in_transaction: bool,
+    pub in_executing_transaction: bool,
     pub commands: Option<Vec<Vec<Bytes>>>,
 }
 
+#[derive(Debug)]
 pub struct Connection {
     id: u128,
-    db: Arc<Db>,
+    db: Db,
     current_db: u32,
     connections: Arc<Connections>,
     addr: SocketAddr,
@@ -47,17 +51,18 @@ impl Connections {
         addr: SocketAddr,
     ) -> Arc<Connection> {
         let mut id = self.counter.write().unwrap();
+        *id += 1;
 
         let conn = Arc::new(Connection {
             id: *id,
-            db,
+            db: db.new_db_instance(*id),
             addr,
             connections: self.clone(),
             current_db: 0,
             info: RwLock::new(ConnectionInfo::new()),
         });
+
         self.connections.write().unwrap().insert(*id, conn.clone());
-        *id += 1;
         conn
     }
 
@@ -76,6 +81,7 @@ impl ConnectionInfo {
             tx_keys: HashSet::new(),
             commands: None,
             in_transaction: false,
+            in_executing_transaction: false,
         }
     }
 }
@@ -92,7 +98,9 @@ impl Connection {
     pub fn stop_transaction(&self) -> Result<Value, Error> {
         let info = &mut self.info.write().unwrap();
         if info.in_transaction {
-            let _ = info.commands.take();
+            info.commands = None;
+            info.watch_keys.clear();
+            info.tx_keys.clear();
             info.in_transaction = false;
 
             Ok(Value::Ok)
@@ -113,6 +121,15 @@ impl Connection {
 
     pub fn in_transaction(&self) -> bool {
         self.info.read().unwrap().in_transaction
+    }
+
+    pub fn is_executing_transaction(&self) -> bool {
+        self.info.read().unwrap().in_executing_transaction
+    }
+
+    pub fn start_executing_transaction(&self) {
+        let info = &mut self.info.write().unwrap();
+        info.in_executing_transaction = true;
     }
 
     pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {

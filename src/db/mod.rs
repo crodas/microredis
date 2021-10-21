@@ -11,7 +11,8 @@ use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
     ops::AddAssign,
-    sync::{Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock},
+    thread,
 };
 use tokio::time::{Duration, Instant};
 
@@ -25,13 +26,25 @@ pub struct Db {
     ///
     /// Because all operations are always key specific, the key is used to hash
     /// and select to which HashMap the data might be stored.
-    entries: Vec<RwLock<HashMap<Bytes, Entry>>>,
+    entries: Arc<Vec<RwLock<HashMap<Bytes, Entry>>>>,
 
     /// Data structure to store all expiring keys
-    expirations: Mutex<ExpirationDb>,
+    expirations: Arc<Mutex<ExpirationDb>>,
 
     /// Number of HashMaps that are available.
     slots: usize,
+
+    // A Database is attached to a conn_id. The entries and expiration data
+    // structures are shared between all connections.
+    //
+    // This particular database instace is attached to a conn_id, used to block
+    // all keys in case of a transaction.
+    conn_id: u128,
+
+    // HashMap of all blocked keys by other connections. If a key appears in
+    // here and it is not being hold by the current connection, current
+    // connection must wait.
+    tx_key_locks: Arc<RwLock<HashMap<Bytes, u128>>>,
 }
 
 impl Db {
@@ -43,9 +56,21 @@ impl Db {
         }
 
         Self {
-            entries,
-            expirations: Mutex::new(ExpirationDb::new()),
+            entries: Arc::new(entries),
+            expirations: Arc::new(Mutex::new(ExpirationDb::new())),
+            conn_id: 0,
+            tx_key_locks: Arc::new(RwLock::new(HashMap::new())),
             slots,
+        }
+    }
+
+    pub fn new_db_instance(self: Arc<Db>, conn_id: u128) -> Db {
+        Self {
+            entries: self.entries.clone(),
+            tx_key_locks: self.tx_key_locks.clone(),
+            expirations: self.expirations.clone(),
+            conn_id,
+            slots: self.slots,
         }
     }
 
@@ -53,7 +78,61 @@ impl Db {
     fn get_slot(&self, key: &Bytes) -> usize {
         let id = (hash(key) as usize) % self.entries.len();
         trace!("selected slot {} for key {:?}", id, key);
+
+        let waiting = Duration::from_nanos(100);
+
+        while let Some(blocker) = self.tx_key_locks.read().unwrap().get(key) {
+            // Loop while the key we are trying to access is being blocked by a
+            // connection in a transaction
+            if *blocker == self.conn_id {
+                // the key is being blocked by ourself, it is safe to break the
+                // waiting loop
+                break;
+            }
+
+            thread::sleep(waiting);
+        }
+
         id
+    }
+
+    pub fn lock_keys(&self, keys: &[Bytes]) {
+        let waiting = Duration::from_nanos(100);
+        loop {
+            let mut lock = self.tx_key_locks.write().unwrap();
+            let mut i = 0;
+
+            for key in keys.iter() {
+                if let Some(blocker) = lock.get(key) {
+                    if *blocker == self.conn_id {
+                        // It is blocked by us already.
+                        continue;
+                    }
+                    // It is blocked by another tx, we need to break
+                    // and retry to gain the lock over this key
+                    break;
+                }
+                lock.insert(key.clone(), self.conn_id);
+                i += 1;
+            }
+
+            if i == keys.len() {
+                // All the involved keys are successfully being blocked
+                // exclusely.
+                break;
+            }
+
+            // We need to sleep a bit and retry.
+            drop(lock);
+            thread::sleep(waiting);
+        }
+    }
+
+    pub fn unlock_keys(&self, keys: &[Bytes]) {
+        let mut lock = self.tx_key_locks.write().unwrap();
+        for key in keys.iter() {
+            lock.remove(key);
+        }
     }
 
     pub fn incr<

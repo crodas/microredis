@@ -727,7 +727,7 @@ dispatcher! {
             0,
             0,
             0,
-            true,
+            false,
         },
         multi {
             cmd::transaction::multi,
@@ -745,7 +745,7 @@ dispatcher! {
             1,
             -1,
             1,
-            true,
+            false,
         },
         unwatch {
             cmd::transaction::unwatch,
