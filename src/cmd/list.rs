@@ -13,7 +13,7 @@ fn remove_element(
     count: usize,
     front: bool,
 ) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         key,
         |v| match v {
             Value::List(x) => {
@@ -50,7 +50,11 @@ fn remove_element(
             _ => Err(Error::WrongType),
         },
         || Ok(Value::Null),
-    )
+    )?;
+
+    conn.db().bump_version(key);
+
+    Ok(result)
 }
 
 pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -65,7 +69,7 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if Instant::now() >= timeout {
+        if Instant::now() >= timeout || conn.is_executing_transaction() {
             break;
         }
 
@@ -87,7 +91,7 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if Instant::now() >= timeout {
+        if Instant::now() >= timeout || conn.is_executing_transaction() {
             break;
         }
 
@@ -127,7 +131,7 @@ pub async fn linsert(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
         return Err(Error::Syntax);
     };
 
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::List(x) => {
@@ -161,7 +165,11 @@ pub async fn linsert(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -192,7 +200,7 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         return Err(Error::Syntax);
     };
 
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::List(source) => conn.db().get_map_or(
@@ -240,7 +248,11 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Ok(Value::Null),
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -330,7 +342,7 @@ pub async fn lpos(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let is_push_x = check_arg!(args, 0, "LPUSHX");
 
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::List(x) => {
@@ -356,7 +368,11 @@ pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -391,7 +407,7 @@ pub async fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::List(x) => {
@@ -434,11 +450,15 @@ pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::List(x) => {
@@ -451,7 +471,7 @@ pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
                 if let Some(x) = x.get_mut(index as usize) {
                     *x = checksum::Value::new(args[3].clone());
-                    Ok(Value::OK)
+                    Ok(Value::Ok)
                 } else {
                     Err(Error::OutOfRange)
                 }
@@ -459,11 +479,15 @@ pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Err(Error::NotFound),
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn ltrim(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::List(x) => {
@@ -486,12 +510,16 @@ pub async fn ltrim(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     retain
                 });
 
-                Ok(Value::OK)
+                Ok(Value::Ok)
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(Value::OK),
-    )
+        || Ok(Value::Ok),
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -521,7 +549,7 @@ pub async fn rpoplpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
 pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let is_push_x = check_arg!(args, 0, "RPUSHX");
 
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::List(x) => {
@@ -547,7 +575,11 @@ pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -1210,17 +1242,17 @@ mod test {
         );
 
         assert_eq!(
-            Ok(Value::OK),
+            Ok(Value::Ok),
             run_command(&c, &["lset", "foo", "-1", "6"]).await,
         );
 
         assert_eq!(
-            Ok(Value::OK),
+            Ok(Value::Ok),
             run_command(&c, &["lset", "foo", "-2", "7"]).await,
         );
 
         assert_eq!(
-            Ok(Value::OK),
+            Ok(Value::Ok),
             run_command(&c, &["lset", "foo", "0", "8"]).await,
         );
 
@@ -1265,7 +1297,7 @@ mod test {
         );
 
         assert_eq!(
-            Ok(Value::OK),
+            Ok(Value::Ok),
             run_command(&c, &["ltrim", "foo", "1", "-2"]).await
         );
 

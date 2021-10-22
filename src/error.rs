@@ -10,6 +10,8 @@ pub enum Error {
     OutOfRange,
     Syntax,
     NotANumber,
+    NotInTx,
+    NestedTx,
     WrongType,
 }
 
@@ -17,6 +19,8 @@ impl From<Error> for Value {
     fn from(value: Error) -> Value {
         let err_type = match value {
             Error::WrongType => "WRONGTYPE",
+            Error::NestedTx => "ERR MULTI",
+            Error::NotInTx => "ERR EXEC",
             _ => "ERR",
         };
 
@@ -24,10 +28,12 @@ impl From<Error> for Value {
             Error::CommandNotFound(x) => format!("unknown command `{}`", x),
             Error::InvalidArgsCount(x) => format!("wrong number of arguments for '{}' command", x),
             Error::Protocol(x, y) => format!("Protocol error: expected '{}', got '{}'", x, y),
+            Error::NotInTx => " without MULTI".to_owned(),
             Error::NotANumber => "value is not an integer or out of range".to_owned(),
             Error::OutOfRange => "index out of range".to_owned(),
             Error::Syntax => "syntax error".to_owned(),
             Error::NotFound => "no such key".to_owned(),
+            Error::NestedTx => "calls can not be nested".to_owned(),
             Error::WrongArgument(x, y) => format!(
                 "Unknown subcommand or wrong number of arguments for '{}'. Try {} HELP.",
                 y, x

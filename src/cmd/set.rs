@@ -62,7 +62,7 @@ where
 }
 
 pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::Set(x) => {
@@ -95,7 +95,11 @@ pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
             Ok(len.into())
         },
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn scard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -212,7 +216,7 @@ pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 }
 
 pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::Set(set1) => {
@@ -247,12 +251,17 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+    conn.db().bump_version(&args[3]);
+
+    Ok(result)
 }
 
 pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let rand = srandmember(conn, args).await?;
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::Set(x) => {
@@ -275,7 +284,11 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -312,7 +325,7 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 }
 
 pub async fn srem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::Set(x) => {
@@ -330,7 +343,11 @@ pub async fn srem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn sunion(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {

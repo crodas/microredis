@@ -11,7 +11,7 @@ use std::{
 };
 
 pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::Hash(h) => {
@@ -29,7 +29,11 @@ pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -88,7 +92,7 @@ pub async fn hincrby<
     conn: &Connection,
     args: &[Bytes],
 ) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::Hash(h) => {
@@ -112,7 +116,11 @@ pub async fn hincrby<
             conn.db().set(&args[1], h.into(), None);
             Ok(incr_by.into())
         },
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -241,7 +249,7 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if args.len() % 2 == 1 {
         return Err(Error::InvalidArgsCount("hset".to_owned()));
     }
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::Hash(h) => {
@@ -266,11 +274,15 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
-    )
+    )?;
+
+    conn.db().bump_version(&args[1]);
+
+    Ok(result)
 }
 
 pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().get_map_or(
+    let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::Hash(h) => {
@@ -295,7 +307,13 @@ pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
-    )
+    )?;
+
+    if result == Value::Integer(1) {
+        conn.db().bump_version(&args[1]);
+    }
+
+    Ok(result)
 }
 
 pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {

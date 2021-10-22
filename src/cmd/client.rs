@@ -30,7 +30,7 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         "setname" => {
             let name = unsafe { std::str::from_utf8_unchecked(&args[2]) }.to_string();
             conn.set_name(name);
-            Ok(Value::OK)
+            Ok(Value::Ok)
         }
         _ => Err(Error::WrongArgument(
             "client".to_owned(),

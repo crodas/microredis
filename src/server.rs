@@ -3,7 +3,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use futures::SinkExt;
 use log::{info, trace, warn};
 use redis_zero_protocol_parser::{parse_server, Error as RedisError};
-use std::{error::Error, io, ops::Deref, sync::Arc};
+use std::{error::Error, io, sync::Arc};
 use tokio::{
     net::TcpListener,
     time::{sleep, Duration},
@@ -76,7 +76,6 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                             Ok(args) => match Dispatcher::new(&args) {
                                 Ok(handler) => {
                                     let r = handler
-                                        .deref()
                                         .execute(&conn, &args)
                                         .await
                                         .unwrap_or_else(|x| x.into());
