@@ -95,8 +95,9 @@ macro_rules! dispatcher {
                 }
             }
         )+)+
-        use std::ops::Deref;
+
         use async_trait::async_trait;
+        use std::ops::Deref;
 
         #[async_trait]
         pub trait ExecutableCommand {
@@ -122,9 +123,9 @@ macro_rules! dispatcher {
 
         impl Dispatcher {
             pub fn new(args: &[Bytes]) -> Result<Self, Error> {
-                let command = unsafe { std::str::from_utf8_unchecked(&args[0]) };
+                let command = String::from_utf8_lossy(&args[0]).to_lowercase();
 
-                let command = match command.to_lowercase().as_str() {
+                let command = match command.as_str() {
                 $($(
                     stringify!($command) => Ok(Self::$command($command::Command::new())),
                 )+)+
@@ -193,8 +194,7 @@ macro_rules! check_arg {
     {$args: tt, $pos: tt, $command: tt} => {{
         match $args.get($pos) {
             Some(bytes) => {
-                let command = unsafe { std::str::from_utf8_unchecked(&bytes) };
-                command.to_uppercase() == $command
+                String::from_utf8_lossy(&bytes).to_uppercase() == $command
             },
             None => false,
         }

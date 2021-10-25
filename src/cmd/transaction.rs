@@ -127,10 +127,7 @@ mod test {
         );
         assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
         assert_eq!(Ok(Value::Ok), run_command(&c, &["discard"]).await);
-        assert_eq!(
-            Err(Error::NotInTx),
-            run_command(&c, &["exec"]).await
-        );
+        assert_eq!(Err(Error::NotInTx), run_command(&c, &["exec"]).await);
     }
 
     #[tokio::test]
@@ -168,11 +165,12 @@ mod test {
         let c = create_connection();
 
         assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
-        assert_eq!(Ok(Value::Queued), run_command(&c, &["brpop", "foo", "1000"]).await);
         assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Null,
-            ])),
+            Ok(Value::Queued),
+            run_command(&c, &["brpop", "foo", "1000"]).await
+        );
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Null,])),
             run_command(&c, &["exec"]).await
         );
     }
@@ -182,11 +180,12 @@ mod test {
         let c = create_connection();
 
         assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
-        assert_eq!(Ok(Value::Queued), run_command(&c, &["blpop", "foo", "1000"]).await);
         assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Null,
-            ])),
+            Ok(Value::Queued),
+            run_command(&c, &["blpop", "foo", "1000"]).await
+        );
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Null,])),
             run_command(&c, &["exec"]).await
         );
     }

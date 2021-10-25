@@ -86,7 +86,7 @@ impl TryFrom<&Value> for f64 {
     }
 }
 pub fn bytes_to_number<T: FromStr>(bytes: &Bytes) -> Result<T, Error> {
-    let x = unsafe { std::str::from_utf8_unchecked(bytes) };
+    let x = String::from_utf8_lossy(bytes);
     x.parse::<T>().map_err(|_| Error::NotANumber)
 }
 

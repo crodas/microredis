@@ -399,7 +399,7 @@ mod test {
         let r = run_command(&c, &["hrandfield", "foo"]).await;
         match r {
             Ok(Value::Blob(x)) => {
-                let x = unsafe { std::str::from_utf8_unchecked(&x) };
+                let x = String::from_utf8_lossy(&x);
                 assert!(x == "f1".to_owned() || x == "f2".to_owned() || x == "f3".to_owned());
             }
             _ => assert!(false),

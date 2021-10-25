@@ -3,7 +3,7 @@ use bytes::Bytes;
 use std::sync::Arc;
 
 pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let sub = unsafe { std::str::from_utf8_unchecked(&args[1]) }.to_string();
+    let sub = String::from_utf8_lossy(&args[1]);
 
     let expected = match sub.to_lowercase().as_str() {
         "setname" => 3,
@@ -28,7 +28,7 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             Ok(v.into())
         }
         "setname" => {
-            let name = unsafe { std::str::from_utf8_unchecked(&args[2]) }.to_string();
+            let name = String::from_utf8_lossy(&args[2]).to_string();
             conn.set_name(name);
             Ok(Value::Ok)
         }
