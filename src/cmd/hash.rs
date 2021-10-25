@@ -190,14 +190,11 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
         }
         _ => return Err(Error::InvalidArgsCount("hrandfield".to_owned())),
     };
-    let (count, single, repeat) = if let Some(count) = count {
-        if count > 0 {
-            (count, false, 1)
-        } else {
-            (count.abs(), false, count.abs())
-        }
-    } else {
-        (1, true, 1)
+
+    let (count, single, repeat) = match count {
+        Some(count) if count > 0 => (count, false, 1),
+        Some(count) => (count.abs(), false, count.abs()),
+        _ => (1, true, 1),
     };
 
     conn.db().get_map_or(
