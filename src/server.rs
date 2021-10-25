@@ -64,16 +64,22 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
-                let conn = all_connections.new_connection(db.clone(), addr);
+                let (mut pubsub, conn) = all_connections.new_connection(db.clone(), addr);
 
                 tokio::spawn(async move {
                     let mut transport = Framed::new(socket, RedisParser);
 
                     trace!("New connection {}", conn.id());
 
-                    while let Some(result) = transport.next().await {
-                        match result {
-                            Ok(args) => match Dispatcher::new(&args) {
+                    loop {
+                        tokio::select! {
+                            Some(msg) = pubsub.recv() => {
+                                if transport.send(msg).await.is_err() {
+                                    break;
+                                }
+                            }
+                            result = transport.next() => match result {
+                            Some(Ok(args)) => match Dispatcher::new(&args) {
                                 Ok(handler) => {
                                     let r = handler
                                         .execute(&conn, &args)
@@ -89,9 +95,11 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                             },
-                            Err(e) => {
+                            Some(Err(e)) => {
                                 warn!("error on decoding from socket; error = {:?}", e);
                                 break;
+                            },
+                            None => break,
                             }
                         }
                     }

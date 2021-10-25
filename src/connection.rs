@@ -6,6 +6,7 @@ use std::{
     net::SocketAddr,
     sync::Arc,
 };
+use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub struct Connections {
@@ -31,6 +32,7 @@ pub struct Connection {
     connections: Arc<Connections>,
     addr: SocketAddr,
     info: RwLock<ConnectionInfo>,
+    pubsub_sender: mpsc::UnboundedSender<Value>,
 }
 
 impl Connections {
@@ -50,9 +52,11 @@ impl Connections {
         self: &Arc<Connections>,
         db: Arc<Db>,
         addr: SocketAddr,
-    ) -> Arc<Connection> {
+    ) -> (mpsc::UnboundedReceiver<Value>, Arc<Connection>) {
         let mut id = self.counter.write();
         *id += 1;
+
+        let (pubsub_sender, pubsub_receiver) = mpsc::unbounded_channel();
 
         let conn = Arc::new(Connection {
             id: *id,
@@ -61,10 +65,11 @@ impl Connections {
             connections: self.clone(),
             current_db: 0,
             info: RwLock::new(ConnectionInfo::new()),
+            pubsub_sender,
         });
 
         self.connections.write().insert(*id, conn.clone());
-        conn
+        (pubsub_receiver, conn)
     }
 
     pub fn iter(&self, f: &mut dyn FnMut(Arc<Connection>)) {
@@ -90,6 +95,10 @@ impl ConnectionInfo {
 impl Connection {
     pub fn db(&self) -> &Db {
         &self.db
+    }
+
+    pub fn get_pubsub_sender(&self) -> mpsc::UnboundedSender<Value> {
+        self.pubsub_sender.clone()
     }
 
     pub fn id(&self) -> u128 {

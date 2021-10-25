@@ -1,7 +1,7 @@
 mod entry;
 mod expiration;
 
-use crate::{error::Error, value::Value};
+use crate::{error::Error, pubsub::Pubsub, value::Value};
 use bytes::Bytes;
 use entry::{new_version, Entry};
 use expiration::ExpirationDb;
@@ -46,6 +46,8 @@ pub struct Db {
     // here and it is not being hold by the current connection, current
     // connection must wait.
     tx_key_locks: Arc<RwLock<HashMap<Bytes, u128>>>,
+
+    pubsub: Arc<Pubsub>,
 }
 
 impl Db {
@@ -61,6 +63,7 @@ impl Db {
             expirations: Arc::new(Mutex::new(ExpirationDb::new())),
             conn_id: 0,
             tx_key_locks: Arc::new(RwLock::new(HashMap::new())),
+            pubsub: Arc::new(Pubsub::new()),
             slots,
         }
     }
@@ -70,9 +73,14 @@ impl Db {
             entries: self.entries.clone(),
             tx_key_locks: self.tx_key_locks.clone(),
             expirations: self.expirations.clone(),
+            pubsub: self.pubsub.clone(),
             conn_id,
             slots: self.slots,
         }
+    }
+
+    pub fn get_pubsub(&self) -> Arc<Pubsub> {
+        self.pubsub.clone()
     }
 
     #[inline]

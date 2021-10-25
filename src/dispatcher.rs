@@ -757,6 +757,26 @@ dispatcher! {
             true,
         },
     },
+    pubsub {
+        publish {
+            cmd::pubsub::publish,
+            [""],
+            2,
+            0,
+            0,
+            0,
+            true,
+        },
+        subscribe {
+            cmd::pubsub::subscribe,
+            [""],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
+    },
     server {
         time {
             do_time,
