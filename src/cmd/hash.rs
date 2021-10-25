@@ -146,7 +146,7 @@ pub async fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Hash(h) => Ok((h.read().len()).into()),
+            Value::Hash(h) => Ok(h.read().len().into()),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
@@ -318,7 +318,7 @@ pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
         &args[1],
         |v| match v {
             Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
-                (v.len()).into()
+                v.len().into()
             } else {
                 0.into()
             }),

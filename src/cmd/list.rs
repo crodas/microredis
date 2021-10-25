@@ -157,7 +157,7 @@ pub async fn linsert(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
                 }
 
                 if found {
-                    Ok((x.len()).into())
+                    Ok(x.len().into())
                 } else {
                     Ok((-1).into())
                 }
@@ -176,7 +176,7 @@ pub async fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::List(x) => Ok((x.read().len()).into()),
+            Value::List(x) => Ok(x.read().len().into()),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
@@ -557,7 +557,7 @@ pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 for val in args.iter().skip(2) {
                     x.push_back(checksum::Value::new(val.clone()));
                 }
-                Ok((x.len()).into())
+                Ok(x.len().into())
             }
             _ => Err(Error::WrongType),
         },

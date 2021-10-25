@@ -64,8 +64,8 @@ pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 pub async fn strlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match conn.db().get(&args[1]) {
-        Value::Blob(x) => Ok((x.len()).into()),
-        Value::String(x) => Ok((x.len()).into()),
+        Value::Blob(x) => Ok(x.len().into()),
+        Value::String(x) => Ok(x.len().into()),
         Value::Null => Ok(0.into()),
         _ => Ok(Error::WrongType.into()),
     }
