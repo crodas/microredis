@@ -119,6 +119,12 @@ value_try_from!(i32, Value::Integer);
 value_try_from!(i64, Value::Integer);
 value_try_from!(i128, Value::BigInteger);
 
+impl From<usize> for Value {
+    fn from(value: usize) -> Value {
+        Value::Integer(value as i64)
+    }
+}
+
 impl From<&str> for Value {
     fn from(value: &str) -> Value {
         Value::Blob(Bytes::copy_from_slice(value.as_bytes()))

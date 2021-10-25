@@ -146,7 +146,7 @@ pub async fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Hash(h) => Ok((h.read().len() as i64).into()),
+            Value::Hash(h) => Ok((h.read().len()).into()),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
@@ -270,7 +270,7 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             for i in (2..args.len()).step_by(2) {
                 h.insert(args[i].clone(), args[i + 1].clone());
             }
-            let len = h.len() as i64;
+            let len = h.len();
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
@@ -303,7 +303,7 @@ pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             for i in (2..args.len()).step_by(2) {
                 h.insert(args[i].clone(), args[i + 1].clone());
             }
-            let len = h.len() as i64;
+            let len = h.len();
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
@@ -321,7 +321,7 @@ pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
         &args[1],
         |v| match v {
             Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
-                (v.len() as i64).into()
+                (v.len()).into()
             } else {
                 0.into()
             }),
