@@ -86,7 +86,7 @@ impl TryFrom<&Value> for f64 {
     }
 }
 pub fn bytes_to_number<T: FromStr>(bytes: &Bytes) -> Result<T, Error> {
-    let x = unsafe { std::str::from_utf8_unchecked(bytes) };
+    let x = String::from_utf8_lossy(bytes);
     x.parse::<T>().map_err(|_| Error::NotANumber)
 }
 
@@ -118,6 +118,12 @@ value_try_from!(f64, Value::Float);
 value_try_from!(i32, Value::Integer);
 value_try_from!(i64, Value::Integer);
 value_try_from!(i128, Value::BigInteger);
+
+impl From<usize> for Value {
+    fn from(value: usize) -> Value {
+        Value::Integer(value as i64)
+    }
+}
 
 impl From<&str> for Value {
     fn from(value: &str) -> Value {

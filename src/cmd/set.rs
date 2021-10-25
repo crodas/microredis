@@ -106,7 +106,7 @@ pub async fn scard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Set(x) => Ok((x.read().len() as i64).into()),
+            Value::Set(x) => Ok(x.read().len().into()),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
@@ -150,7 +150,7 @@ pub async fn sinter(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 pub async fn sintercard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Ok(Value::Array(x)) = sinter(conn, args).await {
-        Ok((x.len() as i64).into())
+        Ok(x.len().into())
     } else {
         Ok(0.into())
     }

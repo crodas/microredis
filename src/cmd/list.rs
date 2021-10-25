@@ -157,7 +157,7 @@ pub async fn linsert(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
                 }
 
                 if found {
-                    Ok((x.len() as i64).into())
+                    Ok(x.len().into())
                 } else {
                     Ok((-1).into())
                 }
@@ -176,7 +176,7 @@ pub async fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::List(x) => Ok((x.read().len() as i64).into()),
+            Value::List(x) => Ok(x.read().len().into()),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
@@ -302,18 +302,18 @@ pub async fn lpos(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     if *val == element {
                         // Match!
                         if let Some(count) = count {
-                            ret.push((i as i64).into());
+                            ret.push(i.into());
                             if ret.len() > count {
                                 return Ok(ret.into());
                             }
                         } else if let Some(rank) = rank {
-                            ret.push((i as i64).into());
+                            ret.push(i.into());
                             if ret.len() == rank {
                                 return Ok(ret[rank - 1].clone());
                             }
                         } else {
                             // return first match!
-                            return Ok((i as i64).into());
+                            return Ok(i.into());
                         }
                     }
                     if (i as i64) == max_len {
@@ -350,7 +350,7 @@ pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 for val in args.iter().skip(2) {
                     x.push_front(checksum::Value::new(val.clone()));
                 }
-                Ok((x.len() as i64).into())
+                Ok(x.len().into())
             }
             _ => Err(Error::WrongType),
         },
@@ -364,7 +364,7 @@ pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 h.push_front(checksum::Value::new(val.clone()));
             }
 
-            let len = h.len() as i64;
+            let len = h.len();
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
@@ -557,7 +557,7 @@ pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 for val in args.iter().skip(2) {
                     x.push_back(checksum::Value::new(val.clone()));
                 }
-                Ok((x.len() as i64).into())
+                Ok(x.len().into())
             }
             _ => Err(Error::WrongType),
         },
@@ -571,7 +571,7 @@ pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 h.push_back(checksum::Value::new(val.clone()));
             }
 
-            let len = h.len() as i64;
+            let len = h.len();
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },

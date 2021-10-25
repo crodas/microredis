@@ -146,7 +146,7 @@ pub async fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Hash(h) => Ok((h.read().len() as i64).into()),
+            Value::Hash(h) => Ok(h.read().len().into()),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
@@ -190,14 +190,11 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
         }
         _ => return Err(Error::InvalidArgsCount("hrandfield".to_owned())),
     };
-    let (count, single, repeat) = if let Some(count) = count {
-        if count > 0 {
-            (count, false, 1)
-        } else {
-            (count.abs(), false, count.abs())
-        }
-    } else {
-        (1, true, 1)
+
+    let (count, single, repeat) = match count {
+        Some(count) if count > 0 => (count, false, 1),
+        Some(count) => (count.abs(), false, count.abs()),
+        _ => (1, true, 1),
     };
 
     conn.db().get_map_or(
@@ -270,7 +267,7 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             for i in (2..args.len()).step_by(2) {
                 h.insert(args[i].clone(), args[i + 1].clone());
             }
-            let len = h.len() as i64;
+            let len = h.len();
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
@@ -303,7 +300,7 @@ pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             for i in (2..args.len()).step_by(2) {
                 h.insert(args[i].clone(), args[i + 1].clone());
             }
-            let len = h.len() as i64;
+            let len = h.len();
             conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
@@ -321,7 +318,7 @@ pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
         &args[1],
         |v| match v {
             Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
-                (v.len() as i64).into()
+                v.len().into()
             } else {
                 0.into()
             }),
@@ -399,7 +396,7 @@ mod test {
         let r = run_command(&c, &["hrandfield", "foo"]).await;
         match r {
             Ok(Value::Blob(x)) => {
-                let x = unsafe { std::str::from_utf8_unchecked(&x) };
+                let x = String::from_utf8_lossy(&x);
                 assert!(x == "f1".to_owned() || x == "f2".to_owned() || x == "f3".to_owned());
             }
             _ => assert!(false),

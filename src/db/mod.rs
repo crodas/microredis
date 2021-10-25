@@ -194,21 +194,19 @@ impl Db {
     }
 
     pub fn del(&self, keys: &[Bytes]) -> Value {
-        let mut deleted = 0;
         let mut expirations = self.expirations.lock().unwrap();
-        keys.iter()
-            .map(|key| {
-                let mut entries = self.entries[self.get_slot(key)].write().unwrap();
-                if let Some(entry) = entries.remove(key) {
-                    expirations.remove(key);
-                    if entry.is_valid() {
-                        deleted += 1;
-                    }
-                }
-            })
-            .for_each(drop);
 
-        deleted.into()
+        keys.iter()
+            .filter_map(|key| {
+                expirations.remove(key);
+                self.entries[self.get_slot(key)]
+                    .write()
+                    .unwrap()
+                    .remove(key)
+            })
+            .filter(|key| key.is_valid())
+            .count()
+            .into()
     }
 
     pub fn exists(&self, keys: &[Bytes]) -> Value {
