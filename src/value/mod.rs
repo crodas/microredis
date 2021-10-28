@@ -1,3 +1,6 @@
+//! # Redis Value
+//!
+//! All redis internal data structures and values are absracted in this mod.
 pub mod checksum;
 pub mod locked;
 
@@ -10,21 +13,38 @@ use std::{
     str::FromStr,
 };
 
+/// Redis Value.
+///
+/// This enum represents all data structures that are supported by Redis
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
+    /// Hash. This type cannot be serialized
     Hash(locked::Value<HashMap<Bytes, Bytes>>),
+    /// List. This type cannot be sreialized
     List(locked::Value<VecDeque<checksum::Value>>),
+    /// Set. This type cannot be serialized
     Set(locked::Value<HashSet<Bytes>>),
+    /// Vector/Array of values
     Array(Vec<Value>),
+    /// Bytes/Strings/Binary data
     Blob(Bytes),
+    /// String. This type does not allowe new lines
     String(String),
+    /// An error
     Err(String, String),
+    /// Integer
     Integer(i64),
+    /// Boolean
     Boolean(bool),
+    /// Float number
     Float(f64),
+    /// Big number
     BigInteger(i128),
+    /// Null
     Null,
+    /// The command has been Queued
     Queued,
+    /// Ok
     Ok,
 }
 
@@ -85,6 +105,10 @@ impl TryFrom<&Value> for f64 {
         }
     }
 }
+
+/// Tries to converts bytes data into a number
+///
+/// If the convertion fails a Error::NotANumber error is returned.
 pub fn bytes_to_number<T: FromStr>(bytes: &Bytes) -> Result<T, Error> {
     let x = String::from_utf8_lossy(bytes);
     x.parse::<T>().map_err(|_| Error::NotANumber)

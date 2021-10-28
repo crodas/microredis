@@ -1,3 +1,6 @@
+//! # Pubsub server
+//!
+//! There is one instance of this mod active per server instance.
 use crate::{connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
 use glob::Pattern;
@@ -8,6 +11,7 @@ use tokio::sync::mpsc;
 type Sender = mpsc::UnboundedSender<Value>;
 type Subscription = HashMap<u128, Sender>;
 
+/// Pubsub global server structure
 #[derive(Debug)]
 pub struct Pubsub {
     subscriptions: RwLock<HashMap<Bytes, Subscription>>,
@@ -16,6 +20,7 @@ pub struct Pubsub {
 }
 
 impl Pubsub {
+    /// Creates a new Pubsub instance
     pub fn new() -> Self {
         Self {
             subscriptions: RwLock::new(HashMap::new()),
@@ -24,14 +29,17 @@ impl Pubsub {
         }
     }
 
+    /// Returns a list of all channels with subscriptions
     pub fn channels(&self) -> Vec<Bytes> {
         self.subscriptions.read().keys().cloned().collect()
     }
 
+    /// Returns numbers of pattern-subscriptions
     pub fn get_number_of_psubscribers(&self) -> i64 {
         *(self.number_of_psubscriptions.read())
     }
 
+    /// Returns numbers of subscribed for given channels
     pub fn get_number_of_subscribers(&self, channels: &[Bytes]) -> Vec<(Bytes, usize)> {
         let subscribers = self.subscriptions.read();
         let mut ret = vec![];
@@ -46,6 +54,7 @@ impl Pubsub {
         ret
     }
 
+    /// Subscribe to patterns
     pub fn psubscribe(&self, channels: &[Bytes], conn: &Connection) -> Result<(), Error> {
         let mut subscriptions = self.psubscriptions.write();
 
@@ -80,6 +89,8 @@ impl Pubsub {
         Ok(())
     }
 
+    /// Publishes a new message. This broadcast to channels subscribers and pattern-subscription
+    /// that matches the published channel.
     pub async fn publish(&self, channel: &Bytes, message: &Bytes) -> u32 {
         let mut i = 0;
 
@@ -115,6 +126,7 @@ impl Pubsub {
         i
     }
 
+    /// Unsubscribe from a pattern subscription
     pub fn punsubscribe(&self, channels: &[Pattern], conn: &Connection) -> u32 {
         let mut all_subs = self.psubscriptions.write();
         let conn_id = conn.id();
@@ -141,6 +153,7 @@ impl Pubsub {
         removed
     }
 
+    /// Subscribe connection to channels
     pub fn subscribe(&self, channels: &[Bytes], conn: &Connection) {
         let mut subscriptions = self.subscriptions.write();
 
@@ -167,6 +180,7 @@ impl Pubsub {
             .for_each(drop);
     }
 
+    /// Removes connection subscription to channels.
     pub fn unsubscribe(&self, channels: &[Bytes], conn: &Connection) -> u32 {
         let mut all_subs = self.subscriptions.write();
         let conn_id = conn.id();

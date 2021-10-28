@@ -1,10 +1,11 @@
+//! # All commands handlers
 pub mod client;
 pub mod hash;
 pub mod key;
 pub mod list;
+pub mod metrics;
 pub mod pubsub;
 pub mod set;
-pub mod metrics;
 pub mod string;
 pub mod transaction;
 

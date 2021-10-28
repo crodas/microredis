@@ -1,3 +1,7 @@
+//! # Connections object
+//!
+//! This mod keeps track of all active conections. There is one instance of this mod per running
+//! server.
 use super::{pubsub_connection::PubsubClient, pubsub_server::Pubsub, Connection, ConnectionInfo};
 use crate::{db::Db, dispatcher::Dispatcher, value::Value};
 use parking_lot::RwLock;
@@ -5,6 +9,7 @@ use std::{collections::BTreeMap, net::SocketAddr, sync::Arc};
 
 use tokio::sync::mpsc;
 
+/// Connections struct
 #[derive(Debug)]
 pub struct Connections {
     connections: RwLock<BTreeMap<u128, Arc<Connection>>>,
@@ -15,6 +20,7 @@ pub struct Connections {
 }
 
 impl Connections {
+    /// Returns a new instance of connections.
     pub fn new(db: Arc<Db>) -> Self {
         Self {
             counter: RwLock::new(0),
@@ -25,24 +31,29 @@ impl Connections {
         }
     }
 
+    /// Returns the database
     #[allow(dead_code)]
     pub fn db(&self) -> Arc<Db> {
         self.db.clone()
     }
 
+    /// Returns the dispatcher instance
     pub fn get_dispatcher(&self) -> Arc<Dispatcher> {
         self.dispatcher.clone()
     }
 
+    /// Returns the pubsub server instance
     pub fn pubsub(&self) -> Arc<Pubsub> {
         self.pubsub.clone()
     }
 
+    /// Removes a connection from the connections
     pub fn remove(self: Arc<Connections>, conn: Arc<Connection>) {
         let id = conn.id();
         self.connections.write().remove(&id);
     }
 
+    /// Creates a new connection
     pub fn new_connection(
         self: &Arc<Connections>,
         db: Arc<Db>,
@@ -67,6 +78,7 @@ impl Connections {
         (pubsub_receiver, conn)
     }
 
+    /// Iterates over all connections
     pub fn iter(&self, f: &mut dyn FnMut(Arc<Connection>)) {
         for (_, value) in self.connections.read().iter() {
             f(value.clone())

@@ -1,11 +1,14 @@
+//! # Pubsub command handlers
 use crate::{check_arg, connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
 use glob::Pattern;
 
+/// Posts a message to the given channel.
 pub async fn publish(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.pubsub().publish(&args[1], &args[2]).await.into())
 }
 
+/// All pubsub commands
 pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
         "channels" => Ok(Value::Array(
@@ -40,6 +43,7 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     }
 }
 
+/// Subscribes the client to the specified channels.
 pub async fn subscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let pubsub = conn.pubsub();
 
@@ -54,6 +58,7 @@ pub async fn subscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
     conn.start_pubsub()
 }
 
+/// Unsubscribes the client from the given patterns, or from all of them if none is given.
 pub async fn punsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let channels = if args.len() == 1 {
         conn.pubsub_client().psubscriptions()
@@ -70,6 +75,7 @@ pub async fn punsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Er
     Ok(conn.pubsub_client().punsubscribe(&channels, conn).into())
 }
 
+/// Unsubscribes the client from the given channels, or from all of them if none is given.
 pub async fn unsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let channels = if args.len() == 1 {
         conn.pubsub_client().subscriptions()

@@ -1,3 +1,4 @@
+//! # Transaction command handlers
 use crate::{
     connection::{Connection, ConnectionStatus},
     error::Error,
@@ -5,14 +6,25 @@ use crate::{
 };
 use bytes::Bytes;
 
+/// Flushes all previously queued commands in a transaction and restores the connection state to
+/// normal.
+///
+/// If WATCH was used, DISCARD unwatches all keys watched by the connection
 pub async fn discard(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     conn.stop_transaction()
 }
 
+/// Marks the start of a transaction block. Subsequent commands will be queued for atomic execution
+/// using EXEC.
 pub async fn multi(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     conn.start_transaction()
 }
 
+/// Executes all previously queued commands in a transaction and restores the connection state to
+/// normal.
+///
+/// When using WATCH, EXEC will execute commands only if the watched keys were not modified,
+/// allowing for a check-and-set mechanism.
 pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     if conn.status() != ConnectionStatus::Multi {
         return Err(Error::NotInTx);
@@ -49,6 +61,7 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     Ok(results.into())
 }
 
+/// Marks the given keys to be watched for conditional execution of a transaction.
 pub async fn watch(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.watch_key(
         &(&args[1..])
@@ -59,6 +72,9 @@ pub async fn watch(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(Value::Ok)
 }
 
+/// Flushes all the previously watched keys for a transaction.
+///
+/// If you call EXEC or DISCARD, there's no need to manually call UNWATCH.
 pub async fn unwatch(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     conn.discard_watched_keys();
     Ok(Value::Ok)

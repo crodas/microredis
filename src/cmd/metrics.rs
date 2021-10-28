@@ -1,6 +1,10 @@
+//! # Metrics command handlers
 use crate::{connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
 
+/// Dumps metrics from commands. If no argument is passed all commands' metrics are dump.
+///
+/// The metrics are serialized as JSON.
 pub async fn metrics(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let dispatcher = conn.all_connections().get_dispatcher();
     let mut result: Vec<Value> = vec![];

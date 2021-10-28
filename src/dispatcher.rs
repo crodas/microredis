@@ -1,3 +1,10 @@
+//! # Dispatcher
+//!
+//! Here is where every command is defined. Each command has some definition and a handler. Their
+//! handler are rust functions.
+//!
+//! Each command is defined with the dispatcher macro, which generates efficient and developer
+//! friendly code.
 use crate::{
     cmd,
     connection::{Connection, ConnectionStatus},
@@ -10,6 +17,7 @@ use std::convert::TryInto;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+/// Returns the server time
 async fn do_time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");

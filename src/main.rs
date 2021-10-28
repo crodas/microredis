@@ -1,12 +1,4 @@
-mod cmd;
-mod connection;
-mod db;
-mod dispatcher;
-mod error;
-mod macros;
-mod server;
-mod value;
-
+use microredis::server;
 use std::{env, error::Error};
 
 #[tokio::main]
