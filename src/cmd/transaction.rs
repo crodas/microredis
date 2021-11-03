@@ -1,4 +1,9 @@
-use crate::{connection::Connection, dispatcher::Dispatcher, error::Error, value::Value};
+use crate::{
+    connection::{Connection, ConnectionStatus},
+    dispatcher::Dispatcher,
+    error::Error,
+    value::Value,
+};
 use bytes::Bytes;
 
 pub async fn discard(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
@@ -10,7 +15,7 @@ pub async fn multi(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 }
 
 pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
-    if !conn.in_transaction() {
+    if conn.status() != ConnectionStatus::Multi {
         return Err(Error::NotInTx);
     }
 
@@ -21,8 +26,6 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 
     let db = conn.db();
     let locked_keys = conn.get_tx_keys();
-
-    conn.start_executing_transaction();
 
     db.lock_keys(&locked_keys);
 

@@ -1,4 +1,10 @@
-use crate::{cmd, connection::Connection, dispatcher, error::Error, value::Value};
+use crate::{
+    cmd,
+    connection::{Connection, ConnectionStatus},
+    dispatcher,
+    error::Error,
+    value::Value,
+};
 use bytes::Bytes;
 use std::convert::TryInto;
 use std::time::SystemTime;
@@ -761,7 +767,7 @@ dispatcher! {
         publish {
             cmd::pubsub::publish,
             [""],
-            2,
+            3,
             0,
             0,
             0,

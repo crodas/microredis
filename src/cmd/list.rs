@@ -1,5 +1,9 @@
 use crate::{
-    check_arg, connection::Connection, error::Error, value::bytes_to_number, value::checksum,
+    check_arg,
+    connection::{Connection, ConnectionStatus},
+    error::Error,
+    value::bytes_to_number,
+    value::checksum,
     value::Value,
 };
 use bytes::Bytes;
@@ -65,7 +69,7 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if Instant::now() >= timeout || conn.is_executing_transaction() {
+        if Instant::now() >= timeout || conn.status() == ConnectionStatus::ExecutingTx {
             break;
         }
 
@@ -87,7 +91,7 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if Instant::now() >= timeout || conn.is_executing_transaction() {
+        if Instant::now() >= timeout || conn.status() == ConnectionStatus::ExecutingTx {
             break;
         }
 

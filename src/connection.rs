@@ -14,13 +14,27 @@ pub struct Connections {
     counter: RwLock<u128>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum ConnectionStatus {
+    Multi,
+    ExecutingTx,
+    Pubsub,
+    Normal,
+}
+
+impl Default for ConnectionStatus {
+    fn default() -> Self {
+        ConnectionStatus::Normal
+    }
+}
+
 #[derive(Debug)]
 pub struct ConnectionInfo {
     pub name: Option<String>,
+    pub subscriptions: u32,
     pub watch_keys: Vec<(Bytes, u128)>,
     pub tx_keys: HashSet<Bytes>,
-    pub in_transaction: bool,
-    pub in_executing_transaction: bool,
+    pub status: ConnectionStatus,
     pub commands: Option<Vec<Vec<Bytes>>>,
 }
 
@@ -83,11 +97,11 @@ impl ConnectionInfo {
     fn new() -> Self {
         Self {
             name: None,
+            subscriptions: 0,
             watch_keys: vec![],
             tx_keys: HashSet::new(),
             commands: None,
-            in_transaction: false,
-            in_executing_transaction: false,
+            status: ConnectionStatus::Normal,
         }
     }
 }
@@ -107,12 +121,11 @@ impl Connection {
 
     pub fn stop_transaction(&self) -> Result<Value, Error> {
         let info = &mut self.info.write();
-        if info.in_transaction {
+        if info.status == ConnectionStatus::Multi {
             info.commands = None;
             info.watch_keys.clear();
             info.tx_keys.clear();
-            info.in_transaction = false;
-            info.in_executing_transaction = true;
+            info.status = ConnectionStatus::ExecutingTx;
 
             Ok(Value::Ok)
         } else {
@@ -122,31 +135,16 @@ impl Connection {
 
     pub fn start_transaction(&self) -> Result<Value, Error> {
         let mut info = self.info.write();
-        if !info.in_transaction {
-            info.in_transaction = true;
+        if info.status == ConnectionStatus::Normal {
+            info.status = ConnectionStatus::Multi;
             Ok(Value::Ok)
         } else {
             Err(Error::NestedTx)
         }
     }
 
-    /// We are inside a MULTI, most transactions are rather queued for later
-    /// execution instead of being executed right away.
-    pub fn in_transaction(&self) -> bool {
-        self.info.read().in_transaction
-    }
-
-    /// The commands are being executed inside a transaction (by EXEC). It is
-    /// important to keep track of this because some commands change their
-    /// behaviour.
-    pub fn is_executing_transaction(&self) -> bool {
-        self.info.read().in_executing_transaction
-    }
-
-    /// EXEC has been called and we need to keep track
-    pub fn start_executing_transaction(&self) {
-        let info = &mut self.info.write();
-        info.in_executing_transaction = true;
+    pub fn status(&self) -> ConnectionStatus {
+        self.info.read().status.clone()
     }
 
     pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
@@ -193,7 +191,7 @@ impl Connection {
     pub fn get_queue_commands(&self) -> Option<Vec<Vec<Bytes>>> {
         let info = &mut self.info.write();
         info.watch_keys = vec![];
-        info.in_transaction = false;
+        info.status = ConnectionStatus::ExecutingTx;
         info.commands.take()
     }
 
@@ -222,6 +220,13 @@ impl Connection {
     pub fn set_name(&self, name: String) {
         let mut r = self.info.write();
         r.name = Some(name);
+    }
+
+    pub fn get_subscription_id(&self) -> u32 {
+        let mut info = self.info.write();
+        info.subscriptions += 1;
+
+        info.subscriptions
     }
 
     #[allow(dead_code)]

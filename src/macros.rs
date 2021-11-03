@@ -42,10 +42,13 @@ macro_rules! dispatcher {
                 #[async_trait]
                 impl ExecutableCommand for Command {
                     async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-                        if conn.in_transaction() && self.is_queueable() {
+                        let status = conn.status();
+                        if status == ConnectionStatus::Multi && self.is_queueable() {
                             conn.queue_command(args);
                             conn.tx_keys(self.get_keys(args));
                             Ok(Value::Queued)
+                        } else if status == ConnectionStatus::Pubsub && stringify!($ns) != "pubsub" {
+                            Err(Error::PubsubOnly(stringify!($command).to_owned()))
                         } else {
                             $handler(conn, args).await
                         }

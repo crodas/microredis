@@ -114,6 +114,7 @@ impl<'a> From<&ParsedValue<'a>> for Value {
 
 value_try_from!(f64, Value::Float);
 value_try_from!(i32, Value::Integer);
+value_try_from!(u32, Value::Integer);
 value_try_from!(i64, Value::Integer);
 value_try_from!(i128, Value::BigInteger);
 

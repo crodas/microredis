@@ -8,6 +8,7 @@ pub enum Error {
     WrongArgument(String, String),
     NotFound,
     OutOfRange,
+    PubsubOnly(String),
     Syntax,
     NotANumber,
     NotInTx,
@@ -34,6 +35,7 @@ impl From<Error> for Value {
             Error::Syntax => "syntax error".to_owned(),
             Error::NotFound => "no such key".to_owned(),
             Error::NestedTx => "calls can not be nested".to_owned(),
+            Error::PubsubOnly(x) => format!("Can't execute '{}': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context", x),
             Error::WrongArgument(x, y) => format!(
                 "Unknown subcommand or wrong number of arguments for '{}'. Try {} HELP.",
                 y, x

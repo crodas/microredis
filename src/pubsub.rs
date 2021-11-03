@@ -15,7 +15,7 @@ impl Pubsub {
         }
     }
 
-    pub fn subscribe(&self, channel: &Bytes, conn: &Connection) {
+    pub fn subscribe(&self, channel: &Bytes, conn: &Connection) -> u32 {
         let mut subscriptions = self.subscriptions.write().unwrap();
 
         if let Some(subs) = subscriptions.get_mut(channel) {
@@ -23,6 +23,8 @@ impl Pubsub {
         } else {
             subscriptions.insert(channel.clone(), vec![conn.get_pubsub_sender()]);
         }
+
+        conn.get_subscription_id()
     }
 
     pub async fn publish(&self, channel: &Bytes, message: &Bytes) -> i64 {
@@ -32,7 +34,12 @@ impl Pubsub {
 
         if let Some(subs) = subscriptions.get(channel) {
             for sub in subs.iter() {
-                let _ = sub.send(Value::Blob(message.clone()));
+                let message = Value::Array(vec![
+                    "message".into(),
+                    Value::Blob(channel.clone()),
+                    Value::Blob(message.clone()),
+                ]);
+                let _ = sub.send(message);
                 i += 1;
             }
         }
