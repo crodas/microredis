@@ -4,6 +4,7 @@ use crate::value::Value;
 pub enum Error {
     CommandNotFound(String),
     InvalidArgsCount(String),
+    InvalidPattern(String),
     Protocol(String, String),
     WrongArgument(String, String),
     NotFound,
@@ -28,6 +29,7 @@ impl From<Error> for Value {
         let err_msg = match value {
             Error::CommandNotFound(x) => format!("unknown command `{}`", x),
             Error::InvalidArgsCount(x) => format!("wrong number of arguments for '{}' command", x),
+            Error::InvalidPattern(x) => format!("'{}' is not a valid pattern", x),
             Error::Protocol(x, y) => format!("Protocol error: expected '{}', got '{}'", x, y),
             Error::NotInTx => " without MULTI".to_owned(),
             Error::NotANumber => "value is not an integer or out of range".to_owned(),

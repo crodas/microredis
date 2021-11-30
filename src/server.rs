@@ -1,4 +1,9 @@
-use crate::{connection::Connections, db::Db, dispatcher::Dispatcher, value::Value};
+use crate::{
+    connection::{ConnectionStatus, Connections},
+    db::Db,
+    dispatcher::Dispatcher,
+    value::Value,
+};
 use bytes::{Buf, Bytes, BytesMut};
 use futures::SinkExt;
 use log::{info, trace, warn};
@@ -85,6 +90,9 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                                         .execute(&conn, &args)
                                         .await
                                         .unwrap_or_else(|x| x.into());
+                                    if conn.status() == ConnectionStatus::Pubsub {
+                                        continue;
+                                    }
                                     if transport.send(r).await.is_err() {
                                         break;
                                     }

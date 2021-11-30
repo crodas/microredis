@@ -143,6 +143,17 @@ impl Connection {
         }
     }
 
+    pub fn start_pubsub(&self) -> Result<Value, Error> {
+        let mut info = self.info.write();
+        match info.status {
+            ConnectionStatus::Normal | ConnectionStatus::Pubsub => {
+                info.status = ConnectionStatus::Pubsub;
+                Ok(Value::Ok)
+            }
+            _ => Err(Error::NestedTx),
+        }
+    }
+
     pub fn status(&self) -> ConnectionStatus {
         self.info.read().status.clone()
     }
