@@ -192,11 +192,10 @@ mod test {
 
     fn get_keys(args: &[&str]) -> Vec<Bytes> {
         let args: Vec<Bytes> = args.iter().map(|s| Bytes::from(s.to_string())).collect();
-        Dispatcher::new(&args)
-            .unwrap()
-            .get_keys(&args)
-            .iter()
-            .map(|k| (*k).clone())
-            .collect()
+        if let Ok(cmd) = Dispatcher::new(&args) {
+            cmd.get_keys(&args).iter().map(|k| (*k).clone()).collect()
+        } else {
+            vec![]
+        }
     }
 }

@@ -35,11 +35,7 @@ fn remove_element(
                     }
                 }
 
-                let ret: Vec<Value> = ret
-                    .iter()
-                    .filter(|v| v.is_some())
-                    .map(|x| x.as_ref().unwrap().clone_value())
-                    .collect();
+                let ret: Vec<Value> = ret.iter().flatten().map(|m| m.clone_value()).collect();
 
                 Ok(if ret.is_empty() {
                     Value::Null
