@@ -1,9 +1,10 @@
 use crate::{db::Db, error::Error, value::Value};
 use bytes::Bytes;
+use parking_lot::RwLock;
 use std::{
     collections::{BTreeMap, HashSet},
     net::SocketAddr,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 #[derive(Debug)]
@@ -42,7 +43,7 @@ impl Connections {
 
     pub fn remove(self: Arc<Connections>, conn: Arc<Connection>) {
         let id = conn.id();
-        self.connections.write().unwrap().remove(&id);
+        self.connections.write().remove(&id);
     }
 
     pub fn new_connection(
@@ -50,7 +51,7 @@ impl Connections {
         db: Arc<Db>,
         addr: SocketAddr,
     ) -> Arc<Connection> {
-        let mut id = self.counter.write().unwrap();
+        let mut id = self.counter.write();
         *id += 1;
 
         let conn = Arc::new(Connection {
@@ -62,12 +63,12 @@ impl Connections {
             info: RwLock::new(ConnectionInfo::new()),
         });
 
-        self.connections.write().unwrap().insert(*id, conn.clone());
+        self.connections.write().insert(*id, conn.clone());
         conn
     }
 
     pub fn iter(&self, f: &mut dyn FnMut(Arc<Connection>)) {
-        for (_, value) in self.connections.read().unwrap().iter() {
+        for (_, value) in self.connections.read().iter() {
             f(value.clone())
         }
     }
@@ -96,7 +97,7 @@ impl Connection {
     }
 
     pub fn stop_transaction(&self) -> Result<Value, Error> {
-        let info = &mut self.info.write().unwrap();
+        let info = &mut self.info.write();
         if info.in_transaction {
             info.commands = None;
             info.watch_keys.clear();
@@ -111,7 +112,7 @@ impl Connection {
     }
 
     pub fn start_transaction(&self) -> Result<Value, Error> {
-        let mut info = self.info.write().unwrap();
+        let mut info = self.info.write();
         if !info.in_transaction {
             info.in_transaction = true;
             Ok(Value::Ok)
@@ -123,24 +124,24 @@ impl Connection {
     /// We are inside a MULTI, most transactions are rather queued for later
     /// execution instead of being executed right away.
     pub fn in_transaction(&self) -> bool {
-        self.info.read().unwrap().in_transaction
+        self.info.read().in_transaction
     }
 
     /// The commands are being executed inside a transaction (by EXEC). It is
     /// important to keep track of this because some commands change their
     /// behaviour.
     pub fn is_executing_transaction(&self) -> bool {
-        self.info.read().unwrap().in_executing_transaction
+        self.info.read().in_executing_transaction
     }
 
     /// EXEC has been called and we need to keep track
     pub fn start_executing_transaction(&self) {
-        let info = &mut self.info.write().unwrap();
+        let info = &mut self.info.write();
         info.in_executing_transaction = true;
     }
 
     pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
-        let watch_keys = &mut self.info.write().unwrap().watch_keys;
+        let watch_keys = &mut self.info.write().watch_keys;
         keys.iter()
             .map(|(bytes, version)| {
                 watch_keys.push(((*bytes).clone(), *version));
@@ -149,7 +150,7 @@ impl Connection {
     }
 
     pub fn did_keys_change(&self) -> bool {
-        let watch_keys = &self.info.read().unwrap().watch_keys;
+        let watch_keys = &self.info.read().watch_keys;
 
         for key in watch_keys.iter() {
             if self.db.get_version(&key.0) != key.1 {
@@ -161,14 +162,13 @@ impl Connection {
     }
 
     pub fn discard_watched_keys(&self) {
-        let watch_keys = &mut self.info.write().unwrap().watch_keys;
+        let watch_keys = &mut self.info.write().watch_keys;
         watch_keys.clear();
     }
 
     pub fn get_tx_keys(&self) -> Vec<Bytes> {
         self.info
             .read()
-            .unwrap()
             .tx_keys
             .iter()
             .cloned()
@@ -176,13 +176,13 @@ impl Connection {
     }
 
     pub fn queue_command(&self, args: &[Bytes]) {
-        let info = &mut self.info.write().unwrap();
+        let info = &mut self.info.write();
         let commands = info.commands.get_or_insert(vec![]);
         commands.push(args.iter().map(|m| (*m).clone()).collect());
     }
 
     pub fn get_queue_commands(&self) -> Option<Vec<Vec<Bytes>>> {
-        let info = &mut self.info.write().unwrap();
+        let info = &mut self.info.write();
         info.watch_keys = vec![];
         info.in_transaction = false;
         info.commands.take()
@@ -190,7 +190,7 @@ impl Connection {
 
     pub fn tx_keys(&self, keys: Vec<&Bytes>) {
         #[allow(clippy::mutable_key_type)]
-        let tx_keys = &mut self.info.write().unwrap().tx_keys;
+        let tx_keys = &mut self.info.write().tx_keys;
         keys.iter()
             .map(|k| {
                 tx_keys.insert((*k).clone());
@@ -207,11 +207,11 @@ impl Connection {
     }
 
     pub fn name(&self) -> Option<String> {
-        self.info.read().unwrap().name.clone()
+        self.info.read().name.clone()
     }
 
     pub fn set_name(&self, name: String) {
-        let mut r = self.info.write().unwrap();
+        let mut r = self.info.write();
         r.name = Some(name);
     }
 
@@ -225,7 +225,7 @@ impl Connection {
             "id={} addr={} name={:?} db={}\r\n",
             self.id,
             self.addr,
-            self.info.read().unwrap().name,
+            self.info.read().name,
             self.current_db
         )
     }

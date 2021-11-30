@@ -78,9 +78,9 @@ macro_rules! dispatcher {
 
                     fn check_number_args(&self, n: usize) -> bool {
                         if ($min_args >= 0) {
-                            n == ($min_args as i32).try_into().unwrap()
+                            n == ($min_args as i32).try_into().unwrap_or(0)
                         } else {
-                            let s: usize = ($min_args as i32).abs().try_into().unwrap();
+                            let s: usize = ($min_args as i32).abs().try_into().unwrap_or(0);
                             n >= s
                         }
                     }
