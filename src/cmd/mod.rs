@@ -47,6 +47,6 @@ mod test {
 
         let handler = Dispatcher::new(&args)?;
 
-        handler.deref().execute(&conn, &args).await
+        handler.deref().execute(conn, &args).await
     }
 }

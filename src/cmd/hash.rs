@@ -382,7 +382,7 @@ mod test {
                         || x[0] == Value::Blob("f3".into())
                 )
             }
-            _ => assert!(false),
+            _ => unreachable!(),
         };
     }
 
@@ -397,9 +397,9 @@ mod test {
         match r {
             Ok(Value::Blob(x)) => {
                 let x = String::from_utf8_lossy(&x);
-                assert!(x == "f1".to_owned() || x == "f2".to_owned() || x == "f3".to_owned());
+                assert!(x == *"f1" || x == *"f2" || x == *"f3");
             }
-            _ => assert!(false),
+            _ => unreachable!(),
         };
     }
 
