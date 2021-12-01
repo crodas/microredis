@@ -25,8 +25,22 @@ impl Pubsub {
         self.subscriptions.read().keys().cloned().collect()
     }
 
-    pub fn get_number_of_psubscribed(&self) -> i64 {
+    pub fn get_number_of_psubscribers(&self) -> i64 {
         *(self.number_of_psubscriptions.read())
+    }
+
+    pub fn get_number_of_subscribers(&self, channels: &[Bytes]) -> Vec<(Bytes, usize)> {
+        let subscribers = self.subscriptions.read();
+        let mut ret = vec![];
+        for channel in channels.iter() {
+            if let Some(subs) = subscribers.get(channel) {
+                ret.push((channel.clone(), subs.len()));
+            } else {
+                ret.push((channel.clone(), 0));
+            }
+        }
+
+        ret
     }
 
     pub fn psubscribe(&self, channel: &Bytes, conn: &Connection) -> Result<u32, Error> {

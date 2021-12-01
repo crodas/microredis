@@ -56,7 +56,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     info!("Listening on: {}", addr);
 
     let db = Arc::new(Db::new(1000));
-    let all_connections = Arc::new(Connections::new());
+    let all_connections = Arc::new(Connections::new(db.clone()));
 
     let db_for_purging = db.clone();
     tokio::spawn(async move {

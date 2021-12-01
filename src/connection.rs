@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 #[derive(Debug)]
 pub struct Connections {
     connections: RwLock<BTreeMap<u128, Arc<Connection>>>,
+    db: Arc<Db>,
     counter: RwLock<u128>,
 }
 
@@ -51,11 +52,17 @@ pub struct Connection {
 }
 
 impl Connections {
-    pub fn new() -> Self {
+    pub fn new(db: Arc<Db>) -> Self {
         Self {
             counter: RwLock::new(0),
+            db,
             connections: RwLock::new(BTreeMap::new()),
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn db(&self) -> Arc<Db> {
+        self.db.clone()
     }
 
     pub fn remove(self: Arc<Connections>, conn: Arc<Connection>) {
