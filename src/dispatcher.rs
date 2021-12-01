@@ -782,6 +782,15 @@ dispatcher! {
             0,
             true,
         },
+        pubsub {
+            cmd::pubsub::pubsub,
+            [""],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
         psubscribe {
             cmd::pubsub::subscribe,
             [""],

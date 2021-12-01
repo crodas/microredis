@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 pub struct Pubsub {
     subscriptions: RwLock<HashMap<Bytes, Vec<mpsc::UnboundedSender<Value>>>>,
     psubscriptions: RwLock<HashMap<Pattern, Vec<mpsc::UnboundedSender<Value>>>>,
+    number_of_psubscriptions: RwLock<i64>,
 }
 
 impl Pubsub {
@@ -16,7 +17,16 @@ impl Pubsub {
         Self {
             subscriptions: RwLock::new(HashMap::new()),
             psubscriptions: RwLock::new(HashMap::new()),
+            number_of_psubscriptions: RwLock::new(0),
         }
+    }
+
+    pub fn channels(&self) -> Vec<Bytes> {
+        self.subscriptions.read().keys().cloned().collect()
+    }
+
+    pub fn get_number_of_psubscribed(&self) -> i64 {
+        *(self.number_of_psubscriptions.read())
     }
 
     pub fn psubscribe(&self, channel: &Bytes, conn: &Connection) -> Result<u32, Error> {
@@ -29,6 +39,11 @@ impl Pubsub {
             subs.push(conn.get_pubsub_sender());
         } else {
             subscriptions.insert(channel.clone(), vec![conn.get_pubsub_sender()]);
+        }
+        if !conn.is_psubcribed() {
+            let mut psubs = self.number_of_psubscriptions.write();
+            conn.make_psubcribed();
+            *psubs += 1;
         }
 
         Ok(conn.get_subscription_id())

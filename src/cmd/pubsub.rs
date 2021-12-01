@@ -10,6 +10,27 @@ pub async fn publish(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
         .into())
 }
 
+pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
+        "channels" => Ok(Value::Array(
+            conn.db()
+                .get_pubsub()
+                .channels()
+                .iter()
+                .map(|v| Value::Blob(v.clone()))
+                .collect(),
+        )),
+        "numpat" => Ok(conn.db().get_pubsub().get_number_of_psubscribed().into()),
+        cmd => Ok(Value::Err(
+            "ERR".to_owned(),
+            format!(
+                "Unknown subcommand or wrong number of arguments for '{}'. Try PUBSUB HELP.",
+                cmd
+            ),
+        )),
+    }
+}
+
 pub async fn subscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let pubsub = conn.db().get_pubsub();
     let sender = conn.get_pubsub_sender();

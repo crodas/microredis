@@ -36,6 +36,7 @@ pub struct ConnectionInfo {
     pub tx_keys: HashSet<Bytes>,
     pub status: ConnectionStatus,
     pub commands: Option<Vec<Vec<Bytes>>>,
+    pub is_psubcribed: bool,
 }
 
 #[derive(Debug)]
@@ -102,6 +103,7 @@ impl ConnectionInfo {
             tx_keys: HashSet::new(),
             commands: None,
             status: ConnectionStatus::Normal,
+            is_psubcribed: false,
         }
     }
 }
@@ -156,6 +158,14 @@ impl Connection {
 
     pub fn status(&self) -> ConnectionStatus {
         self.info.read().status.clone()
+    }
+
+    pub fn is_psubcribed(&self) -> bool {
+        self.info.read().is_psubcribed
+    }
+
+    pub fn make_psubcribed(&self) {
+        self.info.write().is_psubcribed = true;
     }
 
     pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
