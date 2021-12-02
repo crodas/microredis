@@ -5,10 +5,13 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
+type Sender = mpsc::UnboundedSender<Value>;
+type Subscription = HashMap<u128, Sender>;
+
 #[derive(Debug)]
 pub struct Pubsub {
-    subscriptions: RwLock<HashMap<Bytes, Vec<mpsc::UnboundedSender<Value>>>>,
-    psubscriptions: RwLock<HashMap<Pattern, Vec<mpsc::UnboundedSender<Value>>>>,
+    subscriptions: RwLock<HashMap<Bytes, Subscription>>,
+    psubscriptions: RwLock<HashMap<Pattern, Subscription>>,
     number_of_psubscriptions: RwLock<i64>,
 }
 
@@ -43,49 +46,50 @@ impl Pubsub {
         ret
     }
 
-    pub fn psubscribe(&self, channel: &Bytes, conn: &Connection) -> Result<u32, Error> {
+    pub fn psubscribe(&self, channels: &[Bytes], conn: &Connection) -> Result<(), Error> {
         let mut subscriptions = self.psubscriptions.write();
-        let channel = String::from_utf8_lossy(channel);
-        let channel =
-            Pattern::new(&channel).map_err(|_| Error::InvalidPattern(channel.to_string()))?;
 
-        if let Some(subs) = subscriptions.get_mut(&channel) {
-            subs.push(conn.get_pubsub_sender());
-        } else {
-            subscriptions.insert(channel.clone(), vec![conn.get_pubsub_sender()]);
+        for bytes_channel in channels.iter() {
+            let channel = String::from_utf8_lossy(bytes_channel);
+            let channel =
+                Pattern::new(&channel).map_err(|_| Error::InvalidPattern(channel.to_string()))?;
+
+            if let Some(subs) = subscriptions.get_mut(&channel) {
+                subs.insert(conn.id(), conn.get_pubsub_sender());
+            } else {
+                let mut h = HashMap::new();
+                h.insert(conn.id(), conn.get_pubsub_sender());
+                subscriptions.insert(channel.clone(), h);
+            }
+            if !conn.is_psubcribed() {
+                let mut psubs = self.number_of_psubscriptions.write();
+                conn.make_psubcribed();
+                *psubs += 1;
+            }
+
+            let _ = conn.get_pubsub_sender().send(
+                vec![
+                    "subscribe".into(),
+                    Value::Blob(bytes_channel.clone()),
+                    conn.get_psubscription_id(&channel).into(),
+                ]
+                .into(),
+            );
         }
-        if !conn.is_psubcribed() {
-            let mut psubs = self.number_of_psubscriptions.write();
-            conn.make_psubcribed();
-            *psubs += 1;
-        }
 
-        Ok(conn.get_subscription_id())
-    }
-
-    pub fn subscribe(&self, channel: &Bytes, conn: &Connection) -> u32 {
-        let mut subscriptions = self.subscriptions.write();
-
-        if let Some(subs) = subscriptions.get_mut(channel) {
-            subs.push(conn.get_pubsub_sender());
-        } else {
-            subscriptions.insert(channel.clone(), vec![conn.get_pubsub_sender()]);
-        }
-
-        conn.get_subscription_id()
+        Ok(())
     }
 
     pub async fn publish(&self, channel: &Bytes, message: &Bytes) -> u32 {
         let mut i = 0;
 
         if let Some(subs) = self.subscriptions.read().get(channel) {
-            for sub in subs.iter() {
-                let message = Value::Array(vec![
+            for sender in subs.values() {
+                let _ = sender.send(Value::Array(vec![
                     "message".into(),
                     Value::Blob(channel.clone()),
                     Value::Blob(message.clone()),
-                ]);
-                let _ = sub.send(message);
+                ]));
                 i += 1;
             }
         }
@@ -97,18 +101,66 @@ impl Pubsub {
                 continue;
             }
 
-            for sub in subs.iter() {
-                let message = Value::Array(vec![
+            for sub in subs.values() {
+                let _ = sub.send(Value::Array(vec![
                     "pmessage".into(),
                     pattern.as_str().into(),
                     Value::Blob(channel.clone()),
                     Value::Blob(message.clone()),
-                ]);
-                let _ = sub.send(message);
+                ]));
                 i += 1;
             }
         }
 
         i
+    }
+
+    pub fn subscribe(&self, channels: &[Bytes], conn: &Connection) {
+        let mut subscriptions = self.subscriptions.write();
+
+        channels
+            .iter()
+            .map(|channel| {
+                if let Some(subs) = subscriptions.get_mut(channel) {
+                    subs.insert(conn.id(), conn.get_pubsub_sender());
+                } else {
+                    let mut h = HashMap::new();
+                    h.insert(conn.id(), conn.get_pubsub_sender());
+                    subscriptions.insert(channel.clone(), h);
+                }
+
+                let _ = conn.get_pubsub_sender().send(
+                    vec![
+                        "subscribe".into(),
+                        Value::Blob(channel.clone()),
+                        conn.get_subscription_id(channel).into(),
+                    ]
+                    .into(),
+                );
+            })
+            .for_each(drop);
+    }
+
+    pub fn unsubscribe(&self, channels: &[Bytes], conn: &Connection) -> u32 {
+        let mut subs = self.subscriptions.write();
+        let conn_id = conn.id();
+        let mut removed = 0;
+        channels
+            .iter()
+            .map(|channel| {
+                if let Some(subs) = subs.get_mut(channel) {
+                    if let Some(sender) = subs.remove(&conn_id) {
+                        let _ = sender.send(Value::Array(vec![
+                            "unsubscribe".into(),
+                            Value::Blob(channel.clone()),
+                            1.into(),
+                        ]));
+                        removed += 1;
+                    }
+                }
+            })
+            .for_each(drop);
+
+        removed
     }
 }

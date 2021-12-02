@@ -1,5 +1,6 @@
 use crate::{db::Db, error::Error, value::Value};
 use bytes::Bytes;
+use glob::Pattern;
 use parking_lot::RwLock;
 use std::{
     collections::{BTreeMap, HashSet},
@@ -32,7 +33,8 @@ impl Default for ConnectionStatus {
 #[derive(Debug)]
 pub struct ConnectionInfo {
     pub name: Option<String>,
-    pub subscriptions: u32,
+    pub subscriptions: Vec<Bytes>,
+    pub psubscriptions: Vec<Pattern>,
     pub watch_keys: Vec<(Bytes, u128)>,
     pub tx_keys: HashSet<Bytes>,
     pub status: ConnectionStatus,
@@ -105,7 +107,8 @@ impl ConnectionInfo {
     fn new() -> Self {
         Self {
             name: None,
-            subscriptions: 0,
+            subscriptions: vec![],
+            psubscriptions: vec![],
             watch_keys: vec![],
             tx_keys: HashSet::new(),
             commands: None,
@@ -250,11 +253,23 @@ impl Connection {
         r.name = Some(name);
     }
 
-    pub fn get_subscription_id(&self) -> u32 {
+    pub fn get_subscription_id(&self, channel: &Bytes) -> usize {
         let mut info = self.info.write();
-        info.subscriptions += 1;
 
-        info.subscriptions
+        info.subscriptions.push(channel.clone());
+
+        info.subscriptions.len() + info.psubscriptions.len()
+    }
+
+    pub fn get_psubscription_id(&self, channel: &Pattern) -> usize {
+        let mut info = self.info.write();
+
+        info.psubscriptions.push(channel.clone());
+        info.subscriptions.len() + info.psubscriptions.len()
+    }
+
+    pub fn get_pubsub_subscriptions(&self) -> Vec<Bytes> {
+        self.info.read().subscriptions.clone()
     }
 
     #[allow(dead_code)]

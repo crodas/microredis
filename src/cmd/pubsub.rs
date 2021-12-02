@@ -46,27 +46,25 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     }
 }
 
+pub async fn unsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let channels = if args.len() == 1 {
+        conn.get_pubsub_subscriptions()
+    } else {
+        (&args[1..]).to_vec()
+    };
+
+    Ok(conn.db().get_pubsub().unsubscribe(&channels, conn).into())
+}
+
 pub async fn subscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let pubsub = conn.db().get_pubsub();
-    let sender = conn.get_pubsub_sender();
-    let is_pattern = check_arg!(args, 0, "PSUBSCRIBE");
 
-    for channel in (&args[1..]).iter() {
-        let id = if is_pattern {
-            pubsub.psubscribe(channel, conn)?
-        } else {
-            pubsub.subscribe(channel, conn)
-        };
-        let _ = sender.send(Value::Array(vec![
-            (if is_pattern {
-                "psubscribe"
-            } else {
-                "subscribe"
-            })
-            .into(),
-            Value::Blob(channel.clone()),
-            id.into(),
-        ]));
+    let channels = &args[1..];
+
+    if check_arg!(args, 0, "PSUBSCRIBE") {
+        pubsub.psubscribe(channels, conn)?;
+    } else {
+        pubsub.subscribe(channels, conn);
     }
 
     conn.start_pubsub()
@@ -84,12 +82,13 @@ mod test {
 
     async fn test_subscription_confirmation_and_first_message(
         msg: &str,
+        channel: &str,
         recv: &mut UnboundedReceiver<Value>,
     ) {
         assert_eq!(
             Some(Value::Array(vec![
-                Value::Blob("subscribe".into()),
-                Value::Blob("foo".into()),
+                "subscribe".into(),
+                channel.into(),
                 1.into()
             ])),
             recv.recv().await
@@ -98,8 +97,114 @@ mod test {
         assert_eq!(
             Some(Value::Array(vec![
                 Value::Blob("message".into()),
-                Value::Blob("foo".into()),
+                channel.into(),
                 msg.into()
+            ])),
+            recv.recv().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_multiple_channels() {
+        let (mut recv, c1) = create_connection_and_pubsub();
+
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c1, &["subscribe", "foo", "bar"]).await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
+                "subscribe".into(),
+                "foo".into(),
+                1.into()
+            ])),
+            recv.recv().await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
+                "subscribe".into(),
+                "bar".into(),
+                2.into()
+            ])),
+            recv.recv().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_multiple_channels_one_by_one() {
+        let (mut recv, c1) = create_connection_and_pubsub();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c1, &["subscribe", "foo"]).await);
+
+        assert_eq!(Ok(Value::Ok), run_command(&c1, &["subscribe", "bar"]).await);
+
+        assert_eq!(
+            Some(Value::Array(vec![
+                "subscribe".into(),
+                "foo".into(),
+                1.into()
+            ])),
+            recv.recv().await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
+                "subscribe".into(),
+                "bar".into(),
+                2.into()
+            ])),
+            recv.recv().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unsubscribe_with_args() {
+        let (mut recv, c1) = create_connection_and_pubsub();
+
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c1, &["subscribe", "foo", "bar"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(2)),
+            run_command(&c1, &["unsubscribe", "foo", "bar"]).await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
+                "subscribe".into(),
+                "foo".into(),
+                1.into()
+            ])),
+            recv.recv().await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
+                "subscribe".into(),
+                "bar".into(),
+                2.into()
+            ])),
+            recv.recv().await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
+                "unsubscribe".into(),
+                "foo".into(),
+                1.into()
+            ])),
+            recv.recv().await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
+                "unsubscribe".into(),
+                "bar".into(),
+                1.into()
             ])),
             recv.recv().await
         );
@@ -118,8 +223,8 @@ mod test {
 
         let _ = run_command(&c3, &["publish", "foo", msg]).await;
 
-        test_subscription_confirmation_and_first_message(&msg, &mut sub1).await;
-        test_subscription_confirmation_and_first_message(&msg, &mut sub2).await;
+        test_subscription_confirmation_and_first_message(msg, "foo", &mut sub1).await;
+        test_subscription_confirmation_and_first_message(msg, "foo", &mut sub2).await;
     }
 
     #[tokio::test]

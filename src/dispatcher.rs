@@ -800,6 +800,15 @@ dispatcher! {
             0,
             true,
         },
+        unsubscribe {
+            cmd::pubsub::unsubscribe,
+            [""],
+            -1,
+            0,
+            0,
+            0,
+            true,
+        },
     },
     server {
         time {
