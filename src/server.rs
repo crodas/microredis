@@ -1,5 +1,5 @@
 use crate::{
-    connection::{ConnectionStatus, Connections},
+    connection::{connections::Connections, ConnectionStatus},
     db::Db,
     dispatcher::Dispatcher,
     value::Value,

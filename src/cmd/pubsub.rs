@@ -2,19 +2,13 @@ use crate::{check_arg, connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
 
 pub async fn publish(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn
-        .db()
-        .get_pubsub()
-        .publish(&args[1], &args[2])
-        .await
-        .into())
+    Ok(conn.pubsub().publish(&args[1], &args[2]).await.into())
 }
 
 pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
         "channels" => Ok(Value::Array(
-            conn.db()
-                .get_pubsub()
+            conn.pubsub()
                 .channels()
                 .iter()
                 .map(|v| Value::Blob(v.clone()))
@@ -26,10 +20,9 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             Value::String("NUMPAT -- Return number of subscriptions to patterns.".to_owned()),
             Value::String("NUMSUB [channel-1 .. channel-N] -- Returns the number of subscribers for the specified channels (excluding patterns, default: none).".to_owned()),
         ])),
-        "numpat" => Ok(conn.db().get_pubsub().get_number_of_psubscribers().into()),
+        "numpat" => Ok(conn.pubsub().get_number_of_psubscribers().into()),
         "numsub" => Ok(conn
-            .db()
-            .get_pubsub()
+            .pubsub()
             .get_number_of_subscribers(&args[2..])
             .iter()
             .map(|(channel, subs)| vec![Value::Blob(channel.clone()), (*subs).into()])
@@ -48,16 +41,16 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 pub async fn unsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let channels = if args.len() == 1 {
-        conn.get_pubsub_subscriptions()
+        conn.pubsub_client().subscriptions()
     } else {
         (&args[1..]).to_vec()
     };
 
-    Ok(conn.db().get_pubsub().unsubscribe(&channels, conn).into())
+    Ok(conn.pubsub().unsubscribe(&channels, conn).into())
 }
 
 pub async fn subscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let pubsub = conn.db().get_pubsub();
+    let pubsub = conn.pubsub();
 
     let channels = &args[1..];
 

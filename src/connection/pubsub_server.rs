@@ -55,23 +55,23 @@ impl Pubsub {
                 Pattern::new(&channel).map_err(|_| Error::InvalidPattern(channel.to_string()))?;
 
             if let Some(subs) = subscriptions.get_mut(&channel) {
-                subs.insert(conn.id(), conn.get_pubsub_sender());
+                subs.insert(conn.id(), conn.pubsub_client().sender());
             } else {
                 let mut h = HashMap::new();
-                h.insert(conn.id(), conn.get_pubsub_sender());
+                h.insert(conn.id(), conn.pubsub_client().sender());
                 subscriptions.insert(channel.clone(), h);
             }
-            if !conn.is_psubcribed() {
+            if !conn.pubsub_client().is_psubcribed() {
                 let mut psubs = self.number_of_psubscriptions.write();
-                conn.make_psubcribed();
+                conn.pubsub_client().make_psubcribed();
                 *psubs += 1;
             }
 
-            let _ = conn.get_pubsub_sender().send(
+            let _ = conn.pubsub_client().sender().send(
                 vec![
-                    "subscribe".into(),
+                    "psubscribe".into(),
                     Value::Blob(bytes_channel.clone()),
-                    conn.get_psubscription_id(&channel).into(),
+                    conn.pubsub_client().new_psubscription(&channel).into(),
                 ]
                 .into(),
             );
@@ -122,18 +122,18 @@ impl Pubsub {
             .iter()
             .map(|channel| {
                 if let Some(subs) = subscriptions.get_mut(channel) {
-                    subs.insert(conn.id(), conn.get_pubsub_sender());
+                    subs.insert(conn.id(), conn.pubsub_client().sender());
                 } else {
                     let mut h = HashMap::new();
-                    h.insert(conn.id(), conn.get_pubsub_sender());
+                    h.insert(conn.id(), conn.pubsub_client().sender());
                     subscriptions.insert(channel.clone(), h);
                 }
 
-                let _ = conn.get_pubsub_sender().send(
+                let _ = conn.pubsub_client().sender().send(
                     vec![
                         "subscribe".into(),
                         Value::Blob(channel.clone()),
-                        conn.get_subscription_id(channel).into(),
+                        conn.pubsub_client().new_subscription(channel).into(),
                     ]
                     .into(),
                 );

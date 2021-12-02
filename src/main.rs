@@ -4,7 +4,6 @@ mod db;
 mod dispatcher;
 mod error;
 mod macros;
-mod pubsub;
 mod server;
 mod value;
 

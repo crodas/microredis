@@ -10,7 +10,7 @@ pub mod transaction;
 #[cfg(test)]
 mod test {
     use crate::{
-        connection::{Connection, Connections},
+        connection::{connections::Connections, Connection},
         db::Db,
         dispatcher::Dispatcher,
         error::Error,

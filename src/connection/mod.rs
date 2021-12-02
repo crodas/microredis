@@ -1,22 +1,15 @@
 use crate::{db::Db, error::Error, value::Value};
 use bytes::Bytes;
-use glob::Pattern;
 use parking_lot::RwLock;
-use std::{
-    collections::{BTreeMap, HashSet},
-    net::SocketAddr,
-    sync::Arc,
-};
-use tokio::sync::mpsc;
+use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
-#[derive(Debug)]
-pub struct Connections {
-    connections: RwLock<BTreeMap<u128, Arc<Connection>>>,
-    db: Arc<Db>,
-    counter: RwLock<u128>,
-}
+use self::pubsub_server::Pubsub;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+pub mod connections;
+pub mod pubsub_connection;
+pub mod pubsub_server;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ConnectionStatus {
     Multi,
     ExecutingTx,
@@ -33,13 +26,10 @@ impl Default for ConnectionStatus {
 #[derive(Debug)]
 pub struct ConnectionInfo {
     pub name: Option<String>,
-    pub subscriptions: Vec<Bytes>,
-    pub psubscriptions: Vec<Pattern>,
     pub watch_keys: Vec<(Bytes, u128)>,
     pub tx_keys: HashSet<Bytes>,
     pub status: ConnectionStatus,
     pub commands: Option<Vec<Vec<Bytes>>>,
-    pub is_psubcribed: bool,
 }
 
 #[derive(Debug)]
@@ -47,73 +37,20 @@ pub struct Connection {
     id: u128,
     db: Db,
     current_db: u32,
-    connections: Arc<Connections>,
+    all_connections: Arc<connections::Connections>,
     addr: SocketAddr,
     info: RwLock<ConnectionInfo>,
-    pubsub_sender: mpsc::UnboundedSender<Value>,
-}
-
-impl Connections {
-    pub fn new(db: Arc<Db>) -> Self {
-        Self {
-            counter: RwLock::new(0),
-            db,
-            connections: RwLock::new(BTreeMap::new()),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn db(&self) -> Arc<Db> {
-        self.db.clone()
-    }
-
-    pub fn remove(self: Arc<Connections>, conn: Arc<Connection>) {
-        let id = conn.id();
-        self.connections.write().remove(&id);
-    }
-
-    pub fn new_connection(
-        self: &Arc<Connections>,
-        db: Arc<Db>,
-        addr: SocketAddr,
-    ) -> (mpsc::UnboundedReceiver<Value>, Arc<Connection>) {
-        let mut id = self.counter.write();
-        *id += 1;
-
-        let (pubsub_sender, pubsub_receiver) = mpsc::unbounded_channel();
-
-        let conn = Arc::new(Connection {
-            id: *id,
-            db: db.new_db_instance(*id),
-            addr,
-            connections: self.clone(),
-            current_db: 0,
-            info: RwLock::new(ConnectionInfo::new()),
-            pubsub_sender,
-        });
-
-        self.connections.write().insert(*id, conn.clone());
-        (pubsub_receiver, conn)
-    }
-
-    pub fn iter(&self, f: &mut dyn FnMut(Arc<Connection>)) {
-        for (_, value) in self.connections.read().iter() {
-            f(value.clone())
-        }
-    }
+    pubsub_client: pubsub_connection::PubsubClient,
 }
 
 impl ConnectionInfo {
     fn new() -> Self {
         Self {
             name: None,
-            subscriptions: vec![],
-            psubscriptions: vec![],
             watch_keys: vec![],
             tx_keys: HashSet::new(),
             commands: None,
             status: ConnectionStatus::Normal,
-            is_psubcribed: false,
         }
     }
 }
@@ -123,8 +60,12 @@ impl Connection {
         &self.db
     }
 
-    pub fn get_pubsub_sender(&self) -> mpsc::UnboundedSender<Value> {
-        self.pubsub_sender.clone()
+    pub fn pubsub(&self) -> Arc<Pubsub> {
+        self.all_connections.pubsub()
+    }
+
+    pub fn pubsub_client(&self) -> &pubsub_connection::PubsubClient {
+        &self.pubsub_client
     }
 
     pub fn id(&self) -> u128 {
@@ -167,15 +108,7 @@ impl Connection {
     }
 
     pub fn status(&self) -> ConnectionStatus {
-        self.info.read().status.clone()
-    }
-
-    pub fn is_psubcribed(&self) -> bool {
-        self.info.read().is_psubcribed
-    }
-
-    pub fn make_psubcribed(&self) {
-        self.info.write().is_psubcribed = true;
+        self.info.read().status
     }
 
     pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
@@ -237,11 +170,11 @@ impl Connection {
     }
 
     pub fn destroy(self: Arc<Connection>) {
-        self.connections.clone().remove(self);
+        self.all_connections.clone().remove(self);
     }
 
-    pub fn all_connections(&self) -> Arc<Connections> {
-        self.connections.clone()
+    pub fn all_connections(&self) -> Arc<connections::Connections> {
+        self.all_connections.clone()
     }
 
     pub fn name(&self) -> Option<String> {
@@ -251,25 +184,6 @@ impl Connection {
     pub fn set_name(&self, name: String) {
         let mut r = self.info.write();
         r.name = Some(name);
-    }
-
-    pub fn get_subscription_id(&self, channel: &Bytes) -> usize {
-        let mut info = self.info.write();
-
-        info.subscriptions.push(channel.clone());
-
-        info.subscriptions.len() + info.psubscriptions.len()
-    }
-
-    pub fn get_psubscription_id(&self, channel: &Pattern) -> usize {
-        let mut info = self.info.write();
-
-        info.psubscriptions.push(channel.clone());
-        info.subscriptions.len() + info.psubscriptions.len()
-    }
-
-    pub fn get_pubsub_subscriptions(&self) -> Vec<Bytes> {
-        self.info.read().subscriptions.clone()
     }
 
     #[allow(dead_code)]
