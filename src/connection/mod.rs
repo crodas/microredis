@@ -170,6 +170,9 @@ impl Connection {
     }
 
     pub fn destroy(self: Arc<Connection>) {
+        let pubsub = self.pubsub();
+        pubsub.unsubscribe(&self.pubsub_client.subscriptions(), &self);
+        pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), &self);
         self.all_connections.clone().remove(self);
     }
 

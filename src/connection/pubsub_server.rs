@@ -115,6 +115,29 @@ impl Pubsub {
         i
     }
 
+    pub fn punsubscribe(&self, channels: &[Pattern], conn: &Connection) -> u32 {
+        let mut subs = self.psubscriptions.write();
+        let conn_id = conn.id();
+        let mut removed = 0;
+        channels
+            .iter()
+            .map(|channel| {
+                if let Some(subs) = subs.get_mut(channel) {
+                    if let Some(sender) = subs.remove(&conn_id) {
+                        let _ = sender.send(Value::Array(vec![
+                            "punsubscribe".into(),
+                            channel.as_str().into(),
+                            1.into(),
+                        ]));
+                        removed += 1;
+                    }
+                }
+            })
+            .for_each(drop);
+
+        removed
+    }
+
     pub fn subscribe(&self, channels: &[Bytes], conn: &Connection) {
         let mut subscriptions = self.subscriptions.write();
 

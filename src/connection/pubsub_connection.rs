@@ -35,6 +35,10 @@ impl PubsubClient {
         self.meta.read().subscriptions.clone()
     }
 
+    pub fn psubscriptions(&self) -> Vec<Pattern> {
+        self.meta.read().psubscriptions.clone()
+    }
+
     pub fn new_subscription(&self, channel: &Bytes) -> usize {
         let mut meta = self.meta.write();
         meta.subscriptions.push(channel.clone());
