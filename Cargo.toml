@@ -17,6 +17,7 @@ futures = { version = "0.3.0", features = ["thread-pool"]}
 tokio-stream="0.1"
 seahash = "4"
 log="0.4"
+glob="^0.2"
 env_logger = "0.8.4"
 bytes = "1"
 rand = "0.8.0"

@@ -1,4 +1,9 @@
-use crate::{connection::Connections, db::Db, dispatcher::Dispatcher, value::Value};
+use crate::{
+    connection::{connections::Connections, ConnectionStatus},
+    db::Db,
+    dispatcher::Dispatcher,
+    value::Value,
+};
 use bytes::{Buf, Bytes, BytesMut};
 use futures::SinkExt;
 use log::{info, trace, warn};
@@ -51,7 +56,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     info!("Listening on: {}", addr);
 
     let db = Arc::new(Db::new(1000));
-    let all_connections = Arc::new(Connections::new());
+    let all_connections = Arc::new(Connections::new(db.clone()));
 
     let db_for_purging = db.clone();
     tokio::spawn(async move {
@@ -64,34 +69,53 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
-                let conn = all_connections.new_connection(db.clone(), addr);
+                let (mut pubsub, conn) = all_connections.new_connection(db.clone(), addr);
 
                 tokio::spawn(async move {
                     let mut transport = Framed::new(socket, RedisParser);
 
                     trace!("New connection {}", conn.id());
 
-                    while let Some(result) = transport.next().await {
-                        match result {
-                            Ok(args) => match Dispatcher::new(&args) {
-                                Ok(handler) => {
-                                    let r = handler
-                                        .execute(&conn, &args)
-                                        .await
-                                        .unwrap_or_else(|x| x.into());
-                                    if transport.send(r).await.is_err() {
-                                        break;
-                                    }
+                    loop {
+                        tokio::select! {
+                            Some(msg) = pubsub.recv() => {
+                                if transport.send(msg).await.is_err() {
+                                    break;
                                 }
+                            }
+                            result = transport.next() => match result {
+                            Some(Ok(args)) => match Dispatcher::new(&args) {
+                                Ok(handler) => {
+                                    match handler
+                                        .execute(&conn, &args)
+                                        .await {
+                                            Ok(result) => {
+                                                if conn.status() == ConnectionStatus::Pubsub {
+                                                    continue;
+                                                }
+                                                if transport.send(result).await.is_err() {
+                                                    break;
+                                                }
+                                            },
+                                            Err(err) => {
+                                                if transport.send(err.into()).await.is_err() {
+                                                    break;
+                                                }
+                                            }
+                                        };
+
+                                },
                                 Err(err) => {
                                     if transport.send(err.into()).await.is_err() {
                                         break;
                                     }
                                 }
                             },
-                            Err(e) => {
+                            Some(Err(e)) => {
                                 warn!("error on decoding from socket; error = {:?}", e);
                                 break;
+                            },
+                            None => break,
                             }
                         }
                     }

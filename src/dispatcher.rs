@@ -1,4 +1,10 @@
-use crate::{cmd, connection::Connection, dispatcher, error::Error, value::Value};
+use crate::{
+    cmd,
+    connection::{Connection, ConnectionStatus},
+    dispatcher,
+    error::Error,
+    value::Value,
+};
 use bytes::Bytes;
 use std::convert::TryInto;
 use std::time::SystemTime;
@@ -709,6 +715,15 @@ dispatcher! {
             0,
             true,
         },
+        reset {
+            cmd::client::reset,
+            [""],
+            1,
+            0,
+            0,
+            0,
+            false,
+        },
     },
     transaction {
         discard {
@@ -751,6 +766,62 @@ dispatcher! {
             cmd::transaction::unwatch,
             [""],
             1,
+            0,
+            0,
+            0,
+            true,
+        },
+    },
+    pubsub {
+        publish {
+            cmd::pubsub::publish,
+            [""],
+            3,
+            0,
+            0,
+            0,
+            true,
+        },
+        pubsub {
+            cmd::pubsub::pubsub,
+            [""],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
+        psubscribe {
+            cmd::pubsub::subscribe,
+            [""],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
+        punsubscribe {
+            cmd::pubsub::punsubscribe,
+            [""],
+            -1,
+            0,
+            0,
+            0,
+            true,
+        },
+        subscribe {
+            cmd::pubsub::subscribe,
+            [""],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
+        unsubscribe {
+            cmd::pubsub::unsubscribe,
+            [""],
+            -1,
             0,
             0,
             0,

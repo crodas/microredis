@@ -35,16 +35,16 @@ pub struct Db {
     /// Number of HashMaps that are available.
     slots: usize,
 
-    // A Database is attached to a conn_id. The entries and expiration data
-    // structures are shared between all connections.
-    //
-    // This particular database instace is attached to a conn_id, used to block
-    // all keys in case of a transaction.
+    /// A Database is attached to a conn_id. The entries and expiration data
+    /// structures are shared between all connections.
+    ///
+    /// This particular database instace is attached to a conn_id, used to block
+    /// all keys in case of a transaction.
     conn_id: u128,
 
-    // HashMap of all blocked keys by other connections. If a key appears in
-    // here and it is not being hold by the current connection, current
-    // connection must wait.
+    /// HashMap of all blocked keys by other connections. If a key appears in
+    /// here and it is not being hold by the current connection, current
+    /// connection must wait.
     tx_key_locks: Arc<RwLock<HashMap<Bytes, u128>>>,
 }
 

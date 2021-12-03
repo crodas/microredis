@@ -50,3 +50,8 @@ pub async fn ping(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         _ => Err(Error::InvalidArgsCount("ping".to_owned())),
     }
 }
+
+pub async fn reset(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    conn.reset();
+    Ok(Value::String("RESET".to_owned()))
+}
