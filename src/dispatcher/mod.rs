@@ -524,6 +524,15 @@ dispatcher! {
             1,
             true,
         },
+        keys {
+            cmd::key::keys,
+            [Flag::ReadOnly Flag::SortForScript],
+            2,
+            0,
+            0,
+            0,
+            true,
+        },
         persist {
             cmd::key::persist,
             [Flag::Write Flag::Fast],

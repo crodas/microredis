@@ -76,26 +76,6 @@ pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
     Ok(conn.db().set_ttl(&args[1], expires_at))
 }
 
-/// Returns the remaining time to live of a key that has a timeout. This introspection capability
-/// allows a Redis client to check how many seconds a given key will continue to be part of the
-/// dataset.
-pub async fn ttl(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let ttl = match conn.db().ttl(&args[1]) {
-        Some(Some(ttl)) => {
-            let ttl = ttl - Instant::now();
-            if check_arg!(args, 0, "TTL") {
-                ttl.as_secs() as i64
-            } else {
-                ttl.as_millis() as i64
-            }
-        }
-        Some(None) => -1,
-        None => -2,
-    };
-
-    Ok(ttl.into())
-}
-
 /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key
 /// will expire.
 pub async fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -108,6 +88,31 @@ pub async fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
             } else {
                 let secs: i64 = (ttl - Instant::now()).as_millis() as i64;
                 secs + (now().as_millis() as i64)
+            }
+        }
+        Some(None) => -1,
+        None => -2,
+    };
+
+    Ok(ttl.into())
+}
+
+/// Returns all keys that matches a given pattern
+pub async fn keys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    Ok(conn.db().get_all_keys(&args[1])?.into())
+}
+
+/// Returns the remaining time to live of a key that has a timeout. This introspection capability
+/// allows a Redis client to check how many seconds a given key will continue to be part of the
+/// dataset.
+pub async fn ttl(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let ttl = match conn.db().ttl(&args[1]) {
+        Some(Some(ttl)) => {
+            let ttl = ttl - Instant::now();
+            if check_arg!(args, 0, "TTL") {
+                ttl.as_secs() as i64
+            } else {
+                ttl.as_millis() as i64
             }
         }
         Some(None) => -1,

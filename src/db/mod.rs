@@ -10,6 +10,7 @@ use crate::{error::Error, value::Value};
 use bytes::{BufMut, Bytes, BytesMut};
 use entry::{new_version, Entry};
 use expiration::ExpirationDb;
+use glob::Pattern;
 use log::trace;
 use parking_lot::{Mutex, RwLock};
 use seahash::hash;
@@ -322,6 +323,28 @@ impl Db {
             .filter(|key| key.is_valid())
             .count()
             .into()
+    }
+
+    /// Returns all keys that matches a given pattern. This is a very expensive command.
+    pub fn get_all_keys(&self, pattern: &Bytes) -> Result<Vec<Value>, Error> {
+        let pattern = String::from_utf8_lossy(pattern);
+        let pattern =
+            Pattern::new(&pattern).map_err(|_| Error::InvalidPattern(pattern.to_string()))?;
+        Ok(self
+            .entries
+            .iter()
+            .map(|slot| {
+                slot.read()
+                    .keys()
+                    .filter(|key| {
+                        let str_key = String::from_utf8_lossy(key);
+                        pattern.matches(&str_key)
+                    })
+                    .map(|key| Value::Blob(key.clone()))
+                    .collect::<Vec<Value>>()
+            })
+            .flatten()
+            .collect())
     }
 
     /// Check if keys exists in the database
