@@ -47,11 +47,15 @@ macro_rules! dispatcher {
                             conn.queue_command(args);
                             conn.tx_keys(self.get_keys(args));
                             Ok(Value::Queued)
-                        } else if status == ConnectionStatus::Pubsub && stringify!($ns) != "pubsub" {
+                        } else if status == ConnectionStatus::Pubsub && ! self.is_pubsub_executable() {
                             Err(Error::PubsubOnly(stringify!($command).to_owned()))
                         } else {
                             $handler(conn, args).await
                         }
+                    }
+
+                    fn is_pubsub_executable(&self) -> bool {
+                        stringify!($ns) == "pubsub" || stringify!($command) == "ping" || stringify!($command) == "reset"
                     }
 
                     fn is_queueable(&self) -> bool {
@@ -107,6 +111,8 @@ macro_rules! dispatcher {
             async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error>;
 
             fn is_queueable(&self) -> bool;
+
+            fn is_pubsub_executable(&self) -> bool;
 
             fn get_keys<'a>(&self, args: &'a [Bytes]) -> Vec<&'a Bytes>;
 

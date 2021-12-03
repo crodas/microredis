@@ -1,5 +1,6 @@
 use crate::{check_arg, connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
+use glob::Pattern;
 
 pub async fn publish(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.pubsub().publish(&args[1], &args[2]).await.into())
@@ -39,16 +40,6 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     }
 }
 
-pub async fn unsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let channels = if args.len() == 1 {
-        conn.pubsub_client().subscriptions()
-    } else {
-        (&args[1..]).to_vec()
-    };
-
-    Ok(conn.pubsub().unsubscribe(&channels, conn).into())
-}
-
 pub async fn subscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let pubsub = conn.pubsub();
 
@@ -61,6 +52,32 @@ pub async fn subscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
     }
 
     conn.start_pubsub()
+}
+
+pub async fn punsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let channels = if args.len() == 1 {
+        conn.pubsub_client().psubscriptions()
+    } else {
+        (&args[1..])
+            .iter()
+            .map(|channel| {
+                let channel = String::from_utf8_lossy(channel);
+                Pattern::new(&channel).map_err(|_| Error::InvalidPattern(channel.to_string()))
+            })
+            .collect::<Result<Vec<Pattern>, Error>>()?
+    };
+
+    Ok(conn.pubsub_client().punsubscribe(&channels, conn).into())
+}
+
+pub async fn unsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let channels = if args.len() == 1 {
+        conn.pubsub_client().subscriptions()
+    } else {
+        (&args[1..]).to_vec()
+    };
+
+    Ok(conn.pubsub_client().unsubscribe(&channels, conn).into())
 }
 
 #[cfg(test)]

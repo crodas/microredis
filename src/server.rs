@@ -86,17 +86,25 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                             result = transport.next() => match result {
                             Some(Ok(args)) => match Dispatcher::new(&args) {
                                 Ok(handler) => {
-                                    let r = handler
+                                    match handler
                                         .execute(&conn, &args)
-                                        .await
-                                        .unwrap_or_else(|x| x.into());
-                                    if conn.status() == ConnectionStatus::Pubsub {
-                                        continue;
-                                    }
-                                    if transport.send(r).await.is_err() {
-                                        break;
-                                    }
-                                }
+                                        .await {
+                                            Ok(result) => {
+                                                if conn.status() == ConnectionStatus::Pubsub {
+                                                    continue;
+                                                }
+                                                if transport.send(result).await.is_err() {
+                                                    break;
+                                                }
+                                            },
+                                            Err(err) => {
+                                                if transport.send(err.into()).await.is_err() {
+                                                    break;
+                                                }
+                                            }
+                                        };
+
+                                },
                                 Err(err) => {
                                     if transport.send(err.into()).await.is_err() {
                                         break;

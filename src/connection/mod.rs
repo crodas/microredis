@@ -107,6 +107,19 @@ impl Connection {
         }
     }
 
+    pub fn reset(&self) {
+        let mut info = self.info.write();
+        info.status = ConnectionStatus::Normal;
+        info.name = None;
+        info.watch_keys = vec![];
+        info.commands = None;
+        info.tx_keys = HashSet::new();
+
+        let pubsub = self.pubsub();
+        pubsub.unsubscribe(&self.pubsub_client.subscriptions(), self);
+        pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), self);
+    }
+
     pub fn status(&self) -> ConnectionStatus {
         self.info.read().status
     }

@@ -715,6 +715,15 @@ dispatcher! {
             0,
             true,
         },
+        reset {
+            cmd::client::reset,
+            [""],
+            1,
+            0,
+            0,
+            0,
+            false,
+        },
     },
     transaction {
         discard {
@@ -773,15 +782,6 @@ dispatcher! {
             0,
             true,
         },
-        subscribe {
-            cmd::pubsub::subscribe,
-            [""],
-            -2,
-            0,
-            0,
-            0,
-            true,
-        },
         pubsub {
             cmd::pubsub::pubsub,
             [""],
@@ -792,6 +792,24 @@ dispatcher! {
             true,
         },
         psubscribe {
+            cmd::pubsub::subscribe,
+            [""],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
+        punsubscribe {
+            cmd::pubsub::punsubscribe,
+            [""],
+            -1,
+            0,
+            0,
+            0,
+            true,
+        },
+        subscribe {
             cmd::pubsub::subscribe,
             [""],
             -2,
