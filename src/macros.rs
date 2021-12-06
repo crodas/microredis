@@ -19,6 +19,7 @@ macro_rules! dispatcher {
                 use super::*;
                 use async_trait::async_trait;
 
+                #[derive(Debug)]
                 pub struct Command {
                     pub tags: &'static [&'static str],
                     pub min_args: i32,
@@ -104,7 +105,6 @@ macro_rules! dispatcher {
         )+)+
 
         use async_trait::async_trait;
-        use std::ops::Deref;
 
         #[async_trait]
         pub trait ExecutableCommand {
@@ -124,39 +124,35 @@ macro_rules! dispatcher {
         }
 
         #[allow(non_snake_case, non_camel_case_types)]
-        pub enum Dispatcher {
+        #[derive(Debug)]
+        pub struct Dispatcher {
             $($(
-                $command($command::Command),
+                $command: $command::Command,
             )+)+
         }
 
         impl Dispatcher {
-            pub fn new(args: &[Bytes]) -> Result<Self, Error> {
+            pub fn new() -> Self {
+                Self {
+                    $($(
+                        $command: $command::Command::new(),
+                    )+)+
+                }
+            }
+            pub fn get_handler(&self, args: &[Bytes]) -> Result<&(dyn ExecutableCommand + Send + Sync + 'static), Error> {
                 let command = String::from_utf8_lossy(&args[0]).to_lowercase();
 
-                let command = match command.as_str() {
+                let command: &(dyn ExecutableCommand + Send + Sync + 'static) = match command.as_str() {
                 $($(
-                    stringify!($command) => Ok(Self::$command($command::Command::new())),
+                    stringify!($command) => &self.$command,
                 )+)+
-                    _ => Err(Error::CommandNotFound(command.into())),
-                }?;
+                    _ => return Err(Error::CommandNotFound(command.into())),
+                };
 
                 if ! command.check_number_args(args.len()) {
                     Err(Error::InvalidArgsCount(command.name().into()))
                 } else {
                     Ok(command)
-                }
-            }
-        }
-
-        impl Deref for Dispatcher {
-            type Target = dyn ExecutableCommand + Sync + Send;
-
-            fn deref(&self) -> &(dyn ExecutableCommand + Sync + Send + 'static) {
-                match self {
-                    $($(
-                        Self::$command(v) => v as &(dyn ExecutableCommand + Sync + Send),
-                    )+)+
                 }
             }
         }

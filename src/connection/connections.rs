@@ -1,5 +1,5 @@
 use super::{pubsub_connection::PubsubClient, pubsub_server::Pubsub, Connection, ConnectionInfo};
-use crate::{db::Db, value::Value};
+use crate::{db::Db, dispatcher::Dispatcher, value::Value};
 use parking_lot::RwLock;
 use std::{collections::BTreeMap, net::SocketAddr, sync::Arc};
 
@@ -10,6 +10,7 @@ pub struct Connections {
     connections: RwLock<BTreeMap<u128, Arc<Connection>>>,
     db: Arc<Db>,
     pubsub: Arc<Pubsub>,
+    dispatcher: Arc<Dispatcher>,
     counter: RwLock<u128>,
 }
 
@@ -19,6 +20,7 @@ impl Connections {
             counter: RwLock::new(0),
             db,
             pubsub: Arc::new(Pubsub::new()),
+            dispatcher: Arc::new(Dispatcher::new()),
             connections: RwLock::new(BTreeMap::new()),
         }
     }
@@ -26,6 +28,10 @@ impl Connections {
     #[allow(dead_code)]
     pub fn db(&self) -> Arc<Db> {
         self.db.clone()
+    }
+
+    pub fn get_dispatcher(&self) -> Arc<Dispatcher> {
+        self.dispatcher.clone()
     }
 
     pub fn pubsub(&self) -> Arc<Pubsub> {

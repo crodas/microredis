@@ -1,7 +1,6 @@
 use crate::{
     connection::{connections::Connections, ConnectionStatus},
     db::Db,
-    dispatcher::Dispatcher,
     value::Value,
 };
 use bytes::{Buf, Bytes, BytesMut};
@@ -69,6 +68,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
+                let all_connections = all_connections.clone();
                 let (mut pubsub, conn) = all_connections.new_connection(db.clone(), addr);
 
                 tokio::spawn(async move {
@@ -84,7 +84,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                                 }
                             }
                             result = transport.next() => match result {
-                            Some(Ok(args)) => match Dispatcher::new(&args) {
+                            Some(Ok(args)) => match all_connections.get_dispatcher().get_handler(&args) {
                                 Ok(handler) => {
                                     match handler
                                         .execute(&conn, &args)

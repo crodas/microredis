@@ -1,6 +1,5 @@
 use crate::{
     connection::{Connection, ConnectionStatus},
-    dispatcher::Dispatcher,
     error::Error,
     value::Value,
 };
@@ -33,7 +32,7 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 
     if let Some(commands) = conn.get_queue_commands() {
         for args in commands.iter() {
-            let result = match Dispatcher::new(args) {
+            let result = match conn.all_connections().get_dispatcher().get_handler(args) {
                 Ok(handler) => handler
                     .execute(conn, args)
                     .await
@@ -195,7 +194,8 @@ mod test {
 
     fn get_keys(args: &[&str]) -> Vec<Bytes> {
         let args: Vec<Bytes> = args.iter().map(|s| Bytes::from(s.to_string())).collect();
-        if let Ok(cmd) = Dispatcher::new(&args) {
+        let d = Dispatcher::new();
+        if let Ok(cmd) = d.get_handler(&args) {
             cmd.get_keys(&args).iter().map(|k| (*k).clone()).collect()
         } else {
             vec![]

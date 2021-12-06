@@ -19,7 +19,6 @@ mod test {
     use bytes::Bytes;
     use std::{
         net::{IpAddr, Ipv4Addr, SocketAddr},
-        ops::Deref,
         sync::Arc,
     };
     use tokio::sync::mpsc::UnboundedReceiver;
@@ -55,8 +54,9 @@ mod test {
     pub async fn run_command(conn: &Connection, cmd: &[&str]) -> Result<Value, Error> {
         let args: Vec<Bytes> = cmd.iter().map(|s| Bytes::from(s.to_string())).collect();
 
-        let handler = Dispatcher::new(&args)?;
+        let dispatcher = Dispatcher::new();
+        let handler = dispatcher.get_handler(&args)?;
 
-        handler.deref().execute(conn, &args).await
+        handler.execute(conn, &args).await
     }
 }
