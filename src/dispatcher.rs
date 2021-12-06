@@ -166,6 +166,17 @@ dispatcher! {
             true,
         },
     },
+    metrics {
+        metrics {
+            cmd::metrics::metrics,
+            [""],
+            -1,
+            0,
+            0,
+            0,
+            false,
+        },
+    },
     list {
         blpop {
             cmd::list::blpop,
