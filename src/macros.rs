@@ -51,6 +51,7 @@ macro_rules! dispatcher {
                         let error_count = &metrics.error_count;
                         let in_flight = &metrics.in_flight;
                         let response_time = &metrics.response_time;
+                        let throughput = &metrics.throughput;
 
                         let status = conn.status();
                         if status == ConnectionStatus::Multi && self.is_queueable() {
@@ -63,8 +64,10 @@ macro_rules! dispatcher {
 
                         measure!(hit_count, {
                             measure!(response_time, {
-                                measure!(in_flight, {
-                                    measure!(error_count, $handler(conn, args).await)
+                                measure!(throughput, {
+                                    measure!(in_flight, {
+                                        measure!(error_count, $handler(conn, args).await)
+                                    })
                                 })
                             })
                         })
@@ -154,6 +157,13 @@ macro_rules! dispatcher {
             throughput: Throughput,
         }
 
+        #[derive(serde::Serialize)]
+        pub struct ServiceMetricRegistry<'a> {
+            $($(
+            $command: &'a Metrics,
+            )+)+
+        }
+
         #[allow(non_snake_case, non_camel_case_types)]
         #[derive(Debug)]
         pub struct Dispatcher {
@@ -167,6 +177,14 @@ macro_rules! dispatcher {
                 Self {
                     $($(
                         $command: $command::Command::new(),
+                    )+)+
+                }
+            }
+
+            pub fn get_service_metric_registry(&self) -> ServiceMetricRegistry {
+                ServiceMetricRegistry {
+                    $($(
+                        $command: self.$command.metrics(),
                     )+)+
                 }
             }
