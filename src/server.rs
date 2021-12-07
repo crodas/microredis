@@ -9,6 +9,7 @@ use log::{info, trace, warn};
 use redis_zero_protocol_parser::{parse_server, Error as RedisError};
 use std::{error::Error, io, sync::Arc};
 use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
     time::{sleep, Duration},
 };
@@ -50,12 +51,51 @@ impl Decoder for RedisParser {
     }
 }
 
+pub async fn server_metrics(all_connections: Arc<Connections>) {
+    info!("Listening on 127.0.0.1:7878 for metrics");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:7878")
+        .await
+        .expect("Failed to start metrics server");
+
+    let mut globals = std::collections::HashMap::new();
+    globals.insert("service", "microredis");
+
+    loop {
+        let (mut stream, _) = listener.accept().await.expect("accept client");
+        let mut buf = vec![0; 1024];
+
+        let _ = match stream.read(&mut buf).await {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+
+        let serialized = serde_prometheus::to_string(
+            &all_connections
+                .get_dispatcher()
+                .get_service_metric_registry(),
+            Some("redis"),
+            globals.clone(),
+        )
+        .unwrap_or("".to_owned());
+
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            serialized.len(),
+            serialized
+        );
+
+        let _ = stream.write_all(&response.as_bytes()).await;
+        let _ = stream.flush().await;
+    }
+}
+
 pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(&addr).await?;
     info!("Listening on: {}", addr);
 
     let db = Arc::new(Db::new(1000));
     let all_connections = Arc::new(Connections::new(db.clone()));
+    let all_connections_for_metrics = all_connections.clone();
 
     let db_for_purging = db.clone();
     tokio::spawn(async move {
@@ -63,6 +103,10 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
             db_for_purging.purge();
             sleep(Duration::from_millis(5000)).await;
         }
+    });
+
+    tokio::spawn(async move {
+        server_metrics(all_connections_for_metrics.clone()).await;
     });
 
     loop {

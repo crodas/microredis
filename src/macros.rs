@@ -18,6 +18,7 @@ macro_rules! dispatcher {
             pub mod $command {
                 use super::*;
                 use async_trait::async_trait;
+                use metered::measure;
 
                 #[derive(Debug)]
                 pub struct Command {
@@ -26,6 +27,7 @@ macro_rules! dispatcher {
                     pub key_start: i32,
                     pub key_stop: i32,
                     pub key_step: usize,
+                    pub metrics: Metrics,
                 }
 
                 impl Command {
@@ -36,6 +38,7 @@ macro_rules! dispatcher {
                             key_start: $key_start,
                             key_stop: $key_stop,
                             key_step: $key_step,
+                            metrics: Metrics::default(),
                         }
                     }
                 }
@@ -43,16 +46,35 @@ macro_rules! dispatcher {
                 #[async_trait]
                 impl ExecutableCommand for Command {
                     async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+                        let metrics = self.metrics();
+                        let hit_count = &metrics.hit_count;
+                        let error_count = &metrics.error_count;
+                        let in_flight = &metrics.in_flight;
+                        let response_time = &metrics.response_time;
+                        let throughput = &metrics.throughput;
+
                         let status = conn.status();
                         if status == ConnectionStatus::Multi && self.is_queueable() {
                             conn.queue_command(args);
                             conn.tx_keys(self.get_keys(args));
-                            Ok(Value::Queued)
+                            return Ok(Value::Queued);
                         } else if status == ConnectionStatus::Pubsub && ! self.is_pubsub_executable() {
-                            Err(Error::PubsubOnly(stringify!($command).to_owned()))
-                        } else {
-                            $handler(conn, args).await
+                            return Err(Error::PubsubOnly(stringify!($command).to_owned()));
                         }
+
+                        measure!(hit_count, {
+                            measure!(response_time, {
+                                measure!(throughput, {
+                                    measure!(in_flight, {
+                                        measure!(error_count, $handler(conn, args).await)
+                                    })
+                                })
+                            })
+                        })
+                    }
+
+                    fn metrics(&self) -> &Metrics {
+                        &self.metrics
                     }
 
                     fn is_pubsub_executable(&self) -> bool {
@@ -105,10 +127,13 @@ macro_rules! dispatcher {
         )+)+
 
         use async_trait::async_trait;
+        use metered::{Throughput, HitCount, ErrorCount, InFlight, ResponseTime};
 
         #[async_trait]
         pub trait ExecutableCommand {
             async fn execute(&self, conn: &Connection, args: &[Bytes]) -> Result<Value, Error>;
+
+            fn metrics(&self) -> &Metrics;
 
             fn is_queueable(&self) -> bool;
 
@@ -121,6 +146,22 @@ macro_rules! dispatcher {
             fn group(&self) -> &'static str;
 
             fn name(&self) -> &'static str;
+        }
+
+        #[derive(Debug, Default, serde::Serialize)]
+        pub struct Metrics {
+            hit_count: HitCount,
+            error_count: ErrorCount,
+            in_flight: InFlight,
+            response_time: ResponseTime,
+            throughput: Throughput,
+        }
+
+        #[derive(serde::Serialize)]
+        pub struct ServiceMetricRegistry<'a> {
+            $($(
+            $command: &'a Metrics,
+            )+)+
         }
 
         #[allow(non_snake_case, non_camel_case_types)]
@@ -139,16 +180,35 @@ macro_rules! dispatcher {
                     )+)+
                 }
             }
+
+            pub fn get_service_metric_registry(&self) -> ServiceMetricRegistry {
+                ServiceMetricRegistry {
+                    $($(
+                        $command: self.$command.metrics(),
+                    )+)+
+                }
+            }
+
+            pub fn get_all_commands(&self) -> Vec<&(dyn ExecutableCommand + Send + Sync + 'static)> {
+                vec![
+                $($(
+                    &self.$command,
+                )+)+
+                ]
+            }
+
+            pub fn get_handler_for_command(&self, command: &str) -> Result<&(dyn ExecutableCommand + Send + Sync + 'static), Error> {
+                match command {
+                $($(
+                    stringify!($command) => Ok(&self.$command),
+                )+)+
+                    _ => Err(Error::CommandNotFound(command.into())),
+                }
+            }
+
             pub fn get_handler(&self, args: &[Bytes]) -> Result<&(dyn ExecutableCommand + Send + Sync + 'static), Error> {
                 let command = String::from_utf8_lossy(&args[0]).to_lowercase();
-
-                let command: &(dyn ExecutableCommand + Send + Sync + 'static) = match command.as_str() {
-                $($(
-                    stringify!($command) => &self.$command,
-                )+)+
-                    _ => return Err(Error::CommandNotFound(command.into())),
-                };
-
+                let command = self.get_handler_for_command(&command)?;
                 if ! command.check_number_args(args.len()) {
                     Err(Error::InvalidArgsCount(command.name().into()))
                 } else {

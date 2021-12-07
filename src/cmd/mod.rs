@@ -4,6 +4,7 @@ pub mod key;
 pub mod list;
 pub mod pubsub;
 pub mod set;
+pub mod metrics;
 pub mod string;
 pub mod transaction;
 

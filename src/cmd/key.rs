@@ -143,10 +143,14 @@ mod test {
             Ok(Value::Integer(1)),
             run_command(&c, &["pexpire", "foo", "6000"]).await
         );
-        assert_eq!(
-            Ok(Value::Integer(5999)),
-            run_command(&c, &["pttl", "foo"]).await
-        );
+
+        match run_command(&c, &["pttl", "foo"]).await {
+            Ok(Value::Integer(n)) => {
+                assert!(n < 6000 && n > 5900);
+            }
+            _ => unreachable!(),
+        };
+
         assert_eq!(
             Ok(Value::Integer(1)),
             run_command(&c, &["persist", "foo"]).await
