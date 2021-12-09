@@ -5,10 +5,12 @@ pub mod checksum;
 pub mod cursor;
 pub mod expiration;
 pub mod float;
+pub mod sorted_set;
 pub mod typ;
 
 use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
+use float_ord::FloatOrd;
 use redis_zero_protocol_parser::Value as ParsedValue;
 use sha2::{Digest, Sha256};
 use std::{
@@ -30,6 +32,8 @@ pub enum Value {
     List(VecDeque<checksum::Value>),
     /// Set. This type cannot be serialized
     Set(HashSet<Bytes>),
+    /// Sorted set
+    SortedSet(sorted_set::SortedSet<FloatOrd<f64>, Bytes>),
     /// Vector/Array of values
     Array(Vec<Value>),
     /// Bytes/Strings/Binary data
