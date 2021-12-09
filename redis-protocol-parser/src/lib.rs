@@ -1,32 +1,65 @@
+//! # A zero-copy redis protocol parser
+//!
+//! A zero-copy redis protocol parser
+
+#![deny(missing_docs)]
+#![deny(warnings)]
+
 #[macro_use]
 mod macros;
 
 use std::convert::TryInto;
 
+/// Redis Value.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value<'a> {
+    /// Vector of values
     Array(Vec<Value<'a>>),
+    /// Binary data
     Blob(&'a [u8]),
+    /// String. New lines are not allowed
     String(&'a str),
+    /// Error
     Error(&'a str, &'a str),
+    /// Integer
     Integer(i64),
+    /// Boolean
     Boolean(bool),
+    /// Float number
     Float(f64),
+    /// Big integers
     BigInteger(i128),
+    /// Null
     Null,
 }
 
+/// Protocol errors
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Error {
+    /// The data is incomplete. This it not an error per-se, but rather a
+    /// mechanism to let the caller know they should keep buffering data before
+    /// calling the parser again.
     Partial,
+    /// Unexpected first byte after a new line
     InvalidPrefix,
+    /// Invalid data length
     InvalidLength,
+    /// Parsed value is not boolean
     InvalidBoolean,
+    /// Parsed data is not a number
     InvalidNumber,
+    /// Protocol error
     Protocol(u8, u8),
+    /// Missing new line
     NewLine,
 }
 
+/// Parses data in the format that redis expects
+///
+/// Redis expects an array of blobs. Although the protocol is much wider at the
+/// top level, redis expects an array of blobs.
+///
+/// The first value is returned along side with the unconsumed stream of bytes.
 pub fn parse_server(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
     let (bytes, byte) = next!(bytes);
     match byte {
@@ -35,6 +68,9 @@ pub fn parse_server(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
     }
 }
 
+/// Parses an array from an steam of bytes
+///
+/// The first value is returned along side with the unconsumed stream of bytes.
 fn parse_server_array(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
     let (bytes, len) = read_line_number!(bytes, i32);
     if len <= 0 {
@@ -60,6 +96,10 @@ fn parse_server_array(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
     Ok((bytes, v))
 }
 
+/// Parses redis values from an stream of bytes. If the data is incomplete
+/// Err(Error::Partial) is returned.
+///
+/// The first value is returned along side with the unconsumed stream of bytes.
 pub fn parse(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
     let (bytes, byte) = next!(bytes);
     match byte {

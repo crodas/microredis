@@ -1,3 +1,4 @@
+//! # Hash command handlers
 use crate::{
     check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
 };
@@ -10,6 +11,9 @@ use std::{
     str::FromStr,
 };
 
+/// Removes the specified fields from the hash stored at key. Specified fields that do not exist
+/// within this hash are ignored. If key does not exist, it is treated as an empty hash and this
+/// command returns 0.
 pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
@@ -36,6 +40,7 @@ pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Returns if field is an existing field in the hash stored at key.
 pub async fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -51,6 +56,7 @@ pub async fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     )
 }
 
+/// Returns the value associated with field in the hash stored at key.
 pub async fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -66,6 +72,8 @@ pub async fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Returns all fields and values of the hash stored at key. In the returned value, every field
+/// name is followed by its value, so the length of the reply is twice the size of the hash.
 pub async fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -86,6 +94,10 @@ pub async fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     )
 }
 
+/// Increment the specified field of a hash stored at key, and representing a number, by the
+/// specified increment. If the increment value is negative, the result is to have the hash field
+/// value decremented instead of incremented. If the field does not exist, it is set to 0 before
+/// performing the operation.
 pub async fn hincrby<
     T: ToString + FromStr + AddAssign + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
 >(
@@ -123,6 +135,7 @@ pub async fn hincrby<
     Ok(result)
 }
 
+/// Returns all field names in the hash stored at key.
 pub async fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -142,6 +155,7 @@ pub async fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Returns the number of fields contained in the hash stored at key.
 pub async fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -153,6 +167,7 @@ pub async fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Returns the values associated with the specified fields in the hash stored at key.
 pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -178,6 +193,7 @@ pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Returns random keys (or values) from a hash
 pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let (count, with_values) = match args.len() {
         2 => (None, false),
@@ -242,6 +258,8 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
     )
 }
 
+/// Sets field in the hash stored at key to value. If key does not exist, a new key holding a hash
+/// is created. If field already exists in the hash, it is overwritten.
 pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if args.len() % 2 == 1 {
         return Err(Error::InvalidArgsCount("hset".to_owned()));
@@ -278,6 +296,9 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Sets field in the hash stored at key to value, only if field does not yet exist. If key does
+/// not exist, a new key holding a hash is created. If field already exists, this operation has no
+/// effect.
 pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
@@ -313,6 +334,8 @@ pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Returns the string length of the value associated with field in the hash stored at key. If the
+/// key or the field do not exist, 0 is returned.
 pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -328,6 +351,7 @@ pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     )
 }
 
+/// Returns all values in the hash stored at key.
 pub async fn hvals(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],

@@ -1,3 +1,4 @@
+//! # List command handlers
 use crate::{
     check_arg,
     connection::{Connection, ConnectionStatus},
@@ -57,6 +58,10 @@ fn remove_element(
     Ok(result)
 }
 
+/// BLPOP is a blocking list pop primitive. It is the blocking version of LPOP because it blocks
+/// the connection when there are no elements to pop from any of the given lists. An element is
+/// popped from the head of the first list that is non-empty, with the given keys being checked in
+/// the order that they are given.
 pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let timeout = Instant::now() + Duration::from_secs(bytes_to_number(&args[args.len() - 1])?);
     let len = args.len() - 1;
@@ -79,6 +84,10 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(Value::Null)
 }
 
+/// BRPOP is a blocking list pop primitive. It is the blocking version of RPOP because it blocks
+/// the connection when there are no elements to pop from any of the given lists. An element is
+/// popped from the tail of the first list that is non-empty, with the given keys being checked in
+/// the order that they are given.
 pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let timeout = Instant::now() + Duration::from_secs(bytes_to_number(&args[args.len() - 1])?);
     let len = args.len() - 1;
@@ -101,6 +110,10 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(Value::Null)
 }
 
+/// Returns the element at index index in the list stored at key. The index is zero-based, so 0
+/// means the first element, 1 the second element and so on. Negative indices can be used to
+/// designate elements starting at the tail of the list. Here, -1 means the last element, -2 means
+/// the penultimate and so forth.
 pub async fn lindex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -122,6 +135,9 @@ pub async fn lindex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Inserts element in the list stored at key either before or after the reference value pivot.
+///
+/// When key does not exist, it is considered an empty list and no operation is performed.
 pub async fn linsert(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let is_before = if check_arg!(args, 2, "BEFORE") {
         true
@@ -172,6 +188,8 @@ pub async fn linsert(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     Ok(result)
 }
 
+/// Returns the length of the list stored at key. If key does not exist, it is interpreted as an
+/// empty list and 0 is returned. An error is returned when the value stored at key is not a list.
 pub async fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -183,6 +201,9 @@ pub async fn llen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Atomically returns and removes the first/last element (head/tail depending on the wherefrom
+/// argument) of the list stored at source, and pushes the element at the first/last element
+/// (head/tail depending on the whereto argument) of the list stored at destination.
 pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let source_is_left = if check_arg!(args, 3, "LEFT") {
         true
@@ -255,6 +276,11 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Removes and returns the first elements of the list stored at key.
+///
+/// By default, the command pops a single element from the beginning of the list. When provided
+/// with the optional count argument, the reply will consist of up to count elements, depending on
+/// the list's length.
 pub async fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let count = if args.len() > 2 {
         bytes_to_number(&args[2])?
@@ -265,6 +291,10 @@ pub async fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     remove_element(conn, &args[1], count, true)
 }
 
+/// The command returns the index of matching elements inside a Redis list. By default, when no
+/// options are given, it will scan the list from head to tail, looking for the first match of
+/// "element". If the element is found, its index (the zero-based position in the list) is
+/// returned. Otherwise, if no match is found, nil is returned.
 pub async fn lpos(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let mut index = 3;
     let element = checksum::Ref::new(&args[2]);
@@ -339,6 +369,15 @@ pub async fn lpos(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Insert all the specified values at the head of the list stored at key. If key does not exist,
+/// it is created as empty list before performing the push operations. When key holds a value that
+/// is not a list, an error is returned.
+///
+/// It is possible to push multiple elements using a single command call just specifying multiple
+/// arguments at the end of the command. Elements are inserted one after the other to the head of
+/// the list, from the leftmost element to the rightmost element. So for instance the command LPUSH
+/// mylist a b c will result into a list containing c as first element, b as second element and a
+/// as third element.
 pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let is_push_x = check_arg!(args, 0, "LPUSHX");
 
@@ -375,6 +414,12 @@ pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Returns the specified elements of the list stored at key. The offsets start and stop are
+/// zero-based indexes, with 0 being the first element of the list (the head of the list), 1 being
+/// the next element and so on.
+///
+/// These offsets can also be negative numbers indicating offsets starting at the end of the list.
+/// For example, -1 is the last element of the list, -2 the penultimate, and so on.
 pub async fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -406,6 +451,7 @@ pub async fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Removes the first count occurrences of elements equal to element from the list stored at key
 pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
@@ -457,6 +503,10 @@ pub async fn lrem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Sets the list element at index to element. For more information on the index argument, see
+/// LINDEX.
+///
+/// An error is returned for out of range indexes.
 pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
@@ -486,6 +536,9 @@ pub async fn lset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Trim an existing list so that it will contain only the specified range of elements specified.
+/// Both start and stop are zero-based indexes, where 0 is the first element of the list (the
+/// head), 1 the next element and so on.
 pub async fn ltrim(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
@@ -522,6 +575,11 @@ pub async fn ltrim(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Removes and returns the last elements of the list stored at key.
+///
+/// By default, the command pops a single element from the end of the list. When provided with the
+/// optional count argument, the reply will consist of up to count elements, depending on the
+/// list's length.
 pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let count = if args.len() > 2 {
         bytes_to_number(&args[2])?
@@ -532,6 +590,8 @@ pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     remove_element(conn, &args[1], count, false)
 }
 
+/// Atomically returns and removes the last element (tail) of the list stored at source, and pushes
+/// the element at the first element (head) of the list stored at destination.
 pub async fn rpoplpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     lmove(
         conn,
@@ -546,6 +606,9 @@ pub async fn rpoplpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
     .await
 }
 
+/// Insert all the specified values at the tail of the list stored at key. If key does not exist,
+/// it is created as empty list before performing the push operation. When key holds a value that
+/// is not a list, an error is returned.
 pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let is_push_x = check_arg!(args, 0, "RPUSHX");
 

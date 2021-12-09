@@ -1,3 +1,4 @@
+//! # Key-related command handlers
 use crate::{
     check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
 };
@@ -5,21 +6,36 @@ use bytes::Bytes;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{Duration, Instant};
 
-pub fn now() -> Duration {
+/// Returns the current time
+fn now() -> Duration {
     let start = SystemTime::now();
     start
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
 }
 
+/// Removes the specified keys. A key is ignored if it does not exist.
 pub async fn del(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().del(&args[1..]))
 }
 
+/// Returns if key exists.
 pub async fn exists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().exists(&args[1..]))
 }
 
+/// Set a timeout on key. After the timeout has expired, the key will automatically be deleted. A
+/// key with an associated timeout is often said to be volatile in Redis terminology.
+///
+/// The timeout will only be cleared by commands that delete or overwrite the contents of the key,
+/// including DEL, SET, GETSET and all the *STORE commands. This means that all the operations that
+/// conceptually alter the value stored at the key without replacing it with a new one will leave
+/// the timeout untouched. For instance, incrementing the value of a key with INCR, pushing a new
+/// value into a list with LPUSH, or altering the field value of a hash with HSET are all
+/// operations that will leave the timeout untouched.
+///
+/// The timeout can also be cleared, turning the key back into a persistent key, using the PERSIST
+/// command.
 pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let expires_in: i64 = bytes_to_number(&args[2])?;
 
@@ -37,6 +53,9 @@ pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().set_ttl(&args[1], expires_at))
 }
 
+/// EXPIREAT has the same effect and semantic as EXPIRE, but instead of specifying the number of
+/// seconds representing the TTL (time to live), it takes an absolute Unix timestamp (seconds since
+/// January 1, 1970). A timestamp in the past will delete the key immediately.
 pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let secs = check_arg!(args, 0, "EXPIREAT");
     let expires_at: i64 = bytes_to_number(&args[2])?;
@@ -60,6 +79,9 @@ pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
     Ok(conn.db().set_ttl(&args[1], expires_at))
 }
 
+/// Returns the remaining time to live of a key that has a timeout. This introspection capability
+/// allows a Redis client to check how many seconds a given key will continue to be part of the
+/// dataset.
 pub async fn ttl(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let ttl = match conn.db().ttl(&args[1]) {
         Some(Some(ttl)) => {
@@ -77,6 +99,8 @@ pub async fn ttl(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(ttl.into())
 }
 
+/// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key
+/// will expire.
 pub async fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let ttl = match conn.db().ttl(&args[1]) {
         Some(Some(ttl)) => {
@@ -96,6 +120,8 @@ pub async fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
     Ok(ttl.into())
 }
 
+/// Remove the existing timeout on key, turning the key from volatile (a key with an expire set) to
+/// persistent (a key that will never expire as no timeout is associated).
 pub async fn persist(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().persist(&args[1]))
 }

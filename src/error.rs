@@ -1,20 +1,38 @@
+//! # Redis Error
+//!
+//! All redis errors are abstracted in this mod.
 use crate::value::Value;
 
+/// Redis errors
 #[derive(Debug, Eq, PartialEq)]
 pub enum Error {
+    /// A command is not found
     CommandNotFound(String),
+    /// Invalid number of arguments
     InvalidArgsCount(String),
+    /// The glob-pattern is not valid
     InvalidPattern(String),
+    /// Internal Error
     Internal,
+    /// Protocol error
     Protocol(String, String),
+    /// Unexpected argument
     WrongArgument(String, String),
+    /// Command not found
     NotFound,
+    /// Index out of range
     OutOfRange,
+    /// The connection is in pubsub only mode and the current command is not compabible.
     PubsubOnly(String),
+    /// Syntax error
     Syntax,
+    /// Byte cannot be converted to a number
     NotANumber,
+    /// The connection is not in a transaction
     NotInTx,
+    /// The connection is in a transaction and nested transactions are not supported
     NestedTx,
+    /// Wrong data type
     WrongType,
 }
 

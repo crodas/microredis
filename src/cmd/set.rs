@@ -1,3 +1,4 @@
+//! # Set command handlers
 use crate::{connection::Connection, error::Error, value::bytes_to_number, value::Value};
 use bytes::Bytes;
 use rand::Rng;
@@ -61,6 +62,9 @@ where
     )
 }
 
+/// Add the specified members to the set stored at key. Specified members that are already a member
+/// of this set are ignored. If key does not exist, a new set is created before adding the
+/// specified members.
 pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
@@ -102,6 +106,7 @@ pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Returns the set cardinality (number of elements) of the set stored at key.
 pub async fn scard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -113,6 +118,10 @@ pub async fn scard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )
 }
 
+/// Returns the members of the set resulting from the difference between the first set and all the
+/// successive sets.
+///
+/// Keys that do not exist are considered to be empty sets.
 pub async fn sdiff(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     compare_sets(conn, &args[1..], |all_entries, elements| {
         for element in elements.iter() {
@@ -125,6 +134,10 @@ pub async fn sdiff(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     .await
 }
 
+/// This command is equal to SDIFF, but instead of returning the resulting set, it is stored in
+/// destination.
+///
+/// If destination already exists, it is overwritten.
 pub async fn sdiffstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sdiff(conn, &args[1..]).await? {
         Ok(store(conn, &args[1], &values).into())
@@ -133,6 +146,11 @@ pub async fn sdiffstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
     }
 }
 
+/// Returns the members of the set resulting from the intersection of all the given sets.
+///
+/// Keys that do not exist are considered to be empty sets. With one of the keys being an empty
+/// set, the resulting set is also empty (since set intersection with an empty set always results
+/// in an empty set).
 pub async fn sinter(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     compare_sets(conn, &args[1..], |all_entries, elements| {
         all_entries.retain(|element| elements.contains(element));
@@ -148,6 +166,13 @@ pub async fn sinter(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     .await
 }
 
+/// This command is similar to SINTER, but instead of returning the result set, it returns just the
+/// cardinality of the result. Returns the cardinality of the set which would result from the
+/// intersection of all the given sets.
+///
+/// Keys that do not exist are considered to be empty sets. With one of the keys being an empty
+/// set, the resulting set is also empty (since set intersection with an empty set always results
+/// in an empty set).
 pub async fn sintercard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Ok(Value::Array(x)) = sinter(conn, args).await {
         Ok(x.len().into())
@@ -156,6 +181,10 @@ pub async fn sintercard(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
     }
 }
 
+/// This command is equal to SINTER, but instead of returning the resulting set, it is stored in
+/// destination.
+///
+/// If destination already exists, it is overwritten.
 pub async fn sinterstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sinter(conn, &args[1..]).await? {
         Ok(store(conn, &args[1], &values).into())
@@ -164,6 +193,7 @@ pub async fn sinterstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
     }
 }
 
+/// Returns if member is a member of the set stored at key.
 pub async fn sismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -181,6 +211,9 @@ pub async fn sismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
     )
 }
 
+/// Returns all the members of the set value stored at key.
+///
+/// This has the same effect as running SINTER with one argument key.
 pub async fn smembers(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -197,6 +230,10 @@ pub async fn smembers(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
     )
 }
 
+/// Returns whether each member is a member of the set stored at key.
+///
+/// For every member, 1 is returned if the value is a member of the set, or 0 if the element is not
+/// a member of the set or if key does not exist.
 pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -215,6 +252,14 @@ pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
     )
 }
 
+/// Move member from the set at source to the set at destination. This operation is atomic. In
+/// every given moment the element will appear to be a member of source or destination for other
+/// clients.
+///
+/// If the source set does not exist or does not contain the specified element, no operation is
+/// performed and 0 is returned. Otherwise, the element is removed from the source set and added to
+/// the destination set. When the specified element already exists in the destination set, it is
+/// only removed from the source set.
 pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
@@ -259,6 +304,14 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Removes and returns one or more random members from the set value store at key.
+///
+/// This operation is similar to SRANDMEMBER, that returns one or more random elements from a set
+/// but does not remove it.
+///
+/// By default, the command pops a single member from the set. When provided with the optional
+/// count argument, the reply will consist of up to count members, depending on the set's
+/// cardinality.
 pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let rand = srandmember(conn, args).await?;
     let result = conn.db().get_map_or(
@@ -291,6 +344,15 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// When called with just the key argument, return a random element from the set value stored at
+/// key.
+///
+/// If the provided count argument is positive, return an array of distinct elements. The array's
+/// length is either count or the set's cardinality (SCARD), whichever is lower.
+///
+/// If called with a negative count, the behavior changes and the command is allowed to return the
+/// same element multiple times. In this case, the number of returned elements is the absolute
+/// value of the specified count.
 pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
@@ -324,6 +386,9 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
     )
 }
 
+/// Remove the specified members from the set stored at key. Specified members that are not a
+/// member of this set are ignored. If key does not exist, it is treated as an empty set and this
+/// command returns 0.
 pub async fn srem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
@@ -350,6 +415,7 @@ pub async fn srem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(result)
 }
 
+/// Returns the members of the set resulting from the union of all the given sets.
 pub async fn sunion(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     compare_sets(conn, &args[1..], |all_entries, elements| {
         for element in elements.iter() {
@@ -361,6 +427,10 @@ pub async fn sunion(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     .await
 }
 
+/// This command is equal to SUNION, but instead of returning the resulting set, it is stored in
+/// destination.
+///
+/// If destination already exists, it is overwritten.
 pub async fn sunionstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sunion(conn, &args[1..]).await? {
         Ok(store(conn, &args[1], &values).into())

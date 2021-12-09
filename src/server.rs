@@ -1,3 +1,7 @@
+//! # Server
+//!
+//! Redis TCP server. This module also includes a simple HTTP server to dump the prometheus
+//! metrics.
 use crate::{
     connection::{connections::Connections, ConnectionStatus},
     db::Db,
@@ -16,6 +20,7 @@ use tokio::{
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
+/// Redis Parser Encoder/Decoder
 struct RedisParser;
 
 impl Encoder<Value> for RedisParser {
@@ -51,6 +56,10 @@ impl Decoder for RedisParser {
     }
 }
 
+/// Spawn a very simple HTTP server to serve metrics.
+///
+/// The incoming HTTP request is discarded and the response is always the metrics in a prometheus
+/// format
 pub async fn server_metrics(all_connections: Arc<Connections>) {
     info!("Listening on 127.0.0.1:7878 for metrics");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:7878")
@@ -76,7 +85,7 @@ pub async fn server_metrics(all_connections: Arc<Connections>) {
             Some("redis"),
             globals.clone(),
         )
-        .unwrap_or("".to_owned());
+        .unwrap_or_else(|_| "".to_owned());
 
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
@@ -84,11 +93,19 @@ pub async fn server_metrics(all_connections: Arc<Connections>) {
             serialized
         );
 
-        let _ = stream.write_all(&response.as_bytes()).await;
+        let _ = stream.write_all(response.as_bytes()).await;
         let _ = stream.flush().await;
     }
 }
 
+/// Spawn redis server
+///
+/// Spawn a redis server. This function will create Conections object, the in-memory database, the
+/// purge process and the TCP server.
+///
+/// This process is also listening for any incoming message through the internal pub-sub.
+///
+/// This function will block the main thread and will never exit.
 pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(&addr).await?;
     info!("Listening on: {}", addr);

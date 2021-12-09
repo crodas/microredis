@@ -1,3 +1,7 @@
+//! # In-Memory database
+//!
+//! This database module is the core of the miniredis project. All other modules around this
+//! database module.
 mod entry;
 mod expiration;
 
@@ -17,6 +21,22 @@ use std::{
 };
 use tokio::time::{Duration, Instant};
 
+/// Databas structure
+///
+/// Each connection has their own clone of the database and the conn_id is stored in each instance.
+/// The entries property is shared for all connections.
+///
+/// To avoid lock contention this database is *not* a single HashMap, instead it is a vector of
+/// HashMaps. Each key is presharded and a bucket is selected. By doing this pre-step instead of
+/// locking the entire database, only a small portion is locked (shared or exclusively) at a time,
+/// making this database implementation thread-friendly. The number of slots available cannot be
+/// changed at runtime.
+///
+/// The database is also aware of other connections locking other keys exclusively (for
+/// transactions).
+///
+/// Each entry is wrapped with an entry::Entry struct, which is aware of expirations and data
+/// versioning (in practice the nanosecond of last modification).
 #[derive(Debug)]
 pub struct Db {
     /// A vector of hashmaps.
@@ -49,6 +69,7 @@ pub struct Db {
 }
 
 impl Db {
+    /// Creates a new database instance
     pub fn new(slots: usize) -> Self {
         let mut entries = vec![];
 
@@ -65,6 +86,11 @@ impl Db {
         }
     }
 
+    /// Creates a new Database instance bound to a connection.
+    ///
+    /// This is particular useful when locking keys exclusively.
+    ///
+    /// All the internal data are shjared through an Arc.
     pub fn new_db_instance(self: Arc<Db>, conn_id: u128) -> Db {
         Self {
             entries: self.entries.clone(),
@@ -76,6 +102,12 @@ impl Db {
     }
 
     #[inline]
+    /// Returns a slot where a key may be hosted.
+    ///
+    /// In order to avoid too much locks, instead of having a single hash a
+    /// database instance is a set of hashes. Each key is pre-shared with a
+    /// quick hashing algorithm to select a 'slot' or HashMap where it may be
+    /// hosted.
     fn get_slot(&self, key: &Bytes) -> usize {
         let id = (hash(key) as usize) % self.entries.len();
         trace!("selected slot {} for key {:?}", id, key);
@@ -97,6 +129,16 @@ impl Db {
         id
     }
 
+    /// Locks keys exclusively
+    ///
+    /// The locked keys are only accesible (read or write) by the connection
+    /// that locked them, any other connection must wait until the locking
+    /// connection releases them.
+    ///
+    /// This is used to simulate redis transactions. Transaction in Redis are
+    /// atomic but pausing a multi threaded Redis just to keep the same promises
+    /// was a bit extreme, that's the reason why a transaction will lock
+    /// exclusively all keys involved.
     pub fn lock_keys(&self, keys: &[Bytes]) {
         let waiting = Duration::from_nanos(100);
         loop {
@@ -119,7 +161,7 @@ impl Db {
 
             if i == keys.len() {
                 // All the involved keys are successfully being blocked
-                // exclusely.
+                // exclusively.
                 break;
             }
 
@@ -129,6 +171,7 @@ impl Db {
         }
     }
 
+    /// Releases the lock on keys
     pub fn unlock_keys(&self, keys: &[Bytes]) {
         let mut lock = self.tx_key_locks.write();
         for key in keys.iter() {
@@ -136,6 +179,10 @@ impl Db {
         }
     }
 
+    /// Increments a key's value by a given number
+    ///
+    /// If the stored value cannot be converted into a number an error will be
+    /// thrown.
     pub fn incr<
         T: ToString + AddAssign + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
     >(
@@ -165,6 +212,7 @@ impl Db {
         }
     }
 
+    /// Removes any expiration associated with a given key
     pub fn persist(&self, key: &Bytes) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();
         entries
@@ -180,6 +228,7 @@ impl Db {
             })
     }
 
+    /// Set time to live for a given key
     pub fn set_ttl(&self, key: &Bytes, expires_in: Duration) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();
         let expires_at = Instant::now() + expires_in;
@@ -194,6 +243,7 @@ impl Db {
             })
     }
 
+    /// Removes keys from the database
     pub fn del(&self, keys: &[Bytes]) -> Value {
         let mut expirations = self.expirations.lock();
 
@@ -207,6 +257,7 @@ impl Db {
             .into()
     }
 
+    /// Check if keys exists in the database
     pub fn exists(&self, keys: &[Bytes]) -> Value {
         let mut matches = 0;
         keys.iter()
@@ -221,6 +272,18 @@ impl Db {
         matches.into()
     }
 
+    /// get_map_or
+    ///
+    /// Instead of returning an entry of the database, to avoid clonning, this function will
+    /// execute a callback function with the entry as a parameter. If no record is found another
+    /// callback function is going to be executed, dropping the lock before doing so.
+    ///
+    /// If an entry is found, the lock is not dropped before doing the callback. Avoid inserting
+    /// new entries. In this case the value is passed by reference, so it is possible to modify the
+    /// entry itself.
+    ///
+    /// This function is useful to read non-scalar values from the database. Non-scalar values are
+    /// forbidden to clone, attempting cloning will endup in an error (Error::WrongType)
     pub fn get_map_or<F1, F2>(&self, key: &Bytes, found: F1, not_found: F2) -> Result<Value, Error>
     where
         F1: FnOnce(&Value) -> Result<Value, Error>,
@@ -239,6 +302,7 @@ impl Db {
         }
     }
 
+    /// Updates the entry version of a given key
     pub fn bump_version(&self, key: &Bytes) -> bool {
         let mut entries = self.entries[self.get_slot(key)].write();
         entries
@@ -250,6 +314,7 @@ impl Db {
             .is_some()
     }
 
+    /// Returns the version of a given key
     pub fn get_version(&self, key: &Bytes) -> u128 {
         let entries = self.entries[self.get_slot(key)].read();
         entries
@@ -259,6 +324,7 @@ impl Db {
             .unwrap_or_else(new_version)
     }
 
+    /// Get a copy of an entry
     pub fn get(&self, key: &Bytes) -> Value {
         let entries = self.entries[self.get_slot(key)].read();
         entries
@@ -267,6 +333,7 @@ impl Db {
             .map_or(Value::Null, |x| x.clone_value())
     }
 
+    /// Get multiple copies of entries
     pub fn get_multi(&self, keys: &[Bytes]) -> Value {
         keys.iter()
             .map(|key| {
@@ -280,6 +347,7 @@ impl Db {
             .into()
     }
 
+    /// Get a key or set a new value for the given key.
     pub fn getset(&self, key: &Bytes, value: &Value) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();
         self.expirations.lock().remove(key);
@@ -289,6 +357,7 @@ impl Db {
             .map_or(Value::Null, |x| x.clone_value())
     }
 
+    /// Takes an entry from the database.
     pub fn getdel(&self, key: &Bytes) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();
         entries.remove(key).map_or(Value::Null, |x| {
@@ -297,6 +366,7 @@ impl Db {
         })
     }
 
+    /// Set a key, value with an optional expiration time
     pub fn set(&self, key: &Bytes, value: Value, expires_in: Option<Duration>) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();
         let expires_at = expires_in.map(|duration| Instant::now() + duration);
@@ -308,6 +378,7 @@ impl Db {
         Value::Ok
     }
 
+    /// Returns the TTL of a given key
     pub fn ttl(&self, key: &Bytes) -> Option<Option<Instant>> {
         let entries = self.entries[self.get_slot(key)].read();
         entries
@@ -316,6 +387,13 @@ impl Db {
             .map(|x| x.get_ttl())
     }
 
+    /// Remove expired entries from the database.
+    ///
+    /// This function should be called from a background thread every few seconds. Calling it more
+    /// often is a waste of resources.
+    ///
+    /// Expired keys are automatically hidden by the database, this process is just claiming back
+    /// the memory from those expired keys.
     pub fn purge(&self) -> u64 {
         let mut expirations = self.expirations.lock();
         let mut removed = 0;
