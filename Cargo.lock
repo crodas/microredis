@@ -474,6 +474,7 @@ dependencies = [
  "metered",
  "parking_lot",
  "rand",
+ "redis-config-parser",
  "redis-zero-protocol-parser",
  "seahash",
  "serde",
@@ -670,6 +671,10 @@ checksum = "d51e9f596de227fda2ea6c84607f5558e196eeaf43c986b724ba4fb8fdf497e7"
 dependencies = [
  "rand_core",
 ]
+
+[[package]]
+name = "redis-config-parser"
+version = "0.1.0"
 
 [[package]]
 name = "redis-zero-protocol-parser"
