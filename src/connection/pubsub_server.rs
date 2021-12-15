@@ -8,7 +8,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
-type Sender = mpsc::UnboundedSender<Value>;
+type Sender = mpsc::Sender<Value>;
 type Subscription = HashMap<u128, Sender>;
 
 /// Pubsub global server structure
@@ -76,7 +76,7 @@ impl Pubsub {
                 *psubs += 1;
             }
 
-            let _ = conn.pubsub_client().sender().send(
+            let _ = conn.pubsub_client().sender().try_send(
                 vec![
                     "psubscribe".into(),
                     Value::Blob(bytes_channel.clone()),
@@ -96,12 +96,16 @@ impl Pubsub {
 
         if let Some(subs) = self.subscriptions.read().get(channel) {
             for sender in subs.values() {
-                let _ = sender.send(Value::Array(vec![
-                    "message".into(),
-                    Value::Blob(channel.clone()),
-                    Value::Blob(message.clone()),
-                ]));
-                i += 1;
+                if sender
+                    .try_send(Value::Array(vec![
+                        "message".into(),
+                        Value::Blob(channel.clone()),
+                        Value::Blob(message.clone()),
+                    ]))
+                    .is_ok()
+                {
+                    i += 1;
+                }
             }
         }
 
@@ -113,7 +117,7 @@ impl Pubsub {
             }
 
             for sub in subs.values() {
-                let _ = sub.send(Value::Array(vec![
+                let _ = sub.try_send(Value::Array(vec![
                     "pmessage".into(),
                     pattern.as_str().into(),
                     Value::Blob(channel.clone()),
@@ -136,7 +140,7 @@ impl Pubsub {
             .map(|channel| {
                 if let Some(subs) = all_subs.get_mut(channel) {
                     if let Some(sender) = subs.remove(&conn_id) {
-                        let _ = sender.send(Value::Array(vec![
+                        let _ = sender.try_send(Value::Array(vec![
                             "punsubscribe".into(),
                             channel.as_str().into(),
                             1.into(),
@@ -168,7 +172,7 @@ impl Pubsub {
                     subscriptions.insert(channel.clone(), h);
                 }
 
-                let _ = conn.pubsub_client().sender().send(
+                let _ = conn.pubsub_client().sender().try_send(
                     vec![
                         "subscribe".into(),
                         Value::Blob(channel.clone()),
@@ -190,7 +194,7 @@ impl Pubsub {
             .map(|channel| {
                 if let Some(subs) = all_subs.get_mut(channel) {
                     if let Some(sender) = subs.remove(&conn_id) {
-                        let _ = sender.send(Value::Array(vec![
+                        let _ = sender.try_send(Value::Array(vec![
                             "unsubscribe".into(),
                             Value::Blob(channel.clone()),
                             1.into(),

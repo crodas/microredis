@@ -94,12 +94,12 @@ mod test {
         },
         value::Value,
     };
-    use tokio::sync::mpsc::UnboundedReceiver;
+    use tokio::sync::mpsc::Receiver;
 
     async fn test_subscription_confirmation_and_first_message(
         msg: &str,
         channel: &str,
-        recv: &mut UnboundedReceiver<Value>,
+        recv: &mut Receiver<Value>,
     ) {
         assert_eq!(
             Some(Value::Array(vec![

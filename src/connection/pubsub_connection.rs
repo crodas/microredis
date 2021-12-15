@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 #[derive(Debug)]
 pub struct PubsubClient {
     meta: RwLock<MetaData>,
-    sender: mpsc::UnboundedSender<Value>,
+    sender: mpsc::Sender<Value>,
 }
 
 /// Metadata associated with a pubsub client
@@ -27,7 +27,7 @@ struct MetaData {
 
 impl PubsubClient {
     /// Creates a new pubsub client instance
-    pub fn new(sender: mpsc::UnboundedSender<Value>) -> Self {
+    pub fn new(sender: mpsc::Sender<Value>) -> Self {
         Self {
             meta: RwLock::new(MetaData {
                 subscriptions: HashMap::new(),
@@ -115,7 +115,7 @@ impl PubsubClient {
 
     /// Returns a copy of the pubsub sender. This sender object can be used to send messages (from
     /// other connections) to this connection.
-    pub fn sender(&self) -> mpsc::UnboundedSender<Value> {
+    pub fn sender(&self) -> mpsc::Sender<Value> {
         self.sender.clone()
     }
 }

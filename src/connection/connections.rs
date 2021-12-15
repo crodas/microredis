@@ -58,11 +58,11 @@ impl Connections {
         self: &Arc<Connections>,
         db: Arc<Db>,
         addr: SocketAddr,
-    ) -> (mpsc::UnboundedReceiver<Value>, Arc<Connection>) {
+    ) -> (mpsc::Receiver<Value>, Arc<Connection>) {
         let mut id = self.counter.write();
         *id += 1;
 
-        let (pubsub_sender, pubsub_receiver) = mpsc::unbounded_channel();
+        let (pubsub_sender, pubsub_receiver) = mpsc::channel(1_000);
 
         let conn = Arc::new(Connection {
             id: *id,
