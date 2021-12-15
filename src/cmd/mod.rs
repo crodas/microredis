@@ -23,7 +23,7 @@ mod test {
         net::{IpAddr, Ipv4Addr, SocketAddr},
         sync::Arc,
     };
-    use tokio::sync::mpsc::UnboundedReceiver;
+    use tokio::sync::mpsc::Receiver;
 
     pub fn create_connection() -> Arc<Connection> {
         let db = Arc::new(Db::new(1000));
@@ -34,7 +34,7 @@ mod test {
         all_connections.new_connection(db.clone(), client).1
     }
 
-    pub fn create_connection_and_pubsub() -> (UnboundedReceiver<Value>, Arc<Connection>) {
+    pub fn create_connection_and_pubsub() -> (Receiver<Value>, Arc<Connection>) {
         let db = Arc::new(Db::new(1000));
         let all_connections = Arc::new(Connections::new(db.clone()));
 
@@ -45,7 +45,7 @@ mod test {
 
     pub fn create_new_connection_from_connection(
         conn: &Connection,
-    ) -> (UnboundedReceiver<Value>, Arc<Connection>) {
+    ) -> (Receiver<Value>, Arc<Connection>) {
         let all_connections = conn.all_connections();
 
         let client = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
