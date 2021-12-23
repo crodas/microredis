@@ -57,8 +57,6 @@ mod test {
         let args: Vec<Bytes> = cmd.iter().map(|s| Bytes::from(s.to_string())).collect();
 
         let dispatcher = Dispatcher::new();
-        let handler = dispatcher.get_handler(&args)?;
-
-        handler.execute(conn, &args).await
+        dispatcher.execute(conn, &args).await
     }
 }

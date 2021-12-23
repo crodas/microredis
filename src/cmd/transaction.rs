@@ -43,14 +43,12 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     let mut results = vec![];
 
     if let Some(commands) = conn.get_queue_commands() {
+        let dispatcher = conn.all_connections().get_dispatcher();
         for args in commands.iter() {
-            let result = match conn.all_connections().get_dispatcher().get_handler(args) {
-                Ok(handler) => handler
-                    .execute(conn, args)
-                    .await
-                    .unwrap_or_else(|x| x.into()),
-                Err(err) => err.into(),
-            };
+            let result = dispatcher
+                .execute(conn, args)
+                .await
+                .unwrap_or_else(|x| x.into());
             results.push(result);
         }
     }

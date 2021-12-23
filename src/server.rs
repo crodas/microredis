@@ -145,38 +145,26 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
                                 }
                             }
                             result = transport.next() => match result {
-                            Some(Ok(args)) => match all_connections.get_dispatcher().get_handler(&args) {
-                                Ok(handler) => {
-                                    match handler
-                                        .execute(&conn, &args)
-                                        .await {
-                                            Ok(result) => {
-                                                if conn.status() == ConnectionStatus::Pubsub {
-                                                    continue;
-                                                }
-                                                if transport.send(result).await.is_err() {
-                                                    break;
-                                                }
-                                            },
-                                            Err(err) => {
-                                                if transport.send(err.into()).await.is_err() {
-                                                    break;
-                                                }
-                                            }
-                                        };
-
-                                },
-                                Err(err) => {
-                                    if transport.send(err.into()).await.is_err() {
-                                        break;
+                                Some(Ok(args)) => match all_connections.get_dispatcher().execute(&conn, &args).await {
+                                    Ok(result) => {
+                                        if conn.status() == ConnectionStatus::Pubsub {
+                                            continue;
+                                        }
+                                        if transport.send(result).await.is_err() {
+                                            break;
+                                        }
+                                    },
+                                    Err(err) => {
+                                        if transport.send(err.into()).await.is_err() {
+                                            break;
+                                        }
                                     }
-                                }
-                            },
-                            Some(Err(e)) => {
-                                warn!("error on decoding from socket; error = {:?}", e);
-                                break;
-                            },
-                            None => break,
+                                },
+                                Some(Err(e)) => {
+                                    warn!("error on decoding from socket; error = {:?}", e);
+                                    break;
+                                },
+                                None => break,
                             }
                         }
                     }
