@@ -105,11 +105,11 @@ impl Connection {
     /// If the connection was not in a MULTI stage an error is thrown.
     pub fn stop_transaction(&self) -> Result<Value, Error> {
         let mut info = self.info.write();
-        if info.status == ConnectionStatus::Multi {
+        if info.status == ConnectionStatus::Multi || info.status == ConnectionStatus::ExecutingTx {
             info.commands = None;
             info.watch_keys.clear();
             info.tx_keys.clear();
-            info.status = ConnectionStatus::ExecutingTx;
+            info.status = ConnectionStatus::Normal;
 
             Ok(Value::Ok)
         } else {

@@ -206,6 +206,62 @@ mod test {
         );
     }
 
+    #[tokio::test]
+    async fn test_two_consecutive_transactions() {
+        let c = create_connection();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Queued),
+            run_command(&c, &["set", "foo", "foo"]).await
+        );
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Null,
+                Value::Ok,
+                Value::Blob("foo".into()),
+            ])),
+            run_command(&c, &["exec"]).await
+        );
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Queued),
+            run_command(&c, &["set", "foo", "bar"]).await
+        );
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec![
+                Value::Blob("foo".into()),
+                Value::Ok,
+                Value::Blob("bar".into()),
+            ])),
+            run_command(&c, &["exec"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reset_drops_transaction() {
+        let c = create_connection();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Queued),
+            run_command(&c, &["set", "foo", "foo"]).await
+        );
+        assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(Ok(Value::String("RESET".into())), run_command(&c, &["reset"]).await);
+        assert_eq!(
+            Err(Error::NotInTx),
+            run_command(&c, &["exec"]).await
+        );
+
+    }
+
     fn get_keys(args: &[&str]) -> Vec<Bytes> {
         let args: Vec<Bytes> = args.iter().map(|s| Bytes::from(s.to_string())).collect();
         let d = Dispatcher::new();
