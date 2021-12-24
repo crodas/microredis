@@ -254,12 +254,11 @@ mod test {
             run_command(&c, &["set", "foo", "foo"]).await
         );
         assert_eq!(Ok(Value::Queued), run_command(&c, &["get", "foo"]).await);
-        assert_eq!(Ok(Value::String("RESET".into())), run_command(&c, &["reset"]).await);
         assert_eq!(
-            Err(Error::NotInTx),
-            run_command(&c, &["exec"]).await
+            Ok(Value::String("RESET".into())),
+            run_command(&c, &["reset"]).await
         );
-
+        assert_eq!(Err(Error::NotInTx), run_command(&c, &["exec"]).await);
     }
 
     fn get_keys(args: &[&str]) -> Vec<Bytes> {
