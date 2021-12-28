@@ -11,6 +11,7 @@ pub mod metrics;
 pub mod pubsub;
 pub mod server;
 pub mod set;
+pub mod sorted_set;
 pub mod string;
 pub mod transaction;
 

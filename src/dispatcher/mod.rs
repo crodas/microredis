@@ -19,6 +19,35 @@ pub mod command;
 
 // Returns the server time
 dispatcher! {
+    sorted_set {
+        ZADD {
+            cmd::sorted_set::zadd,
+            [Flag::Write Flag::DenyOom Flag::Fast],
+            -4,
+            1,
+            1,
+            1,
+            true,
+        },
+        ZCARD {
+            cmd::sorted_set::zcard,
+            [Flag::ReadOnly Flag::Fast],
+            2,
+            1,
+            1,
+            1,
+            true,
+        },
+        ZCOUNT {
+            cmd::sorted_set::zcount,
+            [Flag::ReadOnly Flag::Fast],
+            4,
+            1,
+            1,
+            1,
+            true,
+        },
+    },
     set {
         SADD {
             cmd::set::sadd,

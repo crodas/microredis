@@ -14,7 +14,7 @@ use float_ord::FloatOrd;
 use redis_zero_protocol_parser::Value as ParsedValue;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{Bound, HashMap, HashSet, VecDeque},
     convert::{TryFrom, TryInto},
     str::FromStr,
 };
@@ -33,7 +33,7 @@ pub enum Value {
     /// Set. This type cannot be serialized
     Set(HashSet<Bytes>),
     /// Sorted set
-    SortedSet(sorted_set::SortedSet<FloatOrd<f64>, Bytes>),
+    SortedSet(sorted_set::SortedSet),
     /// Vector/Array of values
     Array(Vec<Value>),
     /// Bytes/Strings/Binary data
@@ -229,6 +229,29 @@ pub fn bytes_to_int<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
         .map_err(|_| Error::NotANumberType("an integer".to_owned()))
 }
 
+/// Converts bytes to a Range number
+pub fn bytes_to_range<T: FromStr>(bytes: &[u8]) -> Result<Bound<T>, Error> {
+    match bytes {
+        b"-inf" | b"+inf" | b"inf" => Ok(Bound::Unbounded),
+        _ => {
+            if bytes[0] == b'(' {
+                Ok(Bound::Excluded(bytes_to_number::<T>(&(bytes[1..]))?))
+            } else {
+                Ok(Bound::Included(bytes_to_number::<T>(bytes)?))
+            }
+        }
+    }
+}
+
+/// Converts bytes to a Range of float FloatOrd numbers
+pub fn bytes_to_range_floatord(bytes: &[u8]) -> Result<Bound<FloatOrd<f64>>, Error> {
+    match bytes_to_range(bytes)? {
+        Bound::Included(n) => Ok(Bound::Included(FloatOrd(n))),
+        Bound::Excluded(n) => Ok(Bound::Excluded(FloatOrd(n))),
+        Bound::Unbounded => Ok(Bound::Unbounded),
+    }
+}
+
 impl<'a> From<&ParsedValue<'a>> for Value {
     fn from(value: &ParsedValue) -> Self {
         match value {
@@ -282,6 +305,12 @@ impl From<&Bytes> for Value {
 impl From<&str> for Value {
     fn from(value: &str) -> Self {
         Value::Blob(Bytes::copy_from_slice(value.as_bytes()))
+    }
+}
+
+impl From<sorted_set::SortedSet> for Value {
+    fn from(value: sorted_set::SortedSet) -> Self {
+        Value::SortedSet(value)
     }
 }
 
