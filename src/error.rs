@@ -8,6 +8,8 @@ use crate::value::Value;
 pub enum Error {
     /// A command is not found
     CommandNotFound(String),
+    /// A sub-command is not found
+    SubCommandNotFound(String, String),
     /// Invalid number of arguments
     InvalidArgsCount(String),
     /// The glob-pattern is not valid
@@ -47,6 +49,7 @@ impl From<Error> for Value {
 
         let err_msg = match value {
             Error::CommandNotFound(x) => format!("unknown command `{}`", x),
+            Error::SubCommandNotFound(x, y) => format!("Unknown subcommand or wrong number of arguments for '{}'. Try {} HELP.", x, y),
             Error::InvalidArgsCount(x) => format!("wrong number of arguments for '{}' command", x),
             Error::InvalidPattern(x) => format!("'{}' is not a valid pattern", x),
             Error::Internal => "internal error".to_owned(),

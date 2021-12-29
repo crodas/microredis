@@ -33,13 +33,7 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             .flatten()
             .collect::<Vec<Value>>()
             .into()),
-        cmd => Ok(Value::Err(
-            "ERR".to_owned(),
-            format!(
-                "Unknown subcommand or wrong number of arguments for '{}'. Try PUBSUB HELP.",
-                cmd
-            ),
-        )),
+        cmd => Err(Error::SubCommandNotFound(cmd.into(), String::from_utf8_lossy(&args[0]).into())),
     }
 }
 

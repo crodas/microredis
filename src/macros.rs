@@ -17,7 +17,7 @@ macro_rules! dispatcher {
         $($ns:ident {
             $($command:ident {
                 $handler:expr,
-                [$($tag:tt)+],
+                [$($tag:expr)+],
                 $min_args:expr,
                 $key_start:expr,
                 $key_stop:expr,
