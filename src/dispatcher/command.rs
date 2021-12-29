@@ -15,12 +15,67 @@ use bytes::Bytes;
 use metered::{ErrorCount, HitCount, InFlight, ResponseTime, Throughput};
 use std::convert::TryInto;
 
+/// Command Flags
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum Flag {
+    /// May result in database modification
+    Write,
+    /// Will never modify database
+    ReadOnly,
+    /// Can fail if the server runs out of memory
+    DenyOom,
+    /// Server Admin command
+    Admin,
+    /// Pubsub related command
+    PubSub,
+    /// Not used, added to be compatible
+    NoScript,
+    /// Random result
+    Random,
+    /// Not used, added to be compatible
+    SortForScript,
+    /// Allow command while database is loading
+    Loading,
+    /// Allow command while replica has stale data
+    Stale,
+    /// Do not show this command in MONITOR
+    SkipMonitor,
+    /// Do not gather stats about slow log
+    SkipSlowlog,
+    /// The command is fast (Close to log(N) time)
+    Fast,
+    /// Command may be replicated to other nodes
+    MayReplicate,
+}
+
+impl ToString for Flag {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Write => "write",
+            Self::DenyOom => "denyoom",
+            Self::ReadOnly => "readonly",
+            Self::Admin => "admin",
+            Self::PubSub => "pubsub",
+            Self::NoScript => "noscript",
+            Self::Random => "random",
+            Self::SortForScript => "sort_for_script",
+            Self::Loading => "loading",
+            Self::Stale => "stale",
+            Self::SkipMonitor => "skip_monitor",
+            Self::SkipSlowlog => "skip_slowlog",
+            Self::Fast => "fast",
+            Self::MayReplicate => "may_replicate",
+        }
+        .to_owned()
+    }
+}
+
 /// Command definition
 #[derive(Debug)]
 pub struct Command {
     name: &'static str,
     group: &'static str,
-    tags: &'static [&'static str],
+    flags: &'static [Flag],
     min_args: i32,
     key_start: i32,
     key_stop: i32,
@@ -49,7 +104,7 @@ impl Command {
     pub fn new(
         name: &'static str,
         group: &'static str,
-        tags: &'static [&'static str],
+        flags: &'static [Flag],
         min_args: i32,
         key_start: i32,
         key_stop: i32,
@@ -59,7 +114,7 @@ impl Command {
         Self {
             name,
             group,
-            tags,
+            flags,
             min_args,
             key_start,
             key_stop,
@@ -114,6 +169,51 @@ impl Command {
             let s: usize = (self.min_args as i32).abs().try_into().unwrap_or(0);
             n >= s
         }
+    }
+
+    /// Returns information about this command. The response is encoded as a
+    /// Value, following the output of the COMMAND command in redis
+    pub fn get_command_info(&self) -> Value {
+        Value::Array(vec![
+            self.name().into(),
+            self.get_min_args().into(),
+            Value::Array(
+                self.get_flags()
+                    .iter()
+                    .map(|m| m.to_string().into())
+                    .collect(),
+            ),
+            self.get_key_start().into(),
+            self.get_key_stop().into(),
+            self.get_key_step().into(),
+        ])
+    }
+
+    /// Returns the command's flags
+    pub fn get_flags(&self) -> Vec<Flag> {
+        self.flags.to_vec()
+    }
+
+    /// Returns the minimum arguments (including the command name itself) that
+    /// this command takes. This is also known as the arity of a command.
+    pub fn get_min_args(&self) -> i32 {
+        self.min_args
+    }
+
+    /// Where does the first database 'key' start in the arguments list
+    pub fn get_key_start(&self) -> i32 {
+        self.key_start
+    }
+
+    /// Where does the last database 'key' start in the arguments list
+    pub fn get_key_stop(&self) -> i32 {
+        self.key_stop
+    }
+
+    /// Useful to extract 'keys' from the arguments alongside with key_stop and
+    /// key_start
+    pub fn get_key_step(&self) -> usize {
+        self.key_step
     }
 
     /// Command group
