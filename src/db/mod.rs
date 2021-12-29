@@ -366,6 +366,30 @@ impl Db {
             x.clone_value()
         })
     }
+    ///
+    /// Set a key, value with an optional expiration time
+    pub fn append(&self, key: &Bytes, value_to_append: &Bytes) -> Result<Value, Error> {
+        let mut entries = self.entries[self.get_slot(key)].write();
+        let mut entry = entries.get_mut(key).filter(|x| x.is_valid());
+
+        if let Some(entry) = entries.get_mut(key).filter(|x| x.is_valid()) {
+            match entry.get() {
+                Value::Blob(value) => {
+                    let binary: Bytes = [value.as_ref(), value_to_append.as_ref()].concat().into();
+                    let len = binary.len();
+                    entry.change_value(Value::Blob(binary));
+                    Ok(len.into())
+                }
+                _ => Err(Error::WrongType),
+            }
+        } else {
+            entries.insert(
+                key.clone(),
+                Entry::new(Value::Blob(value_to_append.clone()), None),
+            );
+            Ok(value_to_append.len().into())
+        }
+    }
 
     /// Set a key, value with an optional expiration time
     pub fn set(&self, key: &Bytes, value: Value, expires_in: Option<Duration>) -> Value {

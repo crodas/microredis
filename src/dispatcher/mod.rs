@@ -580,6 +580,15 @@ dispatcher! {
         },
     },
     string {
+        append {
+            cmd::string::append,
+            [Flag::Write Flag::DenyOom Flag::Fast],
+            3,
+            1,
+            1,
+            1,
+            true,
+        },
         decr {
             cmd::string::decr,
             [Flag::Write Flag::DenyOom Flag::Fast],

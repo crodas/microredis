@@ -6,6 +6,13 @@ use bytes::Bytes;
 use std::{convert::TryInto, ops::Neg};
 use tokio::time::Duration;
 
+/// If key already exists and is a string, this command appends the value at the
+/// end of the string. If key does not exist it is created and set as an empty
+/// string, so APPEND will be similar to SET in this special case.
+pub async fn append(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().append(&args[1], &args[2])
+}
+
 /// Increments the number stored at key by one. If the key does not exist, it is set to 0 before
 /// performing the operation. An error is returned if the key contains a value of the wrong type or
 /// contains a string that can not be represented as integer. This operation is limited to 64 bit
@@ -118,6 +125,26 @@ mod test {
         error::Error,
         value::Value,
     };
+
+    #[tokio::test]
+    async fn append() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(5.into()),
+            run_command(&c, &["append", "foo", "cesar"]).await,
+        );
+        assert_eq!(
+            Ok(10.into()),
+            run_command(&c, &["append", "foo", "rodas"]).await,
+        );
+
+        let _ = run_command(&c, &["hset", "hash", "foo", "bar"]).await;
+        assert_eq!(
+            Err(Error::WrongType),
+            run_command(&c, &["append", "hash", "rodas"]).await,
+        );
+
+    }
 
     #[tokio::test]
     async fn incr() {
