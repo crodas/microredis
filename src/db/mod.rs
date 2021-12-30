@@ -220,6 +220,7 @@ impl Db {
             .filter(|x| x.is_valid())
             .map_or(0.into(), |x| {
                 if x.has_ttl() {
+                    self.expirations.lock().remove(key);
                     x.persist();
                     1.into()
                 } else {
@@ -387,6 +388,12 @@ impl Db {
             .map(|x| x.get_ttl())
     }
 
+    /// Check whether a given key is in the list of keys to be purged or not.
+    /// This function is mainly used for unit testing
+    pub fn is_key_in_expiration_list(&self, key: &Bytes) -> bool {
+        self.expirations.lock().has(key)
+    }
+
     /// Remove expired entries from the database.
     ///
     /// This function should be called from a background thread every few seconds. Calling it more
@@ -515,6 +522,16 @@ mod test {
             Some(Some(_)) => true,
             _ => false,
         });
+    }
+
+    #[test]
+    fn persist_bug() {
+        let db = Db::new(100);
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(1)));
+        assert_eq!(Value::Ok, db.get(&bytes!(b"one")));
+        assert!(db.is_key_in_expiration_list(&bytes!(b"one")));
+        db.persist(&bytes!(b"one"));
+        assert!(!db.is_key_in_expiration_list(&bytes!(b"one")));
     }
 
     #[test]

@@ -46,6 +46,10 @@ impl ExpirationDb {
         self.next_id += 1;
     }
 
+    pub fn has(&self, key: &Bytes) -> bool {
+        self.keys.get(key).is_some()
+    }
+
     pub fn remove(&mut self, key: &Bytes) -> bool {
         if let Some(prev) = self.keys.remove(key) {
             // Another key with expiration is already known, it has
