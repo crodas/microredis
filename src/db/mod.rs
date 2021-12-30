@@ -334,6 +334,26 @@ impl Db {
             .map_or(Value::Null, |x| x.clone_value())
     }
 
+    /// Get a copy of an entry and modifies the expiration of the key
+    pub fn getex(&self, key: &Bytes, expires_in: Option<Duration>, make_persistent: bool) -> Value {
+        let mut entries = self.entries[self.get_slot(key)].write();
+        entries
+            .get_mut(key)
+            .filter(|x| x.is_valid())
+            .map(|value| {
+                if make_persistent {
+                    self.expirations.lock().remove(key);
+                    value.persist();
+                } else if let Some(expires_in) = expires_in {
+                    let expires_at = Instant::now() + expires_in;
+                    self.expirations.lock().add(key, expires_at);
+                    value.set_ttl(expires_at);
+                }
+                value
+            })
+            .map_or(Value::Null, |x| x.clone_value())
+    }
+
     /// Get multiple copies of entries
     pub fn get_multi(&self, keys: &[Bytes]) -> Value {
         keys.iter()
