@@ -411,6 +411,23 @@ impl Db {
         }
     }
 
+    /// Set multiple key/value pairs. Are involved keys are locked exclusively
+    /// like a transaction/
+    pub fn mset(&self, key_values: &[Bytes]) -> Value {
+        let keys = key_values.iter().step_by(2).cloned().collect::<Vec<Bytes>>();
+
+        self.lock_keys(&keys);
+
+        for (i, _) in key_values.iter().enumerate().step_by(2) {
+            let mut entries = self.entries[self.get_slot(&key_values[i])].write();
+            entries.insert(key_values[i].clone(), Entry::new(Value::Blob(key_values[i+1].clone()), None));
+        }
+
+        self.unlock_keys(&keys);
+
+        Value::Ok
+    }
+
     /// Set a key, value with an optional expiration time
     pub fn set(&self, key: &Bytes, value: Value, expires_in: Option<Duration>) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();

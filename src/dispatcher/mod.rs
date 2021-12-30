@@ -688,6 +688,15 @@ dispatcher! {
             1,
             true,
         },
+        mset {
+            cmd::string::mset,
+            [Flag::Write Flag::DenyOom],
+            -2,
+            1,
+            -1,
+            1,
+            true,
+        },
         set {
             cmd::string::set,
             [Flag::Write Flag::DenyOom],

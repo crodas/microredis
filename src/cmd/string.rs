@@ -177,6 +177,19 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         .set(&args[1], Value::Blob(args[2].to_owned()), None))
 }
 
+/// Sets the given keys to their respective values. MSET replaces existing
+/// values with new values, just as regular SET. See MSETNX if you don't want to
+/// overwrite existing values.  MSET is atomic, so all given keys are set at
+/// once.
+///
+/// It is not possible for clients to see that some of the keys were
+/// updated while others are unchanged.
+pub async fn mset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    Ok(conn
+        .db()
+        .mset(&args[1..]))
+}
+
 /// Set key to hold the string value and set key to timeout after a given number of seconds. This
 /// command is equivalent to executing the following commands:
 ///
