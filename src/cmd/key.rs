@@ -1,18 +1,11 @@
 //! # Key-related command handlers
+use super::now;
 use crate::{
     check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
 };
 use bytes::Bytes;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{Duration, Instant};
-
-/// Returns the current time
-fn now() -> Duration {
-    let start = SystemTime::now();
-    start
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-}
 
 /// Removes the specified keys. A key is ignored if it does not exist.
 pub async fn del(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
@@ -44,10 +37,12 @@ pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         return Ok(conn.db().del(&args[1..2]));
     }
 
+    let expires_in: u64 = expires_in as u64;
+
     let expires_at = if check_arg!(args, 0, "EXPIRE") {
-        Duration::from_secs(expires_in as u64)
+        Duration::from_secs(expires_in)
     } else {
-        Duration::from_millis(expires_in as u64)
+        Duration::from_millis(expires_in)
     };
 
     Ok(conn.db().set_ttl(&args[1], expires_at))
@@ -70,10 +65,12 @@ pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
         return Ok(conn.db().del(&args[1..2]));
     }
 
+    let expires_in: u64 = expires_in as u64;
+
     let expires_at = if secs {
-        Duration::from_secs(expires_in as u64)
+        Duration::from_secs(expires_in)
     } else {
-        Duration::from_millis(expires_in as u64)
+        Duration::from_millis(expires_in)
     };
 
     Ok(conn.db().set_ttl(&args[1], expires_at))

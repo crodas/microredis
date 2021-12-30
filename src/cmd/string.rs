@@ -1,4 +1,5 @@
 //! # String command handlers
+use super::now;
 use crate::{
     check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
 };
@@ -65,7 +66,48 @@ pub async fn decr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 pub async fn get(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().get(&args[1]))
 }
-///
+
+/// Get the value of key and optionally set its expiration. GETEX is similar to
+/// GET, but is a write command with additional options.
+pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let (expire_at, persist) = match args.len() {
+        2 => (None, false),
+        3 => {
+            if check_arg!(args, 2, "PERSIST") {
+                (None, true)
+            } else {
+                return Err(Error::Syntax);
+            }
+        }
+        4 => {
+            let expires_in: i64 = bytes_to_number(&args[3])?;
+            if expires_in <= 0 {
+                // Delete key right away after returning
+                return Ok(conn.db().getdel(&args[1]));
+            }
+
+            let expires_in: u64 = expires_in as u64;
+
+            match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
+                "EX" => (Some(Duration::from_secs(expires_in)), false),
+                "PX" => (Some(Duration::from_millis(expires_in)), false),
+                "EXAT" => (
+                    Some(Duration::from_secs(expires_in - now().as_secs())),
+                    false,
+                ),
+                "PXAT" => (
+                    Some(Duration::from_millis(expires_in - now().as_millis() as u64)),
+                    false,
+                ),
+                "PERSIST" => (None, true),
+                _ => return Err(Error::Syntax),
+            }
+        }
+        _ => return Err(Error::Syntax),
+    };
+    Ok(conn.db().getex(&args[1], expire_at, persist))
+}
+
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
 /// returned if the value stored at key is not a string, because GET only handles string values.
 pub async fn getrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {

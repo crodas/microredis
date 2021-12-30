@@ -616,6 +616,15 @@ dispatcher! {
             1,
             true,
         },
+        getex {
+            cmd::string::getex,
+            [Flag::Write Flag::Fast],
+            -2,
+            1,
+            1,
+            1,
+            true,
+        },
         getrange {
             cmd::string::getrange,
             [Flag::ReadOnly],
