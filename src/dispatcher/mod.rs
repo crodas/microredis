@@ -616,6 +616,15 @@ dispatcher! {
             1,
             true,
         },
+        getrange {
+            cmd::string::getrange,
+            [Flag::ReadOnly],
+            4,
+            1,
+            1,
+            1,
+            true,
+        },
         getdel {
             cmd::string::getdel,
             [Flag::Write Flag::Fast],

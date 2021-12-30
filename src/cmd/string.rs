@@ -3,7 +3,11 @@ use crate::{
     check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
 };
 use bytes::Bytes;
-use std::{convert::TryInto, ops::Neg};
+use std::{
+    cmp::min,
+    convert::TryInto,
+    ops::{Bound, Neg},
+};
 use tokio::time::Duration;
 
 /// If key already exists and is a string, this command appends the value at the
@@ -60,6 +64,47 @@ pub async fn decr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// returned if the value stored at key is not a string, because GET only handles string values.
 pub async fn get(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().get(&args[1]))
+}
+///
+/// Get the value of key. If the key does not exist the special value nil is returned. An error is
+/// returned if the value stored at key is not a string, because GET only handles string values.
+pub async fn getrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    match conn.db().get(&args[1]) {
+        Value::Blob(binary) => {
+            let start = bytes_to_number::<i64>(&args[2])?;
+            let end = bytes_to_number::<i64>(&args[3])?;
+            let len = binary.len();
+
+            // resolve negative positions
+            let start: usize = if start < 0 {
+                (start + len as i64).try_into().unwrap_or(0)
+            } else {
+                start.try_into().expect("Positive number")
+            };
+
+            // resolve negative positions
+            let end: usize = if end < 0 {
+                if let Ok(val) = (end + len as i64).try_into() {
+                    val
+                } else {
+                    return Ok("".into());
+                }
+            } else {
+                end.try_into().expect("Positive number")
+            };
+            let end = min(end, len - 1);
+
+            if end < start {
+                return Ok("".into());
+            }
+
+            Ok(Value::Blob(
+                binary.slice((Bound::Included(start), Bound::Included(end))),
+            ))
+        }
+        Value::Null => Ok("".into()),
+        _ => Err(Error::WrongType),
+    }
 }
 
 /// Get the value of key and delete the key. This command is similar to GET, except for the fact
@@ -143,7 +188,6 @@ mod test {
             Err(Error::WrongType),
             run_command(&c, &["append", "hash", "rodas"]).await,
         );
-
     }
 
     #[tokio::test]
@@ -215,6 +259,50 @@ mod test {
 
         let x = run_command(&c, &["get", "foo"]).await;
         assert_eq!(Ok(Value::Blob("bar".into())), x);
+    }
+
+    #[tokio::test]
+    async fn getrange() {
+        let c = create_connection();
+        let x = run_command(&c, &["set", "foo", "this is a long string"]).await;
+        assert_eq!(Ok(Value::Ok), x);
+
+        assert_eq!(
+            Ok("this is a long str".into()),
+            run_command(&c, &["getrange", "foo", "0", "-4"]).await
+        );
+
+        assert_eq!(
+            Ok("ring".into()),
+            run_command(&c, &["getrange", "foo", "-4", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok("".into()),
+            run_command(&c, &["getrange", "foo", "-4", "1"]).await
+        );
+
+        assert_eq!(
+            Ok("ring".into()),
+            run_command(&c, &["getrange", "foo", "-4", "1000000"]).await
+        );
+
+        assert_eq!(
+            Ok("this is a long string".into()),
+            run_command(&c, &["getrange", "foo", "-400", "1000000"]).await
+        );
+
+        assert_eq!(
+            Ok("".into()),
+            run_command(&c, &["getrange", "foo", "-400", "-1000000"]).await
+        );
+
+        assert_eq!(
+            Ok("t".into()),
+            run_command(&c, &["getrange", "foo", "0", "0"]).await
+        );
+
+        assert_eq!(Ok(Value::Null), run_command(&c, &["get", "fox"]).await);
     }
 
     #[tokio::test]
