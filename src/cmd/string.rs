@@ -185,9 +185,21 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// It is not possible for clients to see that some of the keys were
 /// updated while others are unchanged.
 pub async fn mset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn
-        .db()
-        .mset(&args[1..]))
+    Ok(conn.db().multi_set(&args[1..], true))
+}
+
+/// Sets the given keys to their respective values. MSETNX will not perform any
+/// operation at all even if just a single key already exists.
+///
+/// Because of this semantic MSETNX can be used in order to set different keys
+/// representing different fields of an unique logic object in a way that
+/// ensures that either all the fields or none at all are set.
+///
+/// MSETNX is atomic, so all given keys are set at once. It is not possible for
+/// clients to see that some of the keys were updated while others are
+/// unchanged.
+pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    Ok(conn.db().multi_set(&args[1..], false))
 }
 
 /// Set key to hold the string value and set key to timeout after a given number of seconds. This
@@ -304,6 +316,37 @@ mod test {
 
         let r = run_command(&c, &["ttl", "foo"]).await;
         assert_eq!(Ok(Value::Integer(59)), r);
+    }
+
+    #[tokio::test]
+    async fn mset() {
+        let c = create_connection();
+        let x = run_command(&c, &["mset", "foo", "bar", "bar", "foo"]).await;
+        assert_eq!(Ok(Value::Ok), x);
+
+        assert_eq!(
+            Ok(Value::Array(vec!["bar".into(), "foo".into()])),
+            run_command(&c, &["mget", "foo", "bar"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn msetnx() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c, &["msetnx", "foo", "bar", "bar", "foo"]).await
+        );
+
+        assert_eq!(
+            Ok(0.into()),
+            run_command(&c, &["msetnx", "foo", "bar1", "bar", "foo1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec!["bar".into(), "foo".into()])),
+            run_command(&c, &["mget", "foo", "bar"]).await
+        );
     }
 
     #[tokio::test]

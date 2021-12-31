@@ -697,6 +697,15 @@ dispatcher! {
             1,
             true,
         },
+        msetnx {
+            cmd::string::msetnx,
+            [Flag::Write Flag::DenyOom],
+            -2,
+            1,
+            -1,
+            1,
+            true,
+        },
         set {
             cmd::string::set,
             [Flag::Write Flag::DenyOom],

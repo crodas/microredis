@@ -412,20 +412,45 @@ impl Db {
     }
 
     /// Set multiple key/value pairs. Are involved keys are locked exclusively
-    /// like a transaction/
-    pub fn mset(&self, key_values: &[Bytes]) -> Value {
-        let keys = key_values.iter().step_by(2).cloned().collect::<Vec<Bytes>>();
+    /// like a transaction.
+    ///
+    /// If override_all is set to false, all entries must be new entries or the
+    /// entire operation fails, in this case 1 or is returned. Otherwise `Ok` is
+    /// returned.
+    pub fn multi_set(&self, key_values: &[Bytes], override_all: bool) -> Value {
+        let keys = key_values
+            .iter()
+            .step_by(2)
+            .cloned()
+            .collect::<Vec<Bytes>>();
 
         self.lock_keys(&keys);
 
+        if !override_all {
+            for key in keys.iter() {
+                let entries = self.entries[self.get_slot(key)].read();
+                if entries.get(key).is_some() {
+                    self.unlock_keys(&keys);
+                    return 0.into();
+                }
+            }
+        }
+
         for (i, _) in key_values.iter().enumerate().step_by(2) {
             let mut entries = self.entries[self.get_slot(&key_values[i])].write();
-            entries.insert(key_values[i].clone(), Entry::new(Value::Blob(key_values[i+1].clone()), None));
+            entries.insert(
+                key_values[i].clone(),
+                Entry::new(Value::Blob(key_values[i + 1].clone()), None),
+            );
         }
 
         self.unlock_keys(&keys);
 
-        Value::Ok
+        if override_all {
+            Value::Ok
+        } else {
+            1.into()
+        }
     }
 
     /// Set a key, value with an optional expiration time
