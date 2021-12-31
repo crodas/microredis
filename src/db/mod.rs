@@ -21,6 +21,33 @@ use std::{
 };
 use tokio::time::{Duration, Instant};
 
+/// Override database entries
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Override {
+    /// Allow override
+    Yes,
+    /// Do not allow override, only new entries
+    No,
+    /// Allow only override
+    Only,
+}
+
+impl From<bool> for Override {
+    fn from(v: bool) -> Override {
+        if v {
+            Override::Yes
+        } else {
+            Override::No
+        }
+    }
+}
+
+impl Default for Override {
+    fn default() -> Self {
+        Self::Yes
+    }
+}
+
 /// Databas structure
 ///
 /// Each connection has their own clone of the database and the conn_id is stored in each instance.
@@ -454,26 +481,62 @@ impl Db {
     }
 
     /// Set a key, value with an optional expiration time
-    pub fn set(
+    pub fn set(&self, key: &Bytes, value: Value, expires_in: Option<Duration>) -> Value {
+        self.set_advanced(key, value, expires_in, Default::default(), false, false)
+    }
+
+    /// Set a value in the database with various settings
+    pub fn set_advanced(
         &self,
         key: &Bytes,
         value: Value,
         expires_in: Option<Duration>,
-        override_value: bool,
+        override_value: Override,
+        keep_ttl: bool,
+        return_previous: bool,
     ) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();
         let expires_at = expires_in.map(|duration| Instant::now() + duration);
+        let previous = entries.get(key);
 
-        if !override_value && entries.get(key).is_some() {
-            return 0.into();
-        }
+        let expires_at = if keep_ttl {
+            if let Some(previous) = previous {
+                previous.get_ttl()
+            } else {
+                expires_at
+            }
+        } else {
+            expires_at
+        };
+
+        let to_return = if return_previous {
+            Some(previous.map_or(Value::Null, |v| v.clone_value()))
+        } else {
+            None
+        };
+
+        match override_value {
+            Override::No => {
+                if previous.is_some() {
+                    return 0.into();
+                }
+            }
+            Override::Only => {
+                if previous.is_none() {
+                    return 0.into();
+                }
+            }
+            _ => {}
+        };
 
         if let Some(expires_at) = expires_at {
             self.expirations.lock().add(key, expires_at);
         }
         entries.insert(key.clone(), Entry::new(value, expires_at));
 
-        if override_value {
+        if let Some(to_return) = to_return {
+            to_return
+        } else if override_value == Override::Yes {
             Value::Ok
         } else {
             1.into()
@@ -533,12 +596,7 @@ mod test {
     #[test]
     fn incr_wrong_type() {
         let db = Db::new(100);
-        db.set(
-            &bytes!(b"num"),
-            Value::Blob(bytes!("some string")),
-            None,
-            true,
-        );
+        db.set(&bytes!(b"num"), Value::Blob(bytes!("some string")), None);
 
         let r = db.incr(&bytes!("num"), 1);
 
@@ -550,7 +608,7 @@ mod test {
     #[test]
     fn incr_blob_float() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), Value::Blob(bytes!("1.1")), None, true);
+        db.set(&bytes!(b"num"), Value::Blob(bytes!("1.1")), None);
 
         assert_eq!(Ok(Value::Float(2.2)), db.incr(&bytes!("num"), 1.1));
         assert_eq!(Value::Blob(bytes!("2.2")), db.get(&bytes!("num")));
@@ -559,7 +617,7 @@ mod test {
     #[test]
     fn incr_blob_int_float() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None, true);
+        db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
         assert_eq!(Ok(Value::Float(2.1)), db.incr(&bytes!("num"), 1.1));
         assert_eq!(Value::Blob(bytes!("2.1")), db.get(&bytes!("num")));
@@ -568,7 +626,7 @@ mod test {
     #[test]
     fn incr_blob_int() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None, true);
+        db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
         assert_eq!(Ok(Value::Integer(2)), db.incr(&bytes!("num"), 1));
         assert_eq!(Value::Blob(bytes!("2")), db.get(&bytes!("num")));
@@ -591,18 +649,12 @@ mod test {
     #[test]
     fn del() {
         let db = Db::new(100);
-        db.set(
-            &bytes!(b"expired"),
-            Value::Ok,
-            Some(Duration::from_secs(0)),
-            true,
-        );
-        db.set(&bytes!(b"valid"), Value::Ok, None, true);
+        db.set(&bytes!(b"expired"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"valid"), Value::Ok, None);
         db.set(
             &bytes!(b"expiring"),
             Value::Ok,
             Some(Duration::from_secs(5)),
-            true,
         );
 
         assert_eq!(
@@ -619,18 +671,12 @@ mod test {
     #[test]
     fn ttl() {
         let db = Db::new(100);
-        db.set(
-            &bytes!(b"expired"),
-            Value::Ok,
-            Some(Duration::from_secs(0)),
-            true,
-        );
-        db.set(&bytes!(b"valid"), Value::Ok, None, true);
+        db.set(&bytes!(b"expired"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"valid"), Value::Ok, None);
         db.set(
             &bytes!(b"expiring"),
             Value::Ok,
             Some(Duration::from_secs(5)),
-            true,
         );
 
         assert_eq!(None, db.ttl(&bytes!(b"expired")));
@@ -645,12 +691,7 @@ mod test {
     #[test]
     fn persist_bug() {
         let db = Db::new(100);
-        db.set(
-            &bytes!(b"one"),
-            Value::Ok,
-            Some(Duration::from_secs(1)),
-            true,
-        );
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(1)));
         assert_eq!(Value::Ok, db.get(&bytes!(b"one")));
         assert!(db.is_key_in_expiration_list(&bytes!(b"one")));
         db.persist(&bytes!(b"one"));
@@ -660,12 +701,7 @@ mod test {
     #[test]
     fn purge_keys() {
         let db = Db::new(100);
-        db.set(
-            &bytes!(b"one"),
-            Value::Ok,
-            Some(Duration::from_secs(0)),
-            true,
-        );
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
         assert_eq!(Value::Null, db.get(&bytes!(b"one")));
@@ -680,22 +716,12 @@ mod test {
     #[test]
     fn replace_purge_keys() {
         let db = Db::new(100);
-        db.set(
-            &bytes!(b"one"),
-            Value::Ok,
-            Some(Duration::from_secs(0)),
-            true,
-        );
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
         assert_eq!(Value::Null, db.get(&bytes!(b"one")));
 
-        db.set(
-            &bytes!(b"one"),
-            Value::Ok,
-            Some(Duration::from_secs(5)),
-            true,
-        );
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(5)));
         assert_eq!(Value::Ok, db.get(&bytes!(b"one")));
 
         // Purge should return 0 as the expired key has been removed already

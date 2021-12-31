@@ -1,7 +1,8 @@
 //! # String command handlers
 use super::now;
 use crate::{
-    check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
+    check_arg, connection::Connection, db::Override, error::Error, try_get_arg,
+    value::bytes_to_number, value::Value,
 };
 use bytes::Bytes;
 use std::{
@@ -74,7 +75,7 @@ pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         2 => (None, false),
         3 => {
             if check_arg!(args, 2, "PERSIST") {
-                (None, true)
+                (None, Default::default())
             } else {
                 return Err(Error::Syntax);
             }
@@ -99,7 +100,7 @@ pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     Some(Duration::from_millis(expires_in - now().as_millis() as u64)),
                     false,
                 ),
-                "PERSIST" => (None, true),
+                "PERSIST" => (None, Default::default()),
                 _ => return Err(Error::Syntax),
             }
         }
@@ -172,9 +173,99 @@ pub async fn mget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// of its type. Any previous time to live associated with the key is discarded on successful SET
 /// operation.
 pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn
-        .db()
-        .set(&args[1], Value::Blob(args[2].to_owned()), None, true))
+    match args.len() {
+        3 => Ok(conn
+            .db()
+            .set(&args[1], Value::Blob(args[2].to_owned()), None)),
+        4 | 5 | 6 | 7 => {
+            let mut offset = 3;
+            let mut expiration = None;
+            let mut override_value = Override::Yes;
+            let mut return_previous = false;
+            let mut keep_ttl = false;
+            match String::from_utf8_lossy(&args[offset])
+                .to_uppercase()
+                .as_str()
+            {
+                "EX" => {
+                    expiration = Some(Duration::from_secs(bytes_to_number::<u64>(try_get_arg!(
+                        args, 4
+                    ))?));
+                    offset += 2;
+                }
+                "PX" => {
+                    expiration = Some(Duration::from_millis(bytes_to_number::<u64>(
+                        try_get_arg!(args, 4),
+                    )?));
+                    offset += 2;
+                }
+                "EXAT" => {
+                    expiration = Some(Duration::from_secs(
+                        bytes_to_number::<u64>(try_get_arg!(args, 4))? - now().as_secs(),
+                    ));
+                    offset += 2;
+                }
+                "PXAT" => {
+                    expiration = Some(Duration::from_millis(
+                        bytes_to_number::<u64>(try_get_arg!(args, 4))? - (now().as_millis() as u64),
+                    ));
+                    offset += 2;
+                }
+                "KEEPTTL" => {
+                    keep_ttl = true;
+                    offset += 1;
+                }
+                "NX" | "XX" | "GET" => {}
+                _ => return Err(Error::Syntax),
+            };
+
+            if offset < args.len() {
+                match String::from_utf8_lossy(&args[offset])
+                    .to_uppercase()
+                    .as_str()
+                {
+                    "NX" => {
+                        override_value = Override::No;
+                        offset += 1;
+                    }
+                    "XX" => {
+                        override_value = Override::Only;
+                        offset += 1;
+                    }
+                    "GET" => {}
+                    _ => return Err(Error::Syntax),
+                };
+            }
+
+            if offset < args.len() {
+                if String::from_utf8_lossy(&args[offset])
+                    .to_uppercase()
+                    .as_str()
+                    == "GET"
+                {
+                    return_previous = true;
+                } else {
+                    return Err(Error::Syntax);
+                }
+            }
+
+            Ok(
+                match conn.db().set_advanced(
+                    &args[1],
+                    Value::Blob(args[2].to_owned()),
+                    expiration,
+                    override_value,
+                    keep_ttl,
+                    return_previous,
+                ) {
+                    Value::Integer(1) => Value::Ok,
+                    Value::Integer(0) => Value::Null,
+                    any_return => any_return,
+                },
+            )
+        }
+        _ => Err(Error::Syntax),
+    }
 }
 
 /// Sets the given keys to their respective values. MSET replaces existing
@@ -216,16 +307,21 @@ pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
     Ok(conn
         .db()
-        .set(&args[1], Value::Blob(args[2].to_owned()), Some(ttl), true))
+        .set(&args[1], Value::Blob(args[2].to_owned()), Some(ttl)))
 }
 
 /// Set key to hold string value if key does not exist. In that case, it is
 /// equal to SET. When key already holds a value, no operation is performed.
 /// SETNX is short for "SET if Not eXists".
 pub async fn setnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn
-        .db()
-        .set(&args[1], Value::Blob(args[2].to_owned()), None, false))
+    Ok(conn.db().set_advanced(
+        &args[1],
+        Value::Blob(args[2].to_owned()),
+        None,
+        Override::No,
+        false,
+        false,
+    ))
 }
 
 /// Returns the length of the string value stored at key. An error is returned when key holds a
@@ -385,6 +481,89 @@ mod test {
 
         let x = run_command(&c, &["get", "foo"]).await;
         assert_eq!(Ok(Value::Blob("bar".into())), x);
+    }
+
+    #[tokio::test]
+    async fn setkeepttl() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "foo", "bar", "ex", "60"]).await
+        );
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "foo", "bar1", "keepttl"]).await
+        );
+        assert_eq!(Ok("bar1".into()), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(Ok(59.into()), run_command(&c, &["ttl", "foo"]).await);
+
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "foo", "bar2"]).await
+        );
+        assert_eq!(Ok("bar2".into()), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Integer(-1)),
+            run_command(&c, &["ttl", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn set_and_get_previous_result() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "foo", "bar", "ex", "60"]).await
+        );
+        assert_eq!(
+            Ok("bar".into()),
+            run_command(&c, &["set", "foo", "bar1", "get"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn set_nx() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "foo", "bar", "ex", "60", "nx"]).await
+        );
+        assert_eq!(
+            Ok(Value::Null),
+            run_command(&c, &["set", "foo", "bar1", "nx"]).await
+        );
+        assert_eq!(Ok("bar".into()), run_command(&c, &["get", "foo"]).await);
+    }
+
+    #[tokio::test]
+    async fn set_xx() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Null),
+            run_command(&c, &["set", "foo", "bar1", "ex", "60", "xx"]).await
+        );
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "foo", "bar2", "ex", "60", "nx"]).await
+        );
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "foo", "bar3", "ex", "60", "xx"]).await
+        );
+        assert_eq!(Ok("bar3".into()), run_command(&c, &["get", "foo"]).await);
+    }
+
+    #[tokio::test]
+    async fn set_incorrect_params() {
+        let c = create_connection();
+        assert_eq!(
+            Err(Error::NotANumber),
+            run_command(&c, &["set", "foo", "bar1", "ex", "xx"]).await
+        );
+        assert_eq!(
+            Err(Error::Syntax),
+            run_command(&c, &["set", "foo", "bar1", "ex"]).await
+        );
     }
 
     #[tokio::test]

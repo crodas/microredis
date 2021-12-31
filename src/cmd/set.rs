@@ -16,7 +16,7 @@ fn store(conn: &Connection, key: &Bytes, values: &[Value]) -> i64 {
             }
         }
     }
-    conn.db().set(key, x.into(), None, true);
+    conn.db().set(key, x.into(), None);
     len
 }
 
@@ -95,7 +95,7 @@ pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 }
             }
 
-            conn.db().set(&args[1], x.into(), None, true);
+            conn.db().set(&args[1], x.into(), None);
 
             Ok(len.into())
         },
@@ -288,7 +288,7 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                         #[allow(clippy::mutable_key_type)]
                         let mut x = HashSet::new();
                         x.insert(args[3].clone());
-                        conn.db().set(&args[2], x.into(), None, true);
+                        conn.db().set(&args[2], x.into(), None);
                         Ok(1.into())
                     },
                 )

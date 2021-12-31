@@ -259,7 +259,7 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                         let ret = element.clone_value();
                         let mut h = VecDeque::new();
                         h.push_front(element);
-                        conn.db().set(&args[2], h.into(), None, true);
+                        conn.db().set(&args[2], h.into(), None);
                         Ok(ret)
                     } else {
                         Ok(Value::Null)
@@ -404,7 +404,7 @@ pub async fn lpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             }
 
             let len = h.len();
-            conn.db().set(&args[1], h.into(), None, true);
+            conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
     )?;
@@ -635,7 +635,7 @@ pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             }
 
             let len = h.len();
-            conn.db().set(&args[1], h.into(), None, true);
+            conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
     )?;

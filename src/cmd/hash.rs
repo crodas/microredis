@@ -125,7 +125,7 @@ pub async fn hincrby<
             #[allow(clippy::mutable_key_type)]
             let mut h = HashMap::new();
             h.insert(args[2].clone(), incr_by.to_string().into());
-            conn.db().set(&args[1], h.into(), None, true);
+            conn.db().set(&args[1], h.into(), None);
             Ok(incr_by.into())
         },
     )?;
@@ -286,7 +286,7 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 h.insert(args[i].clone(), args[i + 1].clone());
             }
             let len = h.len();
-            conn.db().set(&args[1], h.into(), None, true);
+            conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
     )?;
@@ -322,7 +322,7 @@ pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 h.insert(args[i].clone(), args[i + 1].clone());
             }
             let len = h.len();
-            conn.db().set(&args[1], h.into(), None, true);
+            conn.db().set(&args[1], h.into(), None);
             Ok(len.into())
         },
     )?;
