@@ -744,13 +744,22 @@ dispatcher! {
         },
         strlen {
             cmd::string::strlen,
-            [Flag::Random Flag::Fast],
+            [Flag::ReadOnly Flag::Fast],
             2,
             1,
             1,
             1,
             true,
-        }
+        },
+        substr {
+            cmd::string::getrange,
+            [Flag::ReadOnly],
+            2,
+            1,
+            1,
+            1,
+            true,
+        },
     },
     connection {
         client {
