@@ -174,7 +174,7 @@ pub async fn mget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn
         .db()
-        .set(&args[1], Value::Blob(args[2].to_owned()), None))
+        .set(&args[1], Value::Blob(args[2].to_owned()), None, true))
 }
 
 /// Sets the given keys to their respective values. MSET replaces existing
@@ -216,7 +216,16 @@ pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
     Ok(conn
         .db()
-        .set(&args[1], Value::Blob(args[2].to_owned()), Some(ttl)))
+        .set(&args[1], Value::Blob(args[2].to_owned()), Some(ttl), true))
+}
+
+/// Set key to hold string value if key does not exist. In that case, it is
+/// equal to SET. When key already holds a value, no operation is performed.
+/// SETNX is short for "SET if Not eXists".
+pub async fn setnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    Ok(conn
+        .db()
+        .set(&args[1], Value::Blob(args[2].to_owned()), None, false))
 }
 
 /// Returns the length of the string value stored at key. An error is returned when key holds a
@@ -316,6 +325,25 @@ mod test {
 
         let r = run_command(&c, &["ttl", "foo"]).await;
         assert_eq!(Ok(Value::Integer(59)), r);
+    }
+
+    #[tokio::test]
+    async fn setnx() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c, &["setnx", "foo", "bar"]).await
+        );
+
+        assert_eq!(
+            Ok(0.into()),
+            run_command(&c, &["setnx", "foo", "barx"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec!["bar".into()])),
+            run_command(&c, &["mget", "foo"]).await
+        );
     }
 
     #[tokio::test]

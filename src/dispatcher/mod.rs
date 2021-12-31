@@ -724,6 +724,15 @@ dispatcher! {
             1,
             true,
         },
+        setnx {
+            cmd::string::setnx,
+            [Flag::Write Flag::DenyOom],
+            3,
+            1,
+            1,
+            1,
+            true,
+        },
         psetex {
             cmd::string::setex,
             [Flag::Write Flag::DenyOom],
