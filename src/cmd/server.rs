@@ -50,7 +50,7 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
                 command
                     .get_keys(args)
                     .iter()
-                    .map(|key| Value::Blob((*key).clone()))
+                    .map(|key| Value::new(*key))
                     .collect(),
             ))
         }

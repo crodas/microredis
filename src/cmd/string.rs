@@ -58,7 +58,7 @@ pub async fn decr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// type or contains a string that can not be represented as integer. This operation is limited to
 /// 64 bit signed integers.
 pub async fn decr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let by: i64 = (&Value::Blob(args[2].to_owned())).try_into()?;
+    let by: i64 = (&Value::new(&args[2])).try_into()?;
     conn.db().incr(&args[1], by.neg())
 }
 
@@ -142,7 +142,11 @@ pub async fn getrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
             }
 
             Ok(Value::Blob(
-                binary.slice((Bound::Included(start), Bound::Included(end))),
+                binary
+                    .freeze()
+                    .slice((Bound::Included(start), Bound::Included(end)))
+                    .as_ref()
+                    .into(),
             ))
         }
         Value::Null => Ok("".into()),
@@ -160,7 +164,7 @@ pub async fn getdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// exists but does not hold a string value. Any previous time to live associated with the key is
 /// discarded on successful SET operation.
 pub async fn getset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().getset(&args[1], &Value::Blob(args[2].to_owned())))
+    Ok(conn.db().getset(&args[1], Value::new(&args[2])))
 }
 
 /// Returns the values of all specified keys. For every key that does not hold a string value or
@@ -174,9 +178,7 @@ pub async fn mget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// operation.
 pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match args.len() {
-        3 => Ok(conn
-            .db()
-            .set(&args[1], Value::Blob(args[2].to_owned()), None)),
+        3 => Ok(conn.db().set(&args[1], Value::new(&args[2]), None)),
         4 | 5 | 6 | 7 => {
             let mut offset = 3;
             let mut expiration = None;
@@ -252,7 +254,7 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             Ok(
                 match conn.db().set_advanced(
                     &args[1],
-                    Value::Blob(args[2].to_owned()),
+                    Value::new(&args[2]),
                     expiration,
                     override_value,
                     keep_ttl,
@@ -305,9 +307,7 @@ pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         Duration::from_millis(bytes_to_number(&args[2])?)
     };
 
-    Ok(conn
-        .db()
-        .set(&args[1], Value::Blob(args[3].to_owned()), Some(ttl)))
+    Ok(conn.db().set(&args[1], Value::new(&args[3]), Some(ttl)))
 }
 
 /// Set key to hold string value if key does not exist. In that case, it is
@@ -316,7 +316,7 @@ pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 pub async fn setnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().set_advanced(
         &args[1],
-        Value::Blob(args[2].to_owned()),
+        Value::new(&args[2]),
         None,
         Override::No,
         false,
@@ -333,6 +333,17 @@ pub async fn strlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         Value::Null => Ok(0.into()),
         _ => Ok(Error::WrongType.into()),
     }
+}
+
+/// Overwrites part of the string stored at key, starting at the specified
+/// offset, for the entire length of value. If the offset is larger than the
+/// current length of the string at key, the string is padded with zero-bytes to
+/// make offset fit. Non-existing keys are considered as empty strings, so this
+/// command will make sure it holds a string large enough to be able to set
+/// value at offset.
+pub async fn setrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db()
+        .set_range(&args[1], bytes_to_number(&args[2])?, &args[3])
 }
 
 #[cfg(test)]
@@ -684,6 +695,27 @@ mod test {
         assert_eq!(
             Ok(Value::Array(vec![Value::Null, Value::Blob("1".into()),])),
             x
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_range() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(23.into()),
+            run_command(&c, &["setrange", "foo", "20", "xxx"]).await,
+        );
+        assert_eq!(
+            Ok(23.into()),
+            run_command(&c, &["setrange", "foo", "2", "xxx"]).await,
+        );
+        assert_eq!(
+            Ok(33.into()),
+            run_command(&c, &["setrange", "foo", "30", "xxx"]).await,
+        );
+        assert_eq!(
+            Ok("\0\0xxx\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xxx\0\0\0\0\0\0\0xxx".into()),
+            run_command(&c, &["get", "foo"]).await,
         );
     }
 }

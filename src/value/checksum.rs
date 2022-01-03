@@ -52,7 +52,7 @@ impl Value {
 
     /// Clone the underlying value
     pub fn clone_value(&self) -> value::Value {
-        value::Value::Blob(self.bytes.clone())
+        value::Value::new(&self.bytes)
     }
 
     /// Whether it has a checksum or not

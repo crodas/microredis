@@ -130,10 +130,10 @@ mod test {
     fn get_expiration() {
         let mut db = ExpirationDb::new();
         let keys = vec![
-            (bytes!(b"hix"), Instant::now() + Duration::from_secs(15)),
-            (bytes!(b"key"), Instant::now() + Duration::from_secs(2)),
-            (bytes!(b"bar"), Instant::now() + Duration::from_secs(3)),
-            (bytes!(b"hi"), Instant::now() + Duration::from_secs(3)),
+            ("hix".into(), Instant::now() + Duration::from_secs(15)),
+            ("key".into(), Instant::now() + Duration::from_secs(2)),
+            ("bar".into(), Instant::now() + Duration::from_secs(3)),
+            ("hi".into(), Instant::now() + Duration::from_secs(3)),
         ];
 
         keys.iter()
@@ -164,15 +164,15 @@ mod test {
     pub fn remove() {
         let mut db = ExpirationDb::new();
         let keys = vec![
-            (bytes!(b"hix"), Instant::now() + Duration::from_secs(15)),
-            (bytes!(b"key"), Instant::now() + Duration::from_secs(2)),
-            (bytes!(b"bar"), Instant::now() + Duration::from_secs(3)),
-            (bytes!(b"hi"), Instant::now() + Duration::from_secs(3)),
+            ("hix".into(), Instant::now() + Duration::from_secs(15)),
+            ("key".into(), Instant::now() + Duration::from_secs(2)),
+            ("bar".into(), Instant::now() + Duration::from_secs(3)),
+            ("hi".into(), Instant::now() + Duration::from_secs(3)),
         ];
 
         keys.iter()
             .map(|v| {
-                db.add(&v.0, v.1);
+                db.add(&(v.0), v.1);
             })
             .for_each(drop);
 

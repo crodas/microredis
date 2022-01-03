@@ -760,6 +760,15 @@ dispatcher! {
             1,
             true,
         },
+        setrange {
+            cmd::string::setrange,
+            [Flag::Write],
+            4,
+            1,
+            1,
+            1,
+            true,
+        }
     },
     connection {
         client {

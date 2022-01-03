@@ -15,7 +15,7 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             conn.pubsub()
                 .channels()
                 .iter()
-                .map(|v| Value::Blob(v.clone()))
+                .map(|v| Value::new(&v))
                 .collect(),
         )),
         "help" => Ok(Value::Array(vec![
@@ -29,7 +29,7 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             .pubsub()
             .get_number_of_subscribers(&args[2..])
             .iter()
-            .map(|(channel, subs)| vec![Value::Blob(channel.clone()), (*subs).into()])
+            .map(|(channel, subs)| vec![Value::new(&channel), (*subs).into()])
             .flatten()
             .collect::<Vec<Value>>()
             .into()),

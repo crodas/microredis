@@ -99,6 +99,8 @@ impl Entry {
         )
     }
 
+    /// Clone a value. If the value is not clonable an error is Value::Error is
+    /// returned instead
     pub fn clone_value(&self) -> Value {
         if self.is_clonable() {
             self.value.clone()

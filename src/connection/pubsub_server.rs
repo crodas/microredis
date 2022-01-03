@@ -79,7 +79,7 @@ impl Pubsub {
             let _ = conn.pubsub_client().sender().try_send(
                 vec![
                     "psubscribe".into(),
-                    Value::Blob(bytes_channel.clone()),
+                    Value::new(&bytes_channel),
                     conn.pubsub_client().new_psubscription(&channel).into(),
                 ]
                 .into(),
@@ -99,8 +99,8 @@ impl Pubsub {
                 if sender
                     .try_send(Value::Array(vec![
                         "message".into(),
-                        Value::Blob(channel.clone()),
-                        Value::Blob(message.clone()),
+                        Value::new(&channel),
+                        Value::new(&message),
                     ]))
                     .is_ok()
                 {
@@ -120,8 +120,8 @@ impl Pubsub {
                 let _ = sub.try_send(Value::Array(vec![
                     "pmessage".into(),
                     pattern.as_str().into(),
-                    Value::Blob(channel.clone()),
-                    Value::Blob(message.clone()),
+                    Value::new(channel),
+                    Value::new(message),
                 ]));
                 i += 1;
             }
@@ -175,7 +175,7 @@ impl Pubsub {
                 let _ = conn.pubsub_client().sender().try_send(
                     vec![
                         "subscribe".into(),
-                        Value::Blob(channel.clone()),
+                        Value::new(&channel),
                         conn.pubsub_client().new_subscription(channel).into(),
                     ]
                     .into(),
@@ -196,7 +196,7 @@ impl Pubsub {
                     if let Some(sender) = subs.remove(&conn_id) {
                         let _ = sender.try_send(Value::Array(vec![
                             "unsubscribe".into(),
-                            Value::Blob(channel.clone()),
+                            Value::new(&channel),
                             1.into(),
                         ]));
                         removed += 1;

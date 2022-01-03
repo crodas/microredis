@@ -50,7 +50,7 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// Documentation:
 ///  * <https://redis.io/commands/echo>
 pub async fn echo(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(Value::Blob(args[1].to_owned()))
+    Ok(Value::new(&args[1]))
 }
 
 /// "ping" command handler
@@ -60,7 +60,7 @@ pub async fn echo(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 pub async fn ping(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match args.len() {
         1 => Ok(Value::String("PONG".to_owned())),
-        2 => Ok(Value::Blob(args[1].to_owned())),
+        2 => Ok(Value::new(&args[1])),
         _ => Err(Error::InvalidArgsCount("ping".to_owned())),
     }
 }
