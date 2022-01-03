@@ -307,7 +307,7 @@ pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
     Ok(conn
         .db()
-        .set(&args[1], Value::Blob(args[2].to_owned()), Some(ttl)))
+        .set(&args[1], Value::Blob(args[3].to_owned()), Some(ttl)))
 }
 
 /// Set key to hold string value if key does not exist. In that case, it is
@@ -652,6 +652,17 @@ mod test {
 
         let x = run_command(&c, &["strlen", "foxxo"]).await;
         assert_eq!(Ok(Value::Integer(0)), x);
+    }
+
+    #[tokio::test]
+    async fn setex() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["setex", "foo", "10", "bar"]).await
+        );
+        assert_eq!(Ok("bar".into()), run_command(&c, &["get", "foo"]).await);
+        assert_eq!(Ok(9.into()), run_command(&c, &["ttl", "foo"]).await);
     }
 
     #[tokio::test]
