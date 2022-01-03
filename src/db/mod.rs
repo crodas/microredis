@@ -340,7 +340,7 @@ impl Db {
                         let str_key = String::from_utf8_lossy(key);
                         pattern.matches(&str_key)
                     })
-                    .map(|key| Value::Blob(key.clone()))
+                    .map(|key| Value::new(key))
                     .collect::<Vec<Value>>()
             })
             .flatten()
@@ -412,6 +412,20 @@ impl Db {
             .filter(|x| x.is_valid())
             .map(|entry| entry.version())
             .unwrap_or_else(new_version)
+    }
+
+    /// Returns the name of the value type
+    pub fn get_data_type(&self, key: &Bytes) -> &str {
+        let entries = self.entries[self.get_slot(key)].read();
+        entries
+            .get(key)
+            .filter(|x| x.is_valid())
+            .map_or("none", |x| match x.get() {
+                Value::Hash(_) => "hash",
+                Value::List(_) => "list",
+                Value::Set(_) => "set",
+                _ => "string",
+            })
     }
 
     /// Get a copy of an entry

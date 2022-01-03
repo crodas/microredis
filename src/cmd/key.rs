@@ -48,6 +48,13 @@ pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().set_ttl(&args[1], expires_at))
 }
 
+/// Returns the string representation of the type of the value stored at key.
+/// The different types that can be returned are: string, list, set, zset, hash
+/// and stream.
+pub async fn data_type(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    Ok(conn.db().get_data_type(&args[1]).into())
+}
+
 /// EXPIREAT has the same effect and semantic as EXPIRE, but instead of specifying the number of
 /// seconds representing the TTL (time to live), it takes an absolute Unix timestamp (seconds since
 /// January 1, 1970). A timestamp in the past will delete the key immediately.
@@ -157,6 +164,34 @@ mod test {
         assert_eq!(
             Ok(Value::Integer(0)),
             run_command(&c, &["exists", "foo"]).await
+        );
+    }
+    #[tokio::test]
+    async fn _type() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["incr", "foo"]).await
+        );
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["hset", "hash", "foo", "bar"]).await
+        );
+        assert_eq!(
+            Ok(Value::Integer(2)),
+            run_command(&c, &["sadd", "set", "foo", "bar"]).await
+        );
+        assert_eq!(
+            Ok("set".into()),
+            run_command(&c, &["type", "set"]).await
+        );
+        assert_eq!(
+            Ok("hash".into()),
+            run_command(&c, &["type", "hash"]).await
+        );
+        assert_eq!(
+            Ok("string".into()),
+            run_command(&c, &["type", "foo"]).await
         );
     }
 

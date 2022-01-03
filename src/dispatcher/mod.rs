@@ -587,6 +587,15 @@ dispatcher! {
             1,
             true,
         },
+        _type {
+            cmd::key::data_type,
+            [Flag::ReadOnly Flag::Fast],
+            2,
+            1,
+            1,
+            1,
+            true,
+        }
     },
     string {
         append {
