@@ -214,6 +214,18 @@ macro_rules! check_arg {
     }}
 }
 
+/// Reads an argument index. If the index is not provided an Err(Error:Syntax)
+/// is thrown
+#[macro_export]
+macro_rules! try_get_arg {
+    {$args: tt, $pos: tt} => {{
+        match $args.get($pos) {
+            Some(bytes) => bytes,
+            None => return Err(Error::Syntax),
+        }
+    }}
+}
+
 /// Convert a stream to a Bytes
 #[macro_export]
 macro_rules! bytes {

@@ -21,6 +21,33 @@ use std::{
 };
 use tokio::time::{Duration, Instant};
 
+/// Override database entries
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Override {
+    /// Allow override
+    Yes,
+    /// Do not allow override, only new entries
+    No,
+    /// Allow only override
+    Only,
+}
+
+impl From<bool> for Override {
+    fn from(v: bool) -> Override {
+        if v {
+            Override::Yes
+        } else {
+            Override::No
+        }
+    }
+}
+
+impl Default for Override {
+    fn default() -> Self {
+        Self::Yes
+    }
+}
+
 /// Databas structure
 ///
 /// Each connection has their own clone of the database and the conn_id is stored in each instance.
@@ -334,6 +361,26 @@ impl Db {
             .map_or(Value::Null, |x| x.clone_value())
     }
 
+    /// Get a copy of an entry and modifies the expiration of the key
+    pub fn getex(&self, key: &Bytes, expires_in: Option<Duration>, make_persistent: bool) -> Value {
+        let mut entries = self.entries[self.get_slot(key)].write();
+        entries
+            .get_mut(key)
+            .filter(|x| x.is_valid())
+            .map(|value| {
+                if make_persistent {
+                    self.expirations.lock().remove(key);
+                    value.persist();
+                } else if let Some(expires_in) = expires_in {
+                    let expires_at = Instant::now() + expires_in;
+                    self.expirations.lock().add(key, expires_at);
+                    value.set_ttl(expires_at);
+                }
+                value
+            })
+            .map_or(Value::Null, |x| x.clone_value())
+    }
+
     /// Get multiple copies of entries
     pub fn get_multi(&self, keys: &[Bytes]) -> Value {
         keys.iter()
@@ -366,17 +413,134 @@ impl Db {
             x.clone_value()
         })
     }
+    ///
+    /// Set a key, value with an optional expiration time
+    pub fn append(&self, key: &Bytes, value_to_append: &Bytes) -> Result<Value, Error> {
+        let mut entries = self.entries[self.get_slot(key)].write();
+        let mut entry = entries.get_mut(key).filter(|x| x.is_valid());
+
+        if let Some(entry) = entries.get_mut(key).filter(|x| x.is_valid()) {
+            match entry.get() {
+                Value::Blob(value) => {
+                    let binary: Bytes = [value.as_ref(), value_to_append.as_ref()].concat().into();
+                    let len = binary.len();
+                    entry.change_value(Value::Blob(binary));
+                    Ok(len.into())
+                }
+                _ => Err(Error::WrongType),
+            }
+        } else {
+            entries.insert(
+                key.clone(),
+                Entry::new(Value::Blob(value_to_append.clone()), None),
+            );
+            Ok(value_to_append.len().into())
+        }
+    }
+
+    /// Set multiple key/value pairs. Are involved keys are locked exclusively
+    /// like a transaction.
+    ///
+    /// If override_all is set to false, all entries must be new entries or the
+    /// entire operation fails, in this case 1 or is returned. Otherwise `Ok` is
+    /// returned.
+    pub fn multi_set(&self, key_values: &[Bytes], override_all: bool) -> Value {
+        let keys = key_values
+            .iter()
+            .step_by(2)
+            .cloned()
+            .collect::<Vec<Bytes>>();
+
+        self.lock_keys(&keys);
+
+        if !override_all {
+            for key in keys.iter() {
+                let entries = self.entries[self.get_slot(key)].read();
+                if entries.get(key).is_some() {
+                    self.unlock_keys(&keys);
+                    return 0.into();
+                }
+            }
+        }
+
+        for (i, _) in key_values.iter().enumerate().step_by(2) {
+            let mut entries = self.entries[self.get_slot(&key_values[i])].write();
+            entries.insert(
+                key_values[i].clone(),
+                Entry::new(Value::Blob(key_values[i + 1].clone()), None),
+            );
+        }
+
+        self.unlock_keys(&keys);
+
+        if override_all {
+            Value::Ok
+        } else {
+            1.into()
+        }
+    }
 
     /// Set a key, value with an optional expiration time
     pub fn set(&self, key: &Bytes, value: Value, expires_in: Option<Duration>) -> Value {
+        self.set_advanced(key, value, expires_in, Default::default(), false, false)
+    }
+
+    /// Set a value in the database with various settings
+    pub fn set_advanced(
+        &self,
+        key: &Bytes,
+        value: Value,
+        expires_in: Option<Duration>,
+        override_value: Override,
+        keep_ttl: bool,
+        return_previous: bool,
+    ) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();
         let expires_at = expires_in.map(|duration| Instant::now() + duration);
+        let previous = entries.get(key);
+
+        let expires_at = if keep_ttl {
+            if let Some(previous) = previous {
+                previous.get_ttl()
+            } else {
+                expires_at
+            }
+        } else {
+            expires_at
+        };
+
+        let to_return = if return_previous {
+            Some(previous.map_or(Value::Null, |v| v.clone_value()))
+        } else {
+            None
+        };
+
+        match override_value {
+            Override::No => {
+                if previous.is_some() {
+                    return 0.into();
+                }
+            }
+            Override::Only => {
+                if previous.is_none() {
+                    return 0.into();
+                }
+            }
+            _ => {}
+        };
 
         if let Some(expires_at) = expires_at {
             self.expirations.lock().add(key, expires_at);
         }
         entries.insert(key.clone(), Entry::new(value, expires_at));
-        Value::Ok
+
+        if let Some(to_return) = to_return {
+            to_return
+        } else if override_value == Override::Yes {
+            Value::Ok
+        } else {
+            1.into()
+        }
     }
 
     /// Returns the TTL of a given key

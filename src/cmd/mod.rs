@@ -1,4 +1,7 @@
 //! # All commands handlers
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::time::{Duration, Instant};
+
 pub mod client;
 pub mod hash;
 pub mod key;
@@ -9,6 +12,14 @@ pub mod server;
 pub mod set;
 pub mod string;
 pub mod transaction;
+
+/// Returns the current time
+pub fn now() -> Duration {
+    let start = SystemTime::now();
+    start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+}
 
 #[cfg(test)]
 mod test {
