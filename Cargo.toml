@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-redis-zero-protocol-parser = "^0.1"
+redis-zero-protocol-parser = "^0.2"
 tokio={version="1", features = ["full", "tracing"] }
 parking_lot="^0.11"
 tokio-util={version="^0.6", features = ["full"] }
