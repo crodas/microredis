@@ -11,7 +11,7 @@ fn store(conn: &Connection, key: &Bytes, values: &[Value]) -> i64 {
 
     for val in values.iter() {
         if let Value::Blob(blob) = val {
-            if x.insert(blob.clone()) {
+            if x.insert(blob.clone().freeze()) {
                 len += 1;
             }
         }
@@ -52,7 +52,7 @@ where
 
                 Ok(all_entries
                     .iter()
-                    .map(|entry| Value::Blob(entry.clone()))
+                    .map(|entry| Value::new(&entry))
                     .collect::<Vec<Value>>()
                     .into())
             }
@@ -221,7 +221,7 @@ pub async fn smembers(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
             Value::Set(x) => Ok(x
                 .read()
                 .iter()
-                .map(|x| Value::Blob(x.clone()))
+                .map(|x| Value::new(x))
                 .collect::<Vec<Value>>()
                 .into()),
             _ => Err(Error::WrongType),
@@ -321,12 +321,12 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 let mut x = x.write();
                 match &rand {
                     Value::Blob(value) => {
-                        x.remove(value);
+                        x.remove(value.as_ref().into());
                     }
                     Value::Array(values) => {
                         for value in values.iter() {
                             if let Value::Blob(value) = value {
-                                x.remove(value);
+                                x.remove(value.as_ref().into());
                             }
                         }
                     }
@@ -370,12 +370,12 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 
                 if args.len() == 2 {
                     let item = items[0].0.clone();
-                    Ok(Value::Blob(item))
+                    Ok(Value::new(&item))
                 } else {
                     let len: usize = min(items.len(), bytes_to_number(&args[2])?);
                     Ok(items[0..len]
                         .iter()
-                        .map(|item| Value::Blob(item.0.clone()))
+                        .map(|item| Value::new(&item.0))
                         .collect::<Vec<Value>>()
                         .into())
                 }

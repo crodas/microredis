@@ -1,4 +1,4 @@
-//! # In-Memory database
+//! # in-memory database
 //!
 //! This database module is the core of the miniredis project. All other modules around this
 //! database module.
@@ -6,7 +6,7 @@ mod entry;
 mod expiration;
 
 use crate::{error::Error, value::Value};
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use entry::{new_version, Entry};
 use expiration::ExpirationDb;
 use log::trace;
@@ -225,14 +225,14 @@ impl Db {
 
                 number += incr_by;
 
-                x.change_value(number.to_string().as_str().into());
+                x.change_value(Value::Blob(number.to_string().as_str().into()));
 
                 Ok(number.into())
             }
             None => {
                 entries.insert(
                     key.clone(),
-                    Entry::new(incr_by.to_string().as_str().into(), None),
+                    Entry::new(Value::Blob(incr_by.to_string().as_str().into()), None),
                 );
                 Ok((incr_by as T).into())
             }
@@ -269,6 +269,44 @@ impl Db {
                 x.set_ttl(expires_at);
                 1.into()
             })
+    }
+
+    /// Overwrites part of the string stored at key, starting at the specified
+    /// offset, for the entire length of value. If the offset is larger than the
+    /// current length of the string at key, the string is padded with zero-bytes to
+    /// make offset fit. Non-existing keys are considered as empty strings, so this
+    /// command will make sure it holds a string large enough to be able to set
+    /// value at offset.
+    pub fn set_range(&self, key: &Bytes, offset: u64, data: &[u8]) -> Result<Value, Error> {
+        let mut entries = self.entries[self.get_slot(key)].write();
+        let value = entries.get_mut(key).map(|value| {
+            if !value.is_valid() {
+                self.expirations.lock().remove(key);
+                value.persist();
+            }
+            value.get_mut()
+        });
+
+        let length = offset as usize + data.len();
+        match value {
+            Some(Value::Blob(bytes)) => {
+                if bytes.capacity() < length {
+                    bytes.resize(length, 0);
+                }
+                let writer = &mut bytes[offset as usize..length];
+                writer.copy_from_slice(data);
+                Ok(bytes.len().into())
+            }
+            None => {
+                let mut bytes = BytesMut::new();
+                bytes.resize(length, 0);
+                let writer = &mut bytes[offset as usize..];
+                writer.copy_from_slice(data);
+                entries.insert(key.clone(), Entry::new(Value::new(&bytes), None));
+                Ok(bytes.len().into())
+            }
+            _ => Err(Error::WrongType),
+        }
     }
 
     /// Removes keys from the database
@@ -396,11 +434,11 @@ impl Db {
     }
 
     /// Get a key or set a new value for the given key.
-    pub fn getset(&self, key: &Bytes, value: &Value) -> Value {
+    pub fn getset(&self, key: &Bytes, value: Value) -> Value {
         let mut entries = self.entries[self.get_slot(key)].write();
         self.expirations.lock().remove(key);
         entries
-            .insert(key.clone(), Entry::new(value.clone(), None))
+            .insert(key.clone(), Entry::new(value, None))
             .filter(|x| x.is_valid())
             .map_or(Value::Null, |x| x.clone_value())
     }
@@ -420,20 +458,15 @@ impl Db {
         let mut entry = entries.get_mut(key).filter(|x| x.is_valid());
 
         if let Some(entry) = entries.get_mut(key).filter(|x| x.is_valid()) {
-            match entry.get() {
+            match entry.get_mut() {
                 Value::Blob(value) => {
-                    let binary: Bytes = [value.as_ref(), value_to_append.as_ref()].concat().into();
-                    let len = binary.len();
-                    entry.change_value(Value::Blob(binary));
-                    Ok(len.into())
+                    value.put(value_to_append.as_ref());
+                    Ok(value.len().into())
                 }
                 _ => Err(Error::WrongType),
             }
         } else {
-            entries.insert(
-                key.clone(),
-                Entry::new(Value::Blob(value_to_append.clone()), None),
-            );
+            entries.insert(key.clone(), Entry::new(Value::new(value_to_append), None));
             Ok(value_to_append.len().into())
         }
     }
@@ -467,7 +500,7 @@ impl Db {
             let mut entries = self.entries[self.get_slot(&key_values[i])].write();
             entries.insert(
                 key_values[i].clone(),
-                Entry::new(Value::Blob(key_values[i + 1].clone()), None),
+                Entry::new(Value::new(&key_values[i + 1]), None),
             );
         }
 
@@ -531,7 +564,12 @@ impl Db {
 
         if let Some(expires_at) = expires_at {
             self.expirations.lock().add(key, expires_at);
+        } else {
+            /// Make sure to remove the new key (or replaced) from the
+            /// expiration table (from any possible past value).
+            self.expirations.lock().remove(key);
         }
+
         entries.insert(key.clone(), Entry::new(value, expires_at));
 
         if let Some(to_return) = to_return {

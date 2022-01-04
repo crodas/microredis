@@ -27,7 +27,7 @@ pub enum Value {
     /// Vector/Array of values
     Array(Vec<Value>),
     /// Bytes/Strings/Binary data
-    Blob(Bytes),
+    Blob(BytesMut),
     /// String. This type does not allowe new lines
     String(String),
     /// An error
@@ -46,6 +46,13 @@ pub enum Value {
     Queued,
     /// Ok
     Ok,
+}
+
+impl Value {
+    /// Creates a new Redis value from a stream of bytes
+    pub fn new(value: &[u8]) -> Self {
+        Self::Blob(value.into())
+    }
 }
 
 impl From<&Value> for Vec<u8> {
@@ -86,7 +93,7 @@ impl TryFrom<&Value> for i64 {
         match val {
             Value::BigInteger(x) => (*x).try_into().map_err(|_| Error::NotANumber),
             Value::Integer(x) => Ok(*x),
-            Value::Blob(x) => bytes_to_number::<i64>(x),
+            Value::Blob(x) => bytes_to_number::<i64>(&x),
             Value::String(x) => x.parse::<i64>().map_err(|_| Error::NotANumber),
             _ => Err(Error::NotANumber),
         }
@@ -109,7 +116,7 @@ impl TryFrom<&Value> for f64 {
 /// Tries to converts bytes data into a number
 ///
 /// If the convertion fails a Error::NotANumber error is returned.
-pub fn bytes_to_number<T: FromStr>(bytes: &Bytes) -> Result<T, Error> {
+pub fn bytes_to_number<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
     let x = String::from_utf8_lossy(bytes);
     x.parse::<T>().map_err(|_| Error::NotANumber)
 }
@@ -124,7 +131,7 @@ impl<'a> From<&ParsedValue<'a>> for Value {
     fn from(value: &ParsedValue) -> Self {
         match value {
             ParsedValue::String(x) => Self::String((*x).to_string()),
-            ParsedValue::Blob(x) => Self::Blob(Bytes::copy_from_slice(*x)),
+            ParsedValue::Blob(x) => Self::new(*x),
             ParsedValue::Array(x) => Self::Array(x.iter().map(|x| x.into()).collect()),
             ParsedValue::Boolean(x) => Self::Boolean(*x),
             ParsedValue::BigInteger(x) => Self::BigInteger(*x),
@@ -150,7 +157,7 @@ impl From<usize> for Value {
 
 impl From<&str> for Value {
     fn from(value: &str) -> Value {
-        Value::Blob(Bytes::copy_from_slice(value.as_bytes()))
+        Value::Blob(value.as_bytes().into())
     }
 }
 

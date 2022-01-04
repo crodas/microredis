@@ -230,6 +230,6 @@ macro_rules! try_get_arg {
 #[macro_export]
 macro_rules! bytes {
     ($content:tt) => {
-        Bytes::from(&$content[..])
+        (&$content[..]).into()
     };
 }

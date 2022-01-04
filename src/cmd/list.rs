@@ -63,14 +63,15 @@ fn remove_element(
 /// popped from the head of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout = Instant::now() + Duration::from_secs(bytes_to_number(&args[args.len() - 1])?);
+    let timeout =
+        Instant::now() + Duration::from_secs(bytes_to_number::<u64>(&args[args.len() - 1])?);
     let len = args.len() - 1;
 
     loop {
         for key in args[1..len].iter() {
             match remove_element(conn, key, 0, true)? {
                 Value::Null => (),
-                n => return Ok(vec![Value::Blob(key.clone()), n].into()),
+                n => return Ok(vec![Value::new(&key), n].into()),
             };
         }
 
@@ -89,14 +90,15 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// popped from the tail of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout = Instant::now() + Duration::from_secs(bytes_to_number(&args[args.len() - 1])?);
+    let timeout =
+        Instant::now() + Duration::from_secs(bytes_to_number::<u64>(&args[args.len() - 1])?);
     let len = args.len() - 1;
 
     loop {
         for key in args[1..len].iter() {
             match remove_element(conn, key, 0, false)? {
                 Value::Null => (),
-                n => return Ok(vec![Value::Blob(key.clone()), n].into()),
+                n => return Ok(vec![Value::new(&key), n].into()),
             };
         }
 

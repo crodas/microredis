@@ -62,7 +62,7 @@ pub async fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         &args[1],
         |v| match v {
             Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
-                Value::Blob(v.clone())
+                Value::new(&v)
             } else {
                 Value::Null
             }),
@@ -82,8 +82,8 @@ pub async fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
                 let mut ret = vec![];
 
                 for (key, value) in h.read().iter() {
-                    ret.push(Value::Blob(key.clone()));
-                    ret.push(Value::Blob(value.clone()));
+                    ret.push(Value::new(&key));
+                    ret.push(Value::new(&value));
                 }
 
                 Ok(ret.into())
@@ -144,7 +144,7 @@ pub async fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 let mut ret = vec![];
 
                 for key in h.read().keys() {
-                    ret.push(Value::Blob(key.clone()));
+                    ret.push(Value::new(&key));
                 }
 
                 Ok(ret.into())
@@ -179,7 +179,7 @@ pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     .iter()
                     .map(|key| {
                         if let Some(value) = h.get(key) {
-                            Value::Blob(value.clone())
+                            Value::new(&value)
                         } else {
                             Value::Null
                         }
@@ -234,17 +234,17 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
                 i = 0;
                 for val in rand_sorted.values() {
                     if single {
-                        return Ok(Value::Blob(val.0.clone()));
+                        return Ok(Value::new(&val.0));
                     }
 
                     if i == count {
                         break;
                     }
 
-                    ret.push(Value::Blob(val.0.clone()));
+                    ret.push(Value::new(&val.0));
 
                     if with_values {
-                        ret.push(Value::Blob(val.1.clone()));
+                        ret.push(Value::new(&val.1));
                     }
 
                     i += 1;
@@ -360,7 +360,7 @@ pub async fn hvals(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 let mut ret = vec![];
 
                 for value in h.read().values() {
-                    ret.push(Value::Blob(value.clone()));
+                    ret.push(Value::new(&value));
                 }
 
                 Ok(ret.into())
