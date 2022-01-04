@@ -331,7 +331,7 @@ impl Db {
         let pattern =
             Pattern::new(&pattern).map_err(|_| Error::InvalidPattern(pattern.to_string()))?;
         Ok(self
-            .entries
+            .slots
             .iter()
             .map(|slot| {
                 slot.read()
@@ -416,8 +416,8 @@ impl Db {
 
     /// Returns the name of the value type
     pub fn get_data_type(&self, key: &Bytes) -> &str {
-        let entries = self.entries[self.get_slot(key)].read();
-        entries
+        let slots = self.slots[self.get_slot(key)].read();
+        slots
             .get(key)
             .filter(|x| x.is_valid())
             .map_or("none", |x| match x.get() {

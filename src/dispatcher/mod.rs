@@ -595,7 +595,16 @@ dispatcher! {
             1,
             1,
             true,
-        }
+        },
+        unlink {
+            cmd::key::del,
+            [Flag::Write Flag::Fast],
+            -2,
+            1,
+            -1,
+            1,
+            true,
+        },
     },
     string {
         append {
