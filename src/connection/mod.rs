@@ -32,6 +32,8 @@ impl Default for ConnectionStatus {
 /// Connection information
 #[derive(Debug)]
 pub struct ConnectionInfo {
+    current_db: usize,
+    db: Arc<Db>,
     name: Option<String>,
     watch_keys: Vec<(Bytes, u128)>,
     tx_keys: HashSet<Bytes>,
@@ -43,8 +45,6 @@ pub struct ConnectionInfo {
 #[derive(Debug)]
 pub struct Connection {
     id: u128,
-    db: Db,
-    current_db: u32,
     all_connections: Arc<connections::Connections>,
     addr: SocketAddr,
     info: RwLock<ConnectionInfo>,
@@ -53,10 +53,12 @@ pub struct Connection {
 
 impl ConnectionInfo {
     /// Creates a new connection
-    fn new() -> Self {
+    fn new(db: Arc<Db>) -> Self {
         Self {
             name: None,
             watch_keys: vec![],
+            db,
+            current_db: 0,
             tx_keys: HashSet::new(),
             commands: None,
             status: ConnectionStatus::Normal,
@@ -69,8 +71,8 @@ impl Connection {
     ///
     /// The database object is unique to this connection but most of its internal structure is
     /// shared (like the entries).
-    pub fn db(&self) -> &Db {
-        &self.db
+    pub fn db(&self) -> Arc<Db> {
+        self.info.read().db.clone()
     }
 
     /// Returns the global pubsub server
@@ -165,7 +167,7 @@ impl Connection {
         let watch_keys = &self.info.read().watch_keys;
 
         for key in watch_keys.iter() {
-            if self.db.get_version(&key.0) != key.1 {
+            if self.info.read().db.get_version(&key.0) != key.1 {
                 return true;
             }
         }
@@ -244,14 +246,26 @@ impl Connection {
         r.name = Some(name);
     }
 
+    /// Changes the current db for the current connection
+    pub fn selectdb(&self, db: usize) -> Result<Value, Error> {
+        let mut info = self.info.write();
+        info.db = self
+            .all_connections
+            .get_databases()
+            .get(db)?
+            .new_db_instance(self.id);
+        info.current_db = db;
+        Ok(Value::Ok)
+    }
+}
+
+impl ToString for Connection {
     /// Returns a string representation of this connection
-    pub fn as_string(&self) -> String {
+    fn to_string(&self) -> String {
+        let info = self.info.read();
         format!(
             "id={} addr={} name={:?} db={}\r\n",
-            self.id,
-            self.addr,
-            self.info.read().name,
-            self.current_db
+            self.id, self.addr, info.name, info.current_db
         )
     }
 }

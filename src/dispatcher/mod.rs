@@ -807,6 +807,15 @@ dispatcher! {
             0,
             false,
         },
+        select {
+            cmd::client::select,
+            [Flag::Fast Flag::Stale Flag::Loading],
+            2,
+            0,
+            0,
+            0,
+            false,
+        }
     },
     transaction {
         discard {

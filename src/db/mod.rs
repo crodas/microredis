@@ -4,6 +4,7 @@
 //! database module.
 mod entry;
 mod expiration;
+pub mod pool;
 
 use crate::{error::Error, value::Value};
 use bytes::{BufMut, Bytes, BytesMut};
@@ -101,8 +102,8 @@ impl Db {
     /// Creates a new database instance
     pub fn new(number_of_slots: usize) -> Self {
         let slots = (0..number_of_slots)
-                .map(|_| RwLock::new(HashMap::new()))
-                .collect();
+            .map(|_| RwLock::new(HashMap::new()))
+            .collect();
 
         Self {
             slots: Arc::new(slots),
@@ -118,14 +119,14 @@ impl Db {
     /// This is particular useful when locking keys exclusively.
     ///
     /// All the internal data are shjared through an Arc.
-    pub fn new_db_instance(self: Arc<Db>, conn_id: u128) -> Db {
-        Self {
+    pub fn new_db_instance(self: Arc<Db>, conn_id: u128) -> Arc<Db> {
+        Arc::new(Self {
             slots: self.slots.clone(),
             tx_key_locks: self.tx_key_locks.clone(),
             expirations: self.expirations.clone(),
             conn_id,
             number_of_slots: self.number_of_slots,
-        }
+        })
     }
 
     #[inline]
@@ -584,10 +585,7 @@ impl Db {
     /// Returns the TTL of a given key
     pub fn ttl(&self, key: &Bytes) -> Option<Option<Instant>> {
         let slots = self.slots[self.get_slot(key)].read();
-        slots
-            .get(key)
-            .filter(|x| x.is_valid())
-            .map(|x| x.get_ttl())
+        slots.get(key).filter(|x| x.is_valid()).map(|x| x.get_ttl())
     }
 
     /// Check whether a given key is in the list of keys to be purged or not.

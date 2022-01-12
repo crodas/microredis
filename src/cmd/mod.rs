@@ -25,7 +25,7 @@ pub fn now() -> Duration {
 mod test {
     use crate::{
         connection::{connections::Connections, Connection},
-        db::Db,
+        db::pool::Databases,
         dispatcher::Dispatcher,
         error::Error,
         value::Value,
@@ -38,21 +38,21 @@ mod test {
     use tokio::sync::mpsc::Receiver;
 
     pub fn create_connection() -> Arc<Connection> {
-        let db = Arc::new(Db::new(1000));
-        let all_connections = Arc::new(Connections::new(db.clone()));
+        let (default_db, all_dbs) = Databases::new(16, 1000);
+        let all_connections = Arc::new(Connections::new(all_dbs));
 
         let client = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
 
-        all_connections.new_connection(db.clone(), client).1
+        all_connections.new_connection(default_db, client).1
     }
 
     pub fn create_connection_and_pubsub() -> (Receiver<Value>, Arc<Connection>) {
-        let db = Arc::new(Db::new(1000));
-        let all_connections = Arc::new(Connections::new(db.clone()));
+        let (default_db, all_dbs) = Databases::new(16, 1000);
+        let all_connections = Arc::new(Connections::new(all_dbs));
 
         let client = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
 
-        all_connections.new_connection(db.clone(), client)
+        all_connections.new_connection(default_db, client)
     }
 
     pub fn create_new_connection_from_connection(
@@ -62,7 +62,10 @@ mod test {
 
         let client = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
 
-        all_connections.new_connection(all_connections.db(), client)
+        all_connections.new_connection(
+            all_connections.get_databases().get(0).expect("DB(0)"),
+            client,
+        )
     }
 
     pub async fn run_command(conn: &Connection, cmd: &[&str]) -> Result<Value, Error> {

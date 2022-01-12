@@ -32,6 +32,8 @@ pub enum Error {
     NotANumber,
     /// The connection is not in a transaction
     NotInTx,
+    /// The requested database does not exists
+    NotSuchDatabase,
     /// The connection is in a transaction and nested transactions are not supported
     NestedTx,
     /// Wrong data type
@@ -59,6 +61,7 @@ impl From<Error> for Value {
             Error::OutOfRange => "index out of range".to_owned(),
             Error::Syntax => "syntax error".to_owned(),
             Error::NotFound => "no such key".to_owned(),
+            Error::NotSuchDatabase => "DB index is out of range".to_owned(),
             Error::NestedTx => "calls can not be nested".to_owned(),
             Error::PubsubOnly(x) => format!("Can't execute '{}': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context", x),
             Error::WrongArgument(x, y) => format!(
