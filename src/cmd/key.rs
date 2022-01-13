@@ -7,6 +7,53 @@ use bytes::Bytes;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{Duration, Instant};
 
+/// This command copies the value stored at the source key to the destination
+/// key.
+///
+/// By default, the destination key is created in the logical database used by
+/// the connection. The DB option allows specifying an alternative logical
+/// database index for the destination key.
+///
+/// The command returns an error when the destination key already exists. The
+/// REPLACE option removes the destination key before copying the value to it.
+pub async fn copy(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let mut skip = 3;
+    let target_db = if args.len() > 4 && check_arg!(args, 3, "DB") {
+        skip += 2;
+        Some(
+            conn.all_connections()
+                .get_databases()
+                .get(bytes_to_number(&args[4])?)?
+                .clone(),
+        )
+    } else {
+        None
+    };
+    let replace = match args
+        .get(skip)
+        .map(|m| String::from_utf8_lossy(m).to_uppercase())
+    {
+        Some(value) => {
+            if value == "REPLACE" {
+                true
+            } else {
+                return Err(Error::Syntax);
+            }
+        }
+        None => false,
+    };
+    let result = if conn
+        .db()
+        .copy(&args[1], &args[2], replace.into(), target_db)
+    {
+        1
+    } else {
+        0
+    };
+
+    Ok(result.into())
+}
+
 /// Removes the specified keys. A key is ignored if it does not exist.
 pub async fn del(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().del(&args[1..]))
@@ -14,7 +61,7 @@ pub async fn del(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 /// Returns if key exists.
 pub async fn exists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().exists(&args[1..]))
+    Ok(conn.db().exists(&args[1..]).into())
 }
 
 /// Set a timeout on key. After the timeout has expired, the key will automatically be deleted. A
@@ -181,18 +228,9 @@ mod test {
             Ok(Value::Integer(2)),
             run_command(&c, &["sadd", "set", "foo", "bar"]).await
         );
-        assert_eq!(
-            Ok("set".into()),
-            run_command(&c, &["type", "set"]).await
-        );
-        assert_eq!(
-            Ok("hash".into()),
-            run_command(&c, &["type", "hash"]).await
-        );
-        assert_eq!(
-            Ok("string".into()),
-            run_command(&c, &["type", "foo"]).await
-        );
+        assert_eq!(Ok("set".into()), run_command(&c, &["type", "set"]).await);
+        assert_eq!(Ok("hash".into()), run_command(&c, &["type", "hash"]).await);
+        assert_eq!(Ok("string".into()), run_command(&c, &["type", "foo"]).await);
     }
 
     #[tokio::test]
@@ -229,6 +267,65 @@ mod test {
         assert_eq!(
             Ok(Value::Integer(-2)),
             run_command(&c, &["pttl", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn copy() {
+        let c = create_connection();
+        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(Ok(1.into()), run_command(&c, &["copy", "foo", "bar"]).await);
+        assert_eq!(Ok(2.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(Ok(0.into()), run_command(&c, &["copy", "foo", "bar"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec!["2".into(), "1".into()])),
+            run_command(&c, &["mget", "foo", "bar"]).await
+        );
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c, &["copy", "foo", "bar", "replace"]).await
+        );
+        assert_eq!(
+            Ok(Value::Array(vec!["2".into(), "2".into()])),
+            run_command(&c, &["mget", "foo", "bar"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn copy_different_db() {
+        let c = create_connection();
+        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c, &["copy", "foo", "bar", "db", "2"]).await
+        );
+        assert_eq!(Ok(2.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(
+            Ok(0.into()),
+            run_command(&c, &["copy", "foo", "bar", "db", "2"]).await
+        );
+        assert_eq!(
+            Ok(Value::Array(vec!["2".into(), Value::Null])),
+            run_command(&c, &["mget", "foo", "bar"]).await
+        );
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["select", "2"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Null, "1".into()])),
+            run_command(&c, &["mget", "foo", "bar"]).await
+        );
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["select", "0"]).await);
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c, &["copy", "foo", "bar", "db", "2", "replace"]).await
+        );
+        assert_eq!(
+            Ok(Value::Array(vec!["2".into(), Value::Null])),
+            run_command(&c, &["mget", "foo", "bar"]).await
+        );
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["select", "2"]).await);
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Null, "2".into()])),
+            run_command(&c, &["mget", "foo", "bar"]).await
         );
     }
 }

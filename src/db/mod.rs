@@ -17,7 +17,7 @@ use seahash::hash;
 use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
-    ops::AddAssign,
+    ops::{AddAssign, Deref},
     sync::Arc,
     thread,
 };
@@ -311,6 +311,46 @@ impl Db {
         }
     }
 
+    /// Copies a key
+    pub fn copy(
+        &self,
+        source: &Bytes,
+        target: &Bytes,
+        replace: Override,
+        target_db: Option<Arc<Db>>,
+    ) -> bool {
+        let slots = self.slots[self.get_slot(source)].read();
+        let value = if let Some(value) = slots.get(source).filter(|x| x.is_valid()) {
+            value.clone()
+        } else {
+            return false;
+        };
+        drop(slots);
+
+        if let Some(db) = target_db {
+            if replace == Override::No && db.exists(&[target.clone()]) > 0 {
+                return false;
+            }
+            let _ = db.set_advanced(
+                target,
+                value.value.clone(),
+                value.get_ttl().map(|v| v - Instant::now()),
+                replace,
+                false,
+                false,
+            );
+            true
+        } else {
+            if replace == Override::No && self.exists(&[target.clone()]) > 0 {
+                return false;
+            }
+            let mut slots = self.slots[self.get_slot(target)].write();
+            slots.insert(target.clone(), value);
+
+            true
+        }
+    }
+
     /// Removes keys from the database
     pub fn del(&self, keys: &[Bytes]) -> Value {
         let mut expirations = self.expirations.lock();
@@ -348,7 +388,7 @@ impl Db {
     }
 
     /// Check if keys exists in the database
-    pub fn exists(&self, keys: &[Bytes]) -> Value {
+    pub fn exists(&self, keys: &[Bytes]) -> usize {
         let mut matches = 0;
         keys.iter()
             .map(|key| {
@@ -359,7 +399,7 @@ impl Db {
             })
             .for_each(drop);
 
-        matches.into()
+        matches
     }
 
     /// get_map_or

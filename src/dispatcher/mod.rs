@@ -479,6 +479,15 @@ dispatcher! {
         },
     },
     keys {
+        copy {
+            cmd::key::copy,
+            [Flag::Write Flag::DenyOom],
+            -3,
+            1,
+            2,
+            1,
+            true,
+        },
         del {
             cmd::key::del,
             [Flag::Write],
