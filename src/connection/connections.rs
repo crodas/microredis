@@ -3,7 +3,7 @@
 //! This mod keeps track of all active conections. There is one instance of this mod per running
 //! server.
 use super::{pubsub_connection::PubsubClient, pubsub_server::Pubsub, Connection, ConnectionInfo};
-use crate::{db::Db, dispatcher::Dispatcher, value::Value};
+use crate::{db::pool::Databases, db::Db, dispatcher::Dispatcher, value::Value};
 use parking_lot::RwLock;
 use std::{collections::BTreeMap, net::SocketAddr, sync::Arc};
 
@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 #[derive(Debug)]
 pub struct Connections {
     connections: RwLock<BTreeMap<u128, Arc<Connection>>>,
-    db: Arc<Db>,
+    dbs: Arc<Databases>,
     pubsub: Arc<Pubsub>,
     dispatcher: Arc<Dispatcher>,
     counter: RwLock<u128>,
@@ -21,20 +21,19 @@ pub struct Connections {
 
 impl Connections {
     /// Returns a new instance of connections.
-    pub fn new(db: Arc<Db>) -> Self {
+    pub fn new(dbs: Arc<Databases>) -> Self {
         Self {
             counter: RwLock::new(0),
-            db,
+            dbs,
             pubsub: Arc::new(Pubsub::new()),
             dispatcher: Arc::new(Dispatcher::new()),
             connections: RwLock::new(BTreeMap::new()),
         }
     }
 
-    /// Returns the database
-    #[allow(dead_code)]
-    pub fn db(&self) -> Arc<Db> {
-        self.db.clone()
+    /// Returns all databases
+    pub fn get_databases(&self) -> Arc<Databases> {
+        self.dbs.clone()
     }
 
     /// Returns the dispatcher instance
@@ -66,11 +65,9 @@ impl Connections {
 
         let conn = Arc::new(Connection {
             id: *id,
-            db: db.new_db_instance(*id),
             addr,
             all_connections: self.clone(),
-            current_db: 0,
-            info: RwLock::new(ConnectionInfo::new()),
+            info: RwLock::new(ConnectionInfo::new(db.new_db_instance(*id))),
             pubsub_client: PubsubClient::new(pubsub_sender),
         });
 

@@ -1,8 +1,12 @@
 //! # String command handlers
 use super::now;
 use crate::{
-    check_arg, connection::Connection, db::Override, error::Error, try_get_arg,
-    value::bytes_to_number, value::Value,
+    check_arg,
+    connection::Connection,
+    db::Override,
+    error::Error,
+    try_get_arg,
+    value::{bytes_to_number, Value},
 };
 use bytes::Bytes;
 use std::{

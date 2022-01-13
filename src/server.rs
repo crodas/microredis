@@ -4,7 +4,7 @@
 //! metrics.
 use crate::{
     connection::{connections::Connections, ConnectionStatus},
-    db::Db,
+    db::pool::Databases,
     value::Value,
 };
 use bytes::{Buf, Bytes, BytesMut};
@@ -110,17 +110,21 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(&addr).await?;
     info!("Listening on: {}", addr);
 
-    let db = Arc::new(Db::new(1000));
-    let all_connections = Arc::new(Connections::new(db.clone()));
+    let (default_db, all_dbs) = Databases::new(16, 1000);
+    let all_connections = Arc::new(Connections::new(all_dbs.clone()));
     let all_connections_for_metrics = all_connections.clone();
 
-    let db_for_purging = db.clone();
-    tokio::spawn(async move {
-        loop {
-            db_for_purging.purge();
-            sleep(Duration::from_millis(5000)).await;
-        }
-    });
+    all_dbs
+        .into_iter()
+        .map(|db_for_purging| {
+            tokio::spawn(async move {
+                loop {
+                    db_for_purging.purge();
+                    sleep(Duration::from_millis(5000)).await;
+                }
+            });
+        })
+        .for_each(drop);
 
     tokio::spawn(async move {
         server_metrics(all_connections_for_metrics.clone()).await;
@@ -130,7 +134,7 @@ pub async fn serve(addr: String) -> Result<(), Box<dyn Error>> {
         match listener.accept().await {
             Ok((socket, addr)) => {
                 let all_connections = all_connections.clone();
-                let (mut pubsub, conn) = all_connections.new_connection(db.clone(), addr);
+                let (mut pubsub, conn) = all_connections.new_connection(default_db.clone(), addr);
 
                 tokio::spawn(async move {
                     let mut transport = Framed::new(socket, RedisParser);
