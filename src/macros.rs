@@ -87,7 +87,7 @@ macro_rules! dispatcher {
             /// Returns a command handler for a given command
             #[inline(always)]
             pub fn get_handler_for_command(&self, command: &str) -> Result<&command::Command, Error> {
-                match command.to_lowercase().as_str() {
+                match command.to_uppercase().as_str() {
                 $($(
                     stringify!($command) => Ok(&self.$command),
                 )+)+
@@ -102,23 +102,12 @@ macro_rules! dispatcher {
             /// has fewer logic when reading the provided arguments.
             #[inline(always)]
             pub fn get_handler(&self, args: &[Bytes]) -> Result<&command::Command, Error> {
-                let command = Self::get_command_string(&args[0]);
+                let command = String::from_utf8_lossy(&args[0]).to_uppercase();
                 let command = self.get_handler_for_command(&command)?;
                 if ! command.check_number_args(args.len()) {
                     Err(Error::InvalidArgsCount(command.name().into()))
                 } else {
                     Ok(command)
-                }
-            }
-
-            /// Returns the normalized command name that may match the internal
-            /// representation of the command.
-            fn get_command_string<'z>(command: &'z Bytes) -> String {
-                let cmd = String::from_utf8_lossy(command).to_lowercase();
-                if cmd == "type" {
-                    "_type".to_owned()
-                } else {
-                    cmd.to_owned()
                 }
             }
 
@@ -130,7 +119,7 @@ macro_rules! dispatcher {
             #[inline(always)]
             pub fn execute<'a>(&'a self, conn: &'a Connection, args: &'a [Bytes]) -> futures::future::BoxFuture<'a, Result<Value, Error>> {
                 async move {
-                    let command = Self::get_command_string(&args[0]);
+                    let command = String::from_utf8_lossy(&args[0]).to_uppercase();
                     match command.as_str() {
                         $($(
                             stringify!($command) => {

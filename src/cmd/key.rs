@@ -44,7 +44,7 @@ pub async fn copy(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     };
     let result = if conn
         .db()
-        .copy(&args[1], &args[2], replace.into(), target_db)
+        .copy(&args[1], &args[2], replace.into(), target_db)?
     {
         1
     } else {
@@ -156,6 +156,23 @@ pub async fn keys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(conn.db().get_all_keys(&args[1])?.into())
 }
 
+/// Move key from the currently selected database (see SELECT) to the specified
+/// destination database. When key already exists in the destination database,
+/// or it does not exist in the source database, it does nothing. It is possible
+/// to use MOVE as a locking primitive because of this.
+pub async fn move_key(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let target_db = conn
+        .all_connections()
+        .get_databases()
+        .get(bytes_to_number(&args[2])?)?;
+
+    Ok(if conn.db().move_key(&args[1], target_db)? {
+        1.into()
+    } else {
+        0.into()
+    })
+}
+
 /// Returns the remaining time to live of a key that has a timeout. This introspection capability
 /// allows a Redis client to check how many seconds a given key will continue to be part of the
 /// dataset.
@@ -187,6 +204,7 @@ mod test {
     use crate::{
         cmd::test::{create_connection, run_command},
         value::Value,
+        error::Error,
     };
 
     #[tokio::test]
@@ -326,6 +344,54 @@ mod test {
         assert_eq!(
             Ok(Value::Array(vec![Value::Null, "2".into()])),
             run_command(&c, &["mget", "foo", "bar"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn copy_same_db() {
+        let c = create_connection();
+        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(
+            Err(Error::SameEntry),
+            run_command(&c, &["copy", "foo", "foo"]).await
+        );
+        assert_eq!(
+            Err(Error::SameEntry),
+            run_command(&c, &["copy", "foo", "foo", "db", "0"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn _move() {
+        let c = create_connection();
+        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c, &["move", "foo", "2"]).await
+        );
+        assert_eq!(
+            Ok(Value::Null),
+            run_command(&c, &["get", "foo"]).await
+        );
+        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(
+            Ok(0.into()),
+            run_command(&c, &["move", "foo", "2"]).await
+        );
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["select", "2"]).await);
+        assert_eq!(
+            Ok("1".into()),
+            run_command(&c, &["get", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn _move_same_db() {
+        let c = create_connection();
+        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(
+            Err(Error::SameEntry),
+            run_command(&c, &["move", "foo", "0"]).await
         );
     }
 }

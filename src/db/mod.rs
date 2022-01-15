@@ -84,6 +84,10 @@ pub struct Db {
     /// Number of HashMaps that are available.
     number_of_slots: usize,
 
+    /// Databases unique ID. This is an internal identifier to avoid deadlocks
+    /// when copying and moving data between databases.
+    pub db_id: u128,
+
     /// Current connection  ID
     ///
     /// A Database is attached to a conn_id. The slots and expiration data
@@ -110,6 +114,7 @@ impl Db {
             slots: Arc::new(slots),
             expirations: Arc::new(Mutex::new(ExpirationDb::new())),
             conn_id: 0,
+            db_id: new_version(),
             tx_key_locks: Arc::new(RwLock::new(HashMap::new())),
             number_of_slots,
         }
@@ -126,6 +131,7 @@ impl Db {
             tx_key_locks: self.tx_key_locks.clone(),
             expirations: self.expirations.clone(),
             conn_id,
+            db_id: self.db_id,
             number_of_slots: self.number_of_slots,
         })
     }
@@ -318,18 +324,21 @@ impl Db {
         target: &Bytes,
         replace: Override,
         target_db: Option<Arc<Db>>,
-    ) -> bool {
+    ) -> Result<bool, Error> {
         let slots = self.slots[self.get_slot(source)].read();
         let value = if let Some(value) = slots.get(source).filter(|x| x.is_valid()) {
             value.clone()
         } else {
-            return false;
+            return Ok(false);
         };
         drop(slots);
 
         if let Some(db) = target_db {
+            if db.db_id == self.db_id && source == target {
+                return Err(Error::SameEntry);
+            }
             if replace == Override::No && db.exists(&[target.clone()]) > 0 {
-                return false;
+                return Ok(false);
             }
             let _ = db.set_advanced(
                 target,
@@ -339,15 +348,46 @@ impl Db {
                 false,
                 false,
             );
-            true
+            Ok(true)
         } else {
+            if source == target {
+                return Err(Error::SameEntry);
+            }
+
             if replace == Override::No && self.exists(&[target.clone()]) > 0 {
-                return false;
+                return Ok(false);
             }
             let mut slots = self.slots[self.get_slot(target)].write();
             slots.insert(target.clone(), value);
 
-            true
+            Ok(true)
+        }
+    }
+
+    /// Moves a given key between databases
+    pub fn move_key(&self, source: &Bytes, target_db: Arc<Db>) -> Result<bool, Error> {
+        if self.db_id == target_db.db_id {
+            return Err(Error::SameEntry);
+        }
+        let mut slot = self.slots[self.get_slot(source)].write();
+        let (expires_in, value) = if let Some(value) = slot.get(source).filter(|v| v.is_valid()) {
+            (value.get_ttl().map(|t| t - Instant::now()), value.value.clone())
+        } else {
+            return Ok(false);
+        };
+
+        if Value::Integer(1) == target_db.set_advanced(
+            &source,
+            value,
+            expires_in,
+            Override::No,
+            false,
+            false,
+        ) {
+            slot.remove(source);
+            Ok(true)
+        } else {
+            Ok(false)
         }
     }
 

@@ -24,6 +24,8 @@ pub enum Error {
     NotFound,
     /// Index out of range
     OutOfRange,
+    /// Attempting to move or copy to the same key
+    SameEntry,
     /// The connection is in pubsub only mode and the current command is not compabible.
     PubsubOnly(String),
     /// Syntax error
@@ -57,6 +59,7 @@ impl From<Error> for Value {
             Error::Internal => "internal error".to_owned(),
             Error::Protocol(x, y) => format!("Protocol error: expected '{}', got '{}'", x, y),
             Error::NotInTx => " without MULTI".to_owned(),
+            Error::SameEntry => "source and destination objects are the same".to_owned(),
             Error::NotANumber => "value is not an integer or out of range".to_owned(),
             Error::OutOfRange => "index out of range".to_owned(),
             Error::Syntax => "syntax error".to_owned(),
