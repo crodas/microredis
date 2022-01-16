@@ -53,6 +53,16 @@ impl Value {
     pub fn new(value: &[u8]) -> Self {
         Self::Blob(value.into())
     }
+
+    /// Returns the internal encoding of the redis
+    pub fn encoding(&self) -> &str {
+        match self {
+            Self::Hash(_) | Self::Set(_) => "hashtable",
+            Self::List(_) => "linkedlist",
+            Self::Array(_) => "vector",
+            _ => "embstr",
+        }
+    }
 }
 
 impl From<&Value> for Vec<u8> {

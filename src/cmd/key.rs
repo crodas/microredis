@@ -173,6 +173,33 @@ pub async fn move_key(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
     })
 }
 
+/// Return information about the object/value stored in the database
+pub async fn object(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let subcommand = String::from_utf8_lossy(&args[1]).to_lowercase();
+
+    let expected_args = if subcommand == "help" { 2 } else { 3 };
+
+    if expected_args != args.len() {
+        return Err(Error::SubCommandNotFound(
+            subcommand.into(),
+            String::from_utf8_lossy(&args[0]).into(),
+        ));
+    }
+
+    match subcommand.as_str() {
+        "help" => super::help::object(),
+        "refcount" => Ok(if conn.db().exists(&[args[2].clone()]) == 1 {
+            1.into()
+        } else {
+            Value::Null
+        }),
+        _ => Err(Error::SubCommandNotFound(
+            subcommand.into(),
+            String::from_utf8_lossy(&args[0]).into(),
+        )),
+    }
+}
+
 /// Renames key to newkey. It returns an error when key does not exist. If
 /// newkey already exists it is overwritten, when this happens RENAME executes
 /// an implicit DEL operation, so if the deleted key contains a very big value

@@ -4,6 +4,7 @@ use tokio::time::{Duration, Instant};
 
 pub mod client;
 pub mod hash;
+pub mod help;
 pub mod key;
 pub mod list;
 pub mod metrics;

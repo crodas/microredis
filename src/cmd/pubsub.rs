@@ -18,12 +18,7 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 .map(|v| Value::new(&v))
                 .collect(),
         )),
-        "help" => Ok(Value::Array(vec![
-            Value::String("PUBSUB <subcommand> arg arg ... arg. Subcommands are:".to_owned()),
-            Value::String("CHANNELS [<pattern>] -- Return the currently active channels matching a pattern (default: all).".to_owned()),
-            Value::String("NUMPAT -- Return number of subscriptions to patterns.".to_owned()),
-            Value::String("NUMSUB [channel-1 .. channel-N] -- Returns the number of subscribers for the specified channels (excluding patterns, default: none).".to_owned()),
-        ])),
+        "help" => super::help::pubsub(),
         "numpat" => Ok(conn.pubsub().get_number_of_psubscribers().into()),
         "numsub" => Ok(conn
             .pubsub()
@@ -33,7 +28,10 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             .flatten()
             .collect::<Vec<Value>>()
             .into()),
-        cmd => Err(Error::SubCommandNotFound(cmd.into(), String::from_utf8_lossy(&args[0]).into())),
+        cmd => Err(Error::SubCommandNotFound(
+            cmd.into(),
+            String::from_utf8_lossy(&args[0]).into(),
+        )),
     }
 }
 

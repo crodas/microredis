@@ -551,6 +551,15 @@ dispatcher! {
             1,
             true,
         },
+        OBJECT {
+            cmd::key::object,
+            [Flag::ReadOnly Flag::Random],
+            -2,
+            2,
+            2,
+            1,
+            true,
+        },
         PERSIST {
             cmd::key::persist,
             [Flag::Write Flag::Fast],

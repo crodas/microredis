@@ -54,21 +54,7 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
                     .collect(),
             ))
         }
-        "help" => Ok(Value::Array(vec![
-            Value::String(
-                "COMMAND <subcommand> [<arg> [value] [opt] ...]. Subcommands are:".into(),
-            ),
-            Value::String("(no subcommand)".into()),
-            Value::String("\tReturn details about all Redis commands".into()),
-            Value::String("COUNT".into()),
-            Value::String("\tReturn the total number of commands in this Redis server.".into()),
-            Value::String("GETKEYS <full-command>".into()),
-            Value::String("\tReturn the keys from a full Redis command.".into()),
-            Value::String("INFO [<command-name> ...]".into()),
-            Value::String("Return details about multiple Redis commands.".into()),
-            Value::String("HELP".into()),
-            Value::String("\tPrints this help.".into()),
-        ])),
+        "help" => super::help::command(),
         cmd => Err(Error::SubCommandNotFound(
             cmd.into(),
             String::from_utf8_lossy(&args[0]).into(),
