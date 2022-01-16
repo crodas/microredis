@@ -371,23 +371,64 @@ impl Db {
         }
         let mut slot = self.slots[self.get_slot(source)].write();
         let (expires_in, value) = if let Some(value) = slot.get(source).filter(|v| v.is_valid()) {
-            (value.get_ttl().map(|t| t - Instant::now()), value.value.clone())
+            (
+                value.get_ttl().map(|t| t - Instant::now()),
+                value.value.clone(),
+            )
         } else {
             return Ok(false);
         };
 
-        if Value::Integer(1) == target_db.set_advanced(
-            &source,
-            value,
-            expires_in,
-            Override::No,
-            false,
-            false,
-        ) {
+        if Value::Integer(1)
+            == target_db.set_advanced(&source, value, expires_in, Override::No, false, false)
+        {
             slot.remove(source);
             Ok(true)
         } else {
             Ok(false)
+        }
+    }
+
+    /// Renames a key
+    pub fn rename(
+        &self,
+        source: &Bytes,
+        target: &Bytes,
+        override_value: Override,
+    ) -> Result<bool, Error> {
+        let slot1 = self.get_slot(source);
+        let slot2 = self.get_slot(target);
+
+        if slot1 == slot2 {
+            let mut slot = self.slots[slot1].write();
+
+            if let Some(value) = slot.remove(source) {
+                Ok(
+                    if override_value == Override::No && slot.get(target).is_some() {
+                        false
+                    } else {
+                        slot.insert(target.clone(), value);
+                        true
+                    },
+                )
+            } else {
+                Err(Error::NotFound)
+            }
+        } else {
+            let mut slot1 = self.slots[slot1].write();
+            let mut slot2 = self.slots[slot2].write();
+            if let Some(value) = slot1.remove(source) {
+                Ok(
+                    if override_value == Override::No && slot2.get(target).is_some() {
+                        false
+                    } else {
+                        slot2.insert(target.clone(), value);
+                        true
+                    },
+                )
+            } else {
+                Err(Error::NotFound)
+            }
         }
     }
 

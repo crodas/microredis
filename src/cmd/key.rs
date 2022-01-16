@@ -173,6 +173,20 @@ pub async fn move_key(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
     })
 }
 
+/// Renames key to newkey. It returns an error when key does not exist. If
+/// newkey already exists it is overwritten, when this happens RENAME executes
+/// an implicit DEL operation, so if the deleted key contains a very big value
+/// it may cause high latency even if RENAME itself is usually a constant-time
+/// operation.
+pub async fn rename(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let is_rename = check_arg!(args, 0, "RENAME");
+    if conn.db().rename(&args[1], &args[2], is_rename.into())? {
+        Ok(if is_rename { Value::Ok } else { 1.into() })
+    } else {
+        Ok(0.into())
+    }
+}
+
 /// Returns the remaining time to live of a key that has a timeout. This introspection capability
 /// allows a Redis client to check how many seconds a given key will continue to be part of the
 /// dataset.
@@ -203,8 +217,8 @@ pub async fn persist(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 mod test {
     use crate::{
         cmd::test::{create_connection, run_command},
-        value::Value,
         error::Error,
+        value::Value,
     };
 
     #[tokio::test]
@@ -365,24 +379,12 @@ mod test {
     async fn _move() {
         let c = create_connection();
         assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
-        assert_eq!(
-            Ok(1.into()),
-            run_command(&c, &["move", "foo", "2"]).await
-        );
-        assert_eq!(
-            Ok(Value::Null),
-            run_command(&c, &["get", "foo"]).await
-        );
+        assert_eq!(Ok(1.into()), run_command(&c, &["move", "foo", "2"]).await);
+        assert_eq!(Ok(Value::Null), run_command(&c, &["get", "foo"]).await);
         assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
-        assert_eq!(
-            Ok(0.into()),
-            run_command(&c, &["move", "foo", "2"]).await
-        );
+        assert_eq!(Ok(0.into()), run_command(&c, &["move", "foo", "2"]).await);
         assert_eq!(Ok(Value::Ok), run_command(&c, &["select", "2"]).await);
-        assert_eq!(
-            Ok("1".into()),
-            run_command(&c, &["get", "foo"]).await
-        );
+        assert_eq!(Ok("1".into()), run_command(&c, &["get", "foo"]).await);
     }
 
     #[tokio::test]
@@ -392,6 +394,51 @@ mod test {
         assert_eq!(
             Err(Error::SameEntry),
             run_command(&c, &["move", "foo", "0"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn rename() {
+        let c = create_connection();
+        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["rename", "foo", "bar-1650"]).await
+        );
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["rename", "bar-1650", "xxx"]).await
+        );
+        assert_eq!(
+            Err(Error::NotFound),
+            run_command(&c, &["rename", "foo", "bar"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn renamenx() {
+        let c = create_connection();
+        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c, &["renamenx", "foo", "bar-1650"]).await
+        );
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c, &["renamenx", "bar-1650", "xxx"]).await
+        );
+        assert_eq!(
+            Err(Error::NotFound),
+            run_command(&c, &["renamenx", "foo", "bar"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "bar-1650", "xxx"]).await
+        );
+        assert_eq!(
+            Ok(0.into()),
+            run_command(&c, &["renamenx", "xxx", "bar-1650"]).await
         );
     }
 }

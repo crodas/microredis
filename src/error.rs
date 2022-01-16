@@ -20,7 +20,7 @@ pub enum Error {
     Protocol(String, String),
     /// Unexpected argument
     WrongArgument(String, String),
-    /// Command not found
+    /// Key not found
     NotFound,
     /// Index out of range
     OutOfRange,
