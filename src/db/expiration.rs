@@ -1,5 +1,8 @@
 use bytes::Bytes;
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::Deref,
+};
 use tokio::time::Instant;
 
 /// ExpirationId
@@ -12,6 +15,14 @@ use tokio::time::Instant;
 /// counter).
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct ExpirationId(pub (Instant, u64));
+
+impl Deref for ExpirationId {
+    type Target = Instant;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0 .0
+    }
+}
 
 #[derive(Debug)]
 pub struct ExpirationDb {
@@ -70,18 +81,18 @@ impl ExpirationDb {
     pub fn get_expired_keys(&mut self, now: Option<Instant>) -> Vec<Bytes> {
         let now = now.unwrap_or_else(Instant::now);
 
-        let mut expiring_keys = vec![];
+        let mut expired_keys = vec![];
 
         for (key, value) in self.expiring_keys.iter_mut() {
-            if key.0 .0 > now {
+            if **key > now {
                 break;
             }
 
-            expiring_keys.push((*key, value.clone()));
+            expired_keys.push((*key, value.clone()));
             self.keys.remove(value);
         }
 
-        expiring_keys
+        expired_keys
             .iter()
             .map(|(k, v)| {
                 self.expiring_keys.remove(k);
