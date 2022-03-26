@@ -2,7 +2,9 @@
 //!
 //! All redis internal data structures and values are absracted in this mod.
 pub mod checksum;
+pub mod cursor;
 pub mod locked;
+pub mod typ;
 
 use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};

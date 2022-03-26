@@ -1,9 +1,15 @@
 //! # Key-related command handlers
 use super::now;
 use crate::{
-    check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
+    check_arg,
+    connection::Connection,
+    db::scan::Scan,
+    error::Error,
+    value::bytes_to_number,
+    value::{cursor::Cursor, Value},
 };
 use bytes::Bytes;
+use std::convert::TryInto;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{Duration, Instant};
 
@@ -212,6 +218,14 @@ pub async fn rename(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     } else {
         Ok(0.into())
     }
+}
+
+/// SCAN is a cursor based iterator. This means that at every call of the
+/// command, the server returns an updated cursor that the user needs to use as
+/// the cursor argument in the next call.
+pub async fn scan(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let cursor: Cursor = (&args[1]).try_into()?;
+    Ok(conn.db().scan(cursor, None, None, None)?.into())
 }
 
 /// Returns the remaining time to live of a key that has a timeout. This introspection capability
