@@ -2,7 +2,9 @@
 //!
 //! All redis internal data structures and values are absracted in this mod.
 pub mod checksum;
+pub mod cursor;
 pub mod locked;
+pub mod typ;
 
 use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
@@ -52,6 +54,16 @@ impl Value {
     /// Creates a new Redis value from a stream of bytes
     pub fn new(value: &[u8]) -> Self {
         Self::Blob(value.into())
+    }
+
+    /// Returns the internal encoding of the redis
+    pub fn encoding(&self) -> &str {
+        match self {
+            Self::Hash(_) | Self::Set(_) => "hashtable",
+            Self::List(_) => "linkedlist",
+            Self::Array(_) => "vector",
+            _ => "embstr",
+        }
     }
 }
 

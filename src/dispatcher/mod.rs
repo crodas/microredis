@@ -21,7 +21,7 @@ pub mod command;
 /// Returns the server time
 dispatcher! {
     set {
-        sadd {
+        SADD {
             cmd::set::sadd,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
@@ -30,7 +30,7 @@ dispatcher! {
             1,
             true,
         },
-        scard {
+        SCARD {
             cmd::set::scard,
             [Flag::ReadOnly Flag::Fast],
             2,
@@ -39,7 +39,7 @@ dispatcher! {
             1,
             true,
         },
-        sdiff {
+        SDIFF {
             cmd::set::sdiff,
             [Flag::ReadOnly Flag::SortForScript],
             -2,
@@ -48,7 +48,7 @@ dispatcher! {
             1,
             true,
         },
-        sdiffstore {
+        SDIFFSTORE {
             cmd::set::sdiffstore,
             [Flag::Write Flag::DenyOom],
             -3,
@@ -57,7 +57,7 @@ dispatcher! {
             1,
             true,
         },
-        sinter {
+        SINTER {
             cmd::set::sinter,
             [Flag::ReadOnly Flag::SortForScript],
             -2,
@@ -66,7 +66,7 @@ dispatcher! {
             1,
             true,
         },
-        sintercard {
+        SINTERCARD {
             cmd::set::sintercard,
             [Flag::ReadOnly],
             -2,
@@ -75,7 +75,7 @@ dispatcher! {
             1,
             true,
         },
-        sinterstore {
+        SINTERSTORE {
             cmd::set::sinterstore,
             [Flag::Write Flag::DenyOom],
             -3,
@@ -84,7 +84,7 @@ dispatcher! {
             1,
             true,
         },
-        sismember {
+        SISMEMBER {
             cmd::set::sismember,
             [Flag::ReadOnly Flag::Fast],
             3,
@@ -93,7 +93,7 @@ dispatcher! {
             1,
             true,
         },
-        smembers {
+        SMEMBERS {
             cmd::set::smembers,
             [Flag::ReadOnly Flag::SortForScript],
             2,
@@ -102,7 +102,7 @@ dispatcher! {
             1,
             true,
         },
-        smismember {
+        SMISMEMBER {
             cmd::set::smismember,
             [Flag::ReadOnly Flag::Fast],
             -3,
@@ -111,7 +111,7 @@ dispatcher! {
             1,
             true,
         },
-        smove {
+        SMOVE {
             cmd::set::smove,
             [Flag::Write Flag::Fast],
             4,
@@ -120,7 +120,7 @@ dispatcher! {
             1,
             true,
         },
-        spop {
+        SPOP {
             cmd::set::spop,
             [Flag::Write Flag::Random Flag::Fast],
             -2,
@@ -129,7 +129,7 @@ dispatcher! {
             1,
             true,
         },
-        srandmember {
+        SRANDMEMBER {
             cmd::set::srandmember,
             [Flag::ReadOnly Flag::Random],
             -2,
@@ -138,7 +138,7 @@ dispatcher! {
             1,
             true,
         },
-        srem {
+        SREM {
             cmd::set::srem,
             [Flag::Write Flag::Fast],
             -3,
@@ -147,7 +147,7 @@ dispatcher! {
             1,
             true,
         },
-        sunion {
+        SUNION {
             cmd::set::sunion,
             [Flag::ReadOnly Flag::SortForScript],
             -2,
@@ -156,7 +156,7 @@ dispatcher! {
             1,
             true,
         },
-        sunionstore {
+        SUNIONSTORE {
             cmd::set::sunionstore,
             [Flag::Write Flag::DenyOom],
             -2,
@@ -167,7 +167,7 @@ dispatcher! {
         },
     },
     metrics {
-        metrics {
+        METRICS {
             cmd::metrics::metrics,
             [Flag::ReadOnly Flag::Fast],
             -1,
@@ -178,7 +178,7 @@ dispatcher! {
         },
     },
     list {
-        blpop {
+        BLPOP {
             cmd::list::blpop,
             [Flag::Write Flag::NoScript],
             -3,
@@ -187,7 +187,7 @@ dispatcher! {
             1,
             true,
         },
-        brpop {
+        BRPOP {
             cmd::list::brpop,
             [Flag::Write Flag::NoScript],
             -3,
@@ -196,7 +196,7 @@ dispatcher! {
             1,
             true,
         },
-        lindex {
+        LINDEX {
             cmd::list::lindex,
             [Flag::ReadOnly],
             3,
@@ -205,7 +205,7 @@ dispatcher! {
             1,
             true,
         },
-        linsert {
+        LINSERT {
             cmd::list::linsert,
             [Flag::Write Flag::DenyOom],
             5,
@@ -214,7 +214,7 @@ dispatcher! {
             1,
             true,
         },
-        llen {
+        LLEN {
             cmd::list::llen,
             [Flag::ReadOnly Flag::Fast],
             2,
@@ -223,7 +223,7 @@ dispatcher! {
             1,
             true,
         },
-        lmove {
+        LMOVE {
             cmd::list::lmove,
             [Flag::Write Flag::DenyOom],
             5,
@@ -232,7 +232,7 @@ dispatcher! {
             1,
             true,
         },
-        lpop {
+        LPOP {
             cmd::list::lpop,
             [Flag::Write Flag::DenyOom],
             -2,
@@ -241,7 +241,7 @@ dispatcher! {
             1,
             true,
         },
-        lpos {
+        LPOS {
             cmd::list::lpos,
             [Flag::ReadOnly],
             -2,
@@ -250,7 +250,7 @@ dispatcher! {
             1,
             true,
         },
-        lpush {
+        LPUSH {
             cmd::list::lpush,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
@@ -259,7 +259,7 @@ dispatcher! {
             1,
             true,
         },
-        lpushx {
+        LPUSHX {
             cmd::list::lpush,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
@@ -268,7 +268,7 @@ dispatcher! {
             1,
             true,
         },
-        lrange {
+        LRANGE {
             cmd::list::lrange,
             [Flag::ReadOnly],
             4,
@@ -277,7 +277,7 @@ dispatcher! {
             1,
             true,
         },
-        lrem {
+        LREM {
             cmd::list::lrem,
             [Flag::Write],
             4,
@@ -286,7 +286,7 @@ dispatcher! {
             1,
             true,
         },
-        lset {
+        LSET {
             cmd::list::lset,
             [Flag::Write Flag::DenyOom],
             4,
@@ -295,7 +295,7 @@ dispatcher! {
             1,
             true,
         },
-        ltrim {
+        LTRIM {
             cmd::list::ltrim,
             [Flag::Write],
             4,
@@ -304,7 +304,7 @@ dispatcher! {
             1,
             true,
         },
-        rpop {
+        RPOP {
             cmd::list::rpop,
             [Flag::Write Flag::Fast],
             -2,
@@ -313,7 +313,7 @@ dispatcher! {
             1,
             true,
         },
-        rpoplpush {
+        RPOPLPUSH {
             cmd::list::rpoplpush,
             [Flag::Write Flag::DenyOom],
             3,
@@ -322,7 +322,7 @@ dispatcher! {
             1,
             true,
         },
-        rpush {
+        RPUSH {
             cmd::list::rpush,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
@@ -331,7 +331,7 @@ dispatcher! {
             1,
             true,
         },
-        rpushx {
+        RPUSHX {
             cmd::list::rpush,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
@@ -342,7 +342,7 @@ dispatcher! {
         },
     },
     hash {
-        hdel {
+        HDEL {
             cmd::hash::hdel,
             [Flag::Write Flag::Fast],
             -2,
@@ -351,7 +351,7 @@ dispatcher! {
             1,
             true,
         },
-        hexists {
+        HEXISTS {
             cmd::hash::hexists,
             [Flag::ReadOnly Flag::Fast],
             3,
@@ -360,7 +360,7 @@ dispatcher! {
             1,
             true,
         },
-        hget {
+        HGET {
             cmd::hash::hget,
             [Flag::ReadOnly Flag::Fast],
             3,
@@ -369,7 +369,7 @@ dispatcher! {
             1,
             true,
         },
-        hgetall {
+        HGETALL {
             cmd::hash::hgetall,
             [Flag::ReadOnly Flag::Random],
             2,
@@ -378,7 +378,7 @@ dispatcher! {
             1,
             true,
         },
-        hincrby {
+        HINCRBY {
             cmd::hash::hincrby::<i64>,
             [Flag::Write Flag::DenyOom Flag::Fast],
             4,
@@ -387,7 +387,7 @@ dispatcher! {
             1,
             true,
         },
-        hincrbyfloat {
+        HINCRBYFLOAT {
             cmd::hash::hincrby::<f64>,
             [Flag::Write Flag::DenyOom Flag::Fast],
             4,
@@ -396,7 +396,7 @@ dispatcher! {
             1,
             true,
         },
-        hkeys {
+        HKEYS {
             cmd::hash::hkeys,
             [Flag::ReadOnly Flag::SortForScript],
             2,
@@ -405,7 +405,7 @@ dispatcher! {
             1,
             true,
         },
-        hlen {
+        HLEN {
             cmd::hash::hlen,
             [Flag::ReadOnly Flag::Fast],
             2,
@@ -414,7 +414,7 @@ dispatcher! {
             1,
             true,
         },
-        hmget {
+        HMGET {
             cmd::hash::hmget,
             [Flag::ReadOnly Flag::Fast],
             -3,
@@ -423,7 +423,7 @@ dispatcher! {
             1,
             true,
         },
-        hmset {
+        HMSET {
             cmd::hash::hset,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
@@ -432,7 +432,7 @@ dispatcher! {
             1,
             true,
         },
-        hrandfield {
+        HRANDFIELD {
             cmd::hash::hrandfield,
             [Flag::ReadOnly Flag::ReadOnly],
             -2,
@@ -441,7 +441,7 @@ dispatcher! {
             1,
             true,
         },
-        hset {
+        HSET {
             cmd::hash::hset,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -4,
@@ -450,7 +450,7 @@ dispatcher! {
             1,
             true,
         },
-        hsetnx {
+        HSETNX {
             cmd::hash::hsetnx,
             [Flag::Write Flag::DenyOom Flag::Fast],
             4,
@@ -459,7 +459,7 @@ dispatcher! {
             1,
             true,
         },
-        hstrlen {
+        HSTRLEN {
             cmd::hash::hstrlen,
             [Flag::ReadOnly Flag::Fast],
             3,
@@ -468,7 +468,7 @@ dispatcher! {
             1,
             true,
         },
-        hvals {
+        HVALS {
             cmd::hash::hvals,
             [Flag::ReadOnly Flag::SortForScript],
             2,
@@ -479,7 +479,16 @@ dispatcher! {
         },
     },
     keys {
-        del {
+        COPY {
+            cmd::key::copy,
+            [Flag::Write Flag::DenyOom],
+            -3,
+            1,
+            2,
+            1,
+            true,
+        },
+        DEL {
             cmd::key::del,
             [Flag::Write],
             -2,
@@ -488,7 +497,7 @@ dispatcher! {
             1,
             true,
         },
-        exists {
+        EXISTS {
             cmd::key::exists,
             [Flag::ReadOnly Flag::Fast],
             -2,
@@ -497,7 +506,7 @@ dispatcher! {
             1,
             true,
         },
-        expire {
+        EXPIRE {
             cmd::key::expire,
             [Flag::Write Flag::Fast],
             3,
@@ -506,7 +515,7 @@ dispatcher! {
             1,
             true,
         },
-        expireat {
+        EXPIREAT {
             cmd::key::expire_at,
             [Flag::Write Flag::Fast],
             3,
@@ -515,7 +524,7 @@ dispatcher! {
             1,
             true,
         },
-        expiretime {
+        EXPIRETIME {
             cmd::key::expire_time,
             [Flag::Write Flag::Fast],
             2,
@@ -524,7 +533,34 @@ dispatcher! {
             1,
             true,
         },
-        persist {
+        KEYS {
+            cmd::key::keys,
+            [Flag::ReadOnly Flag::SortForScript],
+            2,
+            0,
+            0,
+            0,
+            true,
+        },
+        MOVE {
+            cmd::key::move_key,
+            [Flag::Write Flag::Fast],
+            3,
+            1,
+            1,
+            1,
+            true,
+        },
+        OBJECT {
+            cmd::key::object,
+            [Flag::ReadOnly Flag::Random],
+            -2,
+            2,
+            2,
+            1,
+            true,
+        },
+        PERSIST {
             cmd::key::persist,
             [Flag::Write Flag::Fast],
             2,
@@ -533,7 +569,7 @@ dispatcher! {
             1,
             true,
         },
-        pexpire {
+        PEXPIRE {
             cmd::key::expire,
             [Flag::Write Flag::Fast],
             3,
@@ -542,7 +578,7 @@ dispatcher! {
             1,
             true,
         },
-        pexpireat {
+        PEXPIREAT {
             cmd::key::expire_at,
             [Flag::Write Flag::Fast],
             3,
@@ -551,7 +587,7 @@ dispatcher! {
             1,
             true,
         },
-        pexpiretime {
+        PEXPIRETIME {
             cmd::key::expire_time,
             [Flag::Write Flag::Fast],
             2,
@@ -560,7 +596,7 @@ dispatcher! {
             1,
             true,
         },
-        pttl {
+        PTTL {
             cmd::key::ttl,
             [Flag::ReadOnly Flag::Random Flag::Fast],
             2,
@@ -569,18 +605,63 @@ dispatcher! {
             1,
             true,
         },
-        ttl {
+        RENAME {
+            cmd::key::rename,
+            [Flag::Write],
+            3,
+            1,
+            2,
+            1,
+            true,
+        },
+        RENAMENX {
+            cmd::key::rename,
+            [Flag::Write Flag::Write],
+            3,
+            1,
+            2,
+            1,
+            true,
+        },
+        SCAN {
+            cmd::key::scan,
+            [Flag::ReadOnly Flag::Random],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
+        TTL {
             cmd::key::ttl,
             [Flag::ReadOnly Flag::Random Flag::Fast],
             2,
             1,
             1,
+            1,
+            true,
+        },
+        TYPE {
+            cmd::key::data_type,
+            [Flag::ReadOnly Flag::Fast],
+            2,
+            1,
+            1,
+            1,
+            true,
+        },
+        UNLINK {
+            cmd::key::del,
+            [Flag::Write Flag::Fast],
+            -2,
+            1,
+            -1,
             1,
             true,
         },
     },
     string {
-        append {
+        APPEND {
             cmd::string::append,
             [Flag::Write Flag::DenyOom Flag::Fast],
             3,
@@ -589,7 +670,7 @@ dispatcher! {
             1,
             true,
         },
-        decr {
+        DECR {
             cmd::string::decr,
             [Flag::Write Flag::DenyOom Flag::Fast],
             2,
@@ -598,7 +679,7 @@ dispatcher! {
             1,
             true,
         },
-        decrby {
+        DECRBY {
             cmd::string::decr_by,
             [Flag::Write Flag::DenyOom Flag::Fast],
             3,
@@ -607,7 +688,7 @@ dispatcher! {
             1,
             true,
         },
-        get {
+        GET {
             cmd::string::get,
             [Flag::ReadOnly Flag::Fast],
             2,
@@ -616,7 +697,7 @@ dispatcher! {
             1,
             true,
         },
-        getex {
+        GETEX {
             cmd::string::getex,
             [Flag::Write Flag::Fast],
             -2,
@@ -625,7 +706,7 @@ dispatcher! {
             1,
             true,
         },
-        getrange {
+        GETRANGE {
             cmd::string::getrange,
             [Flag::ReadOnly],
             4,
@@ -634,7 +715,7 @@ dispatcher! {
             1,
             true,
         },
-        getdel {
+        GETDEL {
             cmd::string::getdel,
             [Flag::Write Flag::Fast],
             2,
@@ -643,7 +724,7 @@ dispatcher! {
             1,
             true,
         },
-        getset {
+        GETSET {
             cmd::string::getset,
             [Flag::Write Flag::DenyOom Flag::Fast],
             3,
@@ -652,7 +733,7 @@ dispatcher! {
             1,
             true,
         },
-        incr {
+        INCR {
             cmd::string::incr,
             [Flag::Write Flag::DenyOom Flag::Fast],
             2,
@@ -661,7 +742,7 @@ dispatcher! {
             1,
             true,
         },
-        incrby {
+        INCRBY {
             cmd::string::incr_by,
             [Flag::Write Flag::DenyOom Flag::Fast],
             3,
@@ -670,7 +751,7 @@ dispatcher! {
             1,
             true,
         },
-        incrbyfloat {
+        INCRBYFLOAT {
             cmd::string::incr_by_float,
             [Flag::Write Flag::DenyOom Flag::Fast],
             3,
@@ -679,7 +760,7 @@ dispatcher! {
             1,
             true,
         },
-        mget {
+        MGET {
             cmd::string::mget,
             [Flag::ReadOnly Flag::Fast],
             -2,
@@ -688,7 +769,7 @@ dispatcher! {
             1,
             true,
         },
-        mset {
+        MSET {
             cmd::string::mset,
             [Flag::Write Flag::DenyOom],
             -2,
@@ -697,7 +778,7 @@ dispatcher! {
             1,
             true,
         },
-        msetnx {
+        MSETNX {
             cmd::string::msetnx,
             [Flag::Write Flag::DenyOom],
             -2,
@@ -706,7 +787,7 @@ dispatcher! {
             1,
             true,
         },
-        set {
+        SET {
             cmd::string::set,
             [Flag::Write Flag::DenyOom],
             -3,
@@ -715,7 +796,7 @@ dispatcher! {
             1,
             true,
         },
-        setex {
+        SETEX {
             cmd::string::setex,
             [Flag::Write Flag::DenyOom],
             4,
@@ -724,7 +805,7 @@ dispatcher! {
             1,
             true,
         },
-        setnx {
+        SETNX {
             cmd::string::setnx,
             [Flag::Write Flag::DenyOom],
             3,
@@ -733,7 +814,7 @@ dispatcher! {
             1,
             true,
         },
-        psetex {
+        PSETEX {
             cmd::string::setex,
             [Flag::Write Flag::DenyOom],
             4,
@@ -742,7 +823,7 @@ dispatcher! {
             1,
             true,
         },
-        strlen {
+        STRLEN {
             cmd::string::strlen,
             [Flag::ReadOnly Flag::Fast],
             2,
@@ -751,7 +832,7 @@ dispatcher! {
             1,
             true,
         },
-        substr {
+        SUBSTR {
             cmd::string::getrange,
             [Flag::ReadOnly],
             2,
@@ -760,7 +841,7 @@ dispatcher! {
             1,
             true,
         },
-        setrange {
+        SETRANGE {
             cmd::string::setrange,
             [Flag::Write],
             4,
@@ -771,7 +852,7 @@ dispatcher! {
         }
     },
     connection {
-        client {
+        CLIENT {
             cmd::client::client,
             [Flag::Admin Flag::NoScript Flag::Random Flag::Loading Flag::Stale],
             -2,
@@ -780,7 +861,7 @@ dispatcher! {
             0,
             true,
         },
-        echo {
+        ECHO {
             cmd::client::echo,
             [Flag::Fast],
             2,
@@ -789,7 +870,7 @@ dispatcher! {
             0,
             true,
         },
-        ping {
+        PING {
             cmd::client::ping,
             [Flag::Stale Flag::Fast],
             -1,
@@ -798,7 +879,7 @@ dispatcher! {
             0,
             true,
         },
-        reset {
+        RESET {
             cmd::client::reset,
             [Flag::NoScript Flag::Loading Flag::Stale Flag::Fast],
             1,
@@ -807,7 +888,7 @@ dispatcher! {
             0,
             false,
         },
-        select {
+        SELECT {
             cmd::client::select,
             [Flag::Fast Flag::Stale Flag::Loading],
             2,
@@ -818,7 +899,7 @@ dispatcher! {
         }
     },
     transaction {
-        discard {
+        DISCARD {
             cmd::transaction::discard,
             [Flag::NoScript Flag::Loading Flag::Stale Flag::Fast],
             1,
@@ -827,7 +908,7 @@ dispatcher! {
             0,
             false,
         },
-        exec {
+        EXEC {
             cmd::transaction::exec,
             [Flag::NoScript Flag::Loading Flag::Stale Flag::SkipMonitor Flag::SkipSlowlog],
             1,
@@ -836,7 +917,7 @@ dispatcher! {
             0,
             false,
         },
-        multi {
+        MULTI {
             cmd::transaction::multi,
             [Flag::NoScript Flag::Loading Flag::Stale Flag::Fast],
             1,
@@ -845,7 +926,7 @@ dispatcher! {
             0,
             false,
         },
-        watch {
+        WATCH {
             cmd::transaction::watch,
             [Flag::NoScript Flag::Loading Flag::Stale Flag::Fast],
             -2,
@@ -854,7 +935,7 @@ dispatcher! {
             1,
             false,
         },
-        unwatch {
+        UNWATCH {
             cmd::transaction::unwatch,
             [Flag::NoScript Flag::Loading Flag::Stale Flag::Fast],
             1,
@@ -865,7 +946,7 @@ dispatcher! {
         },
     },
     pubsub {
-        publish {
+        PUBLISH {
             cmd::pubsub::publish,
             [Flag::PubSub Flag::Loading Flag::Stale Flag::Fast Flag::MayReplicate],
             3,
@@ -874,7 +955,7 @@ dispatcher! {
             0,
             true,
         },
-        pubsub {
+        PUBSUB {
             cmd::pubsub::pubsub,
             [Flag::PubSub Flag::Random Flag::Loading Flag::Stale],
             -2,
@@ -883,7 +964,7 @@ dispatcher! {
             0,
             true,
         },
-        psubscribe {
+        PSUBSCRIBE {
             cmd::pubsub::subscribe,
             [Flag::PubSub Flag::Random Flag::Loading Flag::Stale],
             -2,
@@ -892,7 +973,7 @@ dispatcher! {
             0,
             true,
         },
-        punsubscribe {
+        PUNSUBSCRIBE {
             cmd::pubsub::punsubscribe,
             [Flag::PubSub Flag::Random Flag::Loading Flag::Stale],
             -1,
@@ -901,7 +982,7 @@ dispatcher! {
             0,
             true,
         },
-        subscribe {
+        SUBSCRIBE {
             cmd::pubsub::subscribe,
             [Flag::PubSub Flag::Random Flag::Loading Flag::Stale],
             -2,
@@ -910,7 +991,7 @@ dispatcher! {
             0,
             true,
         },
-        unsubscribe {
+        UNSUBSCRIBE {
             cmd::pubsub::unsubscribe,
             [Flag::PubSub Flag::Random Flag::Loading Flag::Stale],
             -1,
@@ -921,7 +1002,7 @@ dispatcher! {
         },
     },
     server {
-        command {
+        COMMAND {
             cmd::server::command,
             [Flag::Random Flag::Loading Flag::Stale],
             -1,
@@ -930,7 +1011,7 @@ dispatcher! {
             0,
             true,
         },
-        time {
+        TIME {
             cmd::server::time,
             [Flag::Random Flag::Loading Flag::Stale Flag::Fast],
             1,

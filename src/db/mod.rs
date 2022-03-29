@@ -5,18 +5,27 @@
 mod entry;
 mod expiration;
 pub mod pool;
+pub mod scan;
 
-use crate::{error::Error, value::Value};
+use crate::{
+    error::Error,
+    value::{
+        cursor::Cursor,
+        typ::{Typ, ValueTyp},
+        Value,
+    },
+};
 use bytes::{BufMut, Bytes, BytesMut};
 use entry::{new_version, Entry};
 use expiration::ExpirationDb;
+use glob::Pattern;
 use log::trace;
 use parking_lot::{Mutex, RwLock};
 use seahash::hash;
 use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
-    ops::AddAssign,
+    ops::{AddAssign, Deref},
     sync::Arc,
     thread,
 };
@@ -83,6 +92,10 @@ pub struct Db {
     /// Number of HashMaps that are available.
     number_of_slots: usize,
 
+    /// Databases unique ID. This is an internal identifier to avoid deadlocks
+    /// when copying and moving data between databases.
+    pub db_id: u128,
+
     /// Current connection  ID
     ///
     /// A Database is attached to a conn_id. The slots and expiration data
@@ -109,6 +122,7 @@ impl Db {
             slots: Arc::new(slots),
             expirations: Arc::new(Mutex::new(ExpirationDb::new())),
             conn_id: 0,
+            db_id: new_version(),
             tx_key_locks: Arc::new(RwLock::new(HashMap::new())),
             number_of_slots,
         }
@@ -125,6 +139,7 @@ impl Db {
             tx_key_locks: self.tx_key_locks.clone(),
             expirations: self.expirations.clone(),
             conn_id,
+            db_id: self.db_id,
             number_of_slots: self.number_of_slots,
         })
     }
@@ -310,6 +325,121 @@ impl Db {
         }
     }
 
+    /// Copies a key
+    pub fn copy(
+        &self,
+        source: &Bytes,
+        target: &Bytes,
+        replace: Override,
+        target_db: Option<Arc<Db>>,
+    ) -> Result<bool, Error> {
+        let slots = self.slots[self.get_slot(source)].read();
+        let value = if let Some(value) = slots.get(source).filter(|x| x.is_valid()) {
+            value.clone()
+        } else {
+            return Ok(false);
+        };
+        drop(slots);
+
+        if let Some(db) = target_db {
+            if db.db_id == self.db_id && source == target {
+                return Err(Error::SameEntry);
+            }
+            if replace == Override::No && db.exists(&[target.clone()]) > 0 {
+                return Ok(false);
+            }
+            let _ = db.set_advanced(
+                target,
+                value.value.clone(),
+                value.get_ttl().map(|v| v - Instant::now()),
+                replace,
+                false,
+                false,
+            );
+            Ok(true)
+        } else {
+            if source == target {
+                return Err(Error::SameEntry);
+            }
+
+            if replace == Override::No && self.exists(&[target.clone()]) > 0 {
+                return Ok(false);
+            }
+            let mut slots = self.slots[self.get_slot(target)].write();
+            slots.insert(target.clone(), value);
+
+            Ok(true)
+        }
+    }
+
+    /// Moves a given key between databases
+    pub fn move_key(&self, source: &Bytes, target_db: Arc<Db>) -> Result<bool, Error> {
+        if self.db_id == target_db.db_id {
+            return Err(Error::SameEntry);
+        }
+        let mut slot = self.slots[self.get_slot(source)].write();
+        let (expires_in, value) = if let Some(value) = slot.get(source).filter(|v| v.is_valid()) {
+            (
+                value.get_ttl().map(|t| t - Instant::now()),
+                value.value.clone(),
+            )
+        } else {
+            return Ok(false);
+        };
+
+        if Value::Integer(1)
+            == target_db.set_advanced(&source, value, expires_in, Override::No, false, false)
+        {
+            slot.remove(source);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Renames a key
+    pub fn rename(
+        &self,
+        source: &Bytes,
+        target: &Bytes,
+        override_value: Override,
+    ) -> Result<bool, Error> {
+        let slot1 = self.get_slot(source);
+        let slot2 = self.get_slot(target);
+
+        if slot1 == slot2 {
+            let mut slot = self.slots[slot1].write();
+
+            if let Some(value) = slot.remove(source) {
+                Ok(
+                    if override_value == Override::No && slot.get(target).is_some() {
+                        false
+                    } else {
+                        slot.insert(target.clone(), value);
+                        true
+                    },
+                )
+            } else {
+                Err(Error::NotFound)
+            }
+        } else {
+            let mut slot1 = self.slots[slot1].write();
+            let mut slot2 = self.slots[slot2].write();
+            if let Some(value) = slot1.remove(source) {
+                Ok(
+                    if override_value == Override::No && slot2.get(target).is_some() {
+                        false
+                    } else {
+                        slot2.insert(target.clone(), value);
+                        true
+                    },
+                )
+            } else {
+                Err(Error::NotFound)
+            }
+        }
+    }
+
     /// Removes keys from the database
     pub fn del(&self, keys: &[Bytes]) -> Value {
         let mut expirations = self.expirations.lock();
@@ -324,8 +454,30 @@ impl Db {
             .into()
     }
 
+    /// Returns all keys that matches a given pattern. This is a very expensive command.
+    pub fn get_all_keys(&self, pattern: &Bytes) -> Result<Vec<Value>, Error> {
+        let pattern = String::from_utf8_lossy(pattern);
+        let pattern =
+            Pattern::new(&pattern).map_err(|_| Error::InvalidPattern(pattern.to_string()))?;
+        Ok(self
+            .slots
+            .iter()
+            .map(|slot| {
+                slot.read()
+                    .keys()
+                    .filter(|key| {
+                        let str_key = String::from_utf8_lossy(key);
+                        pattern.matches(&str_key)
+                    })
+                    .map(|key| Value::new(key))
+                    .collect::<Vec<Value>>()
+            })
+            .flatten()
+            .collect())
+    }
+
     /// Check if keys exists in the database
-    pub fn exists(&self, keys: &[Bytes]) -> Value {
+    pub fn exists(&self, keys: &[Bytes]) -> usize {
         let mut matches = 0;
         keys.iter()
             .map(|key| {
@@ -336,7 +488,7 @@ impl Db {
             })
             .for_each(drop);
 
-        matches.into()
+        matches
     }
 
     /// get_map_or
@@ -389,6 +541,17 @@ impl Db {
             .filter(|x| x.is_valid())
             .map(|entry| entry.version())
             .unwrap_or_else(new_version)
+    }
+
+    /// Returns the name of the value type
+    pub fn get_data_type(&self, key: &Bytes) -> String {
+        let slots = self.slots[self.get_slot(key)].read();
+        slots
+            .get(key)
+            .filter(|x| x.is_valid())
+            .map_or("none".to_owned(), |x| {
+                Typ::get_type(x.get()).to_string().to_lowercase()
+            })
     }
 
     /// Get a copy of an entry
@@ -624,10 +787,82 @@ impl Db {
     }
 }
 
+impl scan::Scan for Db {
+    fn scan(
+        &self,
+        cursor: Cursor,
+        pattern: Option<&Bytes>,
+        count: Option<usize>,
+        typ: Option<Typ>,
+    ) -> Result<scan::Result, Error> {
+        let mut keys = vec![];
+        let mut slot_id = cursor.bucket as usize;
+        let mut last_pos = cursor.last_position as usize;
+        let pattern = pattern
+            .map(|pattern| {
+                let pattern = String::from_utf8_lossy(pattern);
+                Pattern::new(&pattern).map_err(|_| Error::InvalidPattern(pattern.to_string()))
+            })
+            .transpose()?;
+
+        loop {
+            let slot = if let Some(value) = self.slots.get(slot_id) {
+                value.read()
+            } else {
+                // We iterated through all the entries, time to signal that to
+                // the client but returning a "0" cursor.
+                slot_id = 0;
+                last_pos = 0;
+                break;
+            };
+
+            for (key, value) in slot.iter().skip(last_pos) {
+                if !value.is_valid() {
+                    // Entry still exists in memory but it is not longer valid
+                    // and will soon be gargabe collected.
+                    last_pos += 1;
+                    continue;
+                }
+                if let Some(pattern) = &pattern {
+                    let str_key = String::from_utf8_lossy(key);
+                    if !pattern.matches(&str_key) {
+                        last_pos += 1;
+                        continue;
+                    }
+                }
+                if let Some(typ) = &typ {
+                    if !typ.is_value_type(value.get()) {
+                        last_pos += 1;
+                        continue;
+                    }
+                }
+                keys.push(Value::new(key));
+                last_pos += 1;
+                if keys.len() == count.unwrap_or(10) {
+                    break;
+                }
+            }
+
+            if keys.len() == count.unwrap_or(10) {
+                break;
+            }
+
+            last_pos = 0;
+            slot_id += 1;
+        }
+
+        Ok(scan::Result {
+            cursor: Cursor::new(slot_id as u16, last_pos as u64)?,
+            result: keys,
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bytes;
+    use crate::{bytes, db::scan::Scan};
+    use std::str::FromStr;
 
     #[test]
     fn incr_wrong_type() {
@@ -762,5 +997,70 @@ mod test {
 
         // Purge should return 0 as the expired key has been removed already
         assert_eq!(0, db.purge());
+    }
+
+    #[test]
+    fn scan_skip_expired() {
+        let db = Db::new(100);
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"two"), Value::Ok, Some(Duration::from_secs(0)));
+        for i in 0u64..20u64 {
+            let key: Bytes = i.to_string().into();
+            db.set(&key, Value::Ok, None);
+        }
+        let result = db
+            .scan(Cursor::from_str("0").unwrap(), None, None, None)
+            .unwrap();
+        // first 10 records
+        assert_eq!(10, result.result.len());
+        // make sure the cursor is valid
+        assert_ne!("0", result.cursor.to_string());
+        let result = db.scan(result.cursor, None, None, None).unwrap();
+        // 10 more records
+        assert_eq!(10, result.result.len());
+        // make sure the cursor is valid
+        assert_ne!("0", result.cursor.to_string());
+
+        let result = db.scan(result.cursor, None, None, None).unwrap();
+        // No more results!
+        assert_eq!(0, result.result.len());
+        assert_eq!("0", result.cursor.to_string());
+    }
+
+    #[test]
+    fn scan_limit() {
+        let db = Db::new(10);
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"two"), Value::Ok, Some(Duration::from_secs(0)));
+        for i in 0u64..2000u64 {
+            let key: Bytes = i.to_string().into();
+            db.set(&key, Value::Ok, None);
+        }
+        let result = db
+            .scan(Cursor::from_str("0").unwrap(), None, Some(2), None)
+            .unwrap();
+        assert_eq!(2, result.result.len());
+        assert_ne!("0", result.cursor.to_string());
+    }
+
+    #[test]
+    fn scan_filter() {
+        let db = Db::new(100);
+        db.set(&bytes!(b"fone"), Value::Ok, None);
+        db.set(&bytes!(b"ftwo"), Value::Ok, None);
+        for i in 0u64..20u64 {
+            let key: Bytes = i.to_string().into();
+            db.set(&key, Value::Ok, None);
+        }
+        let result = db
+            .scan(
+                Cursor::from_str("0").unwrap(),
+                Some(&bytes!(b"f*")),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(2, result.result.len());
+        assert_eq!("0", result.cursor.to_string());
     }
 }
