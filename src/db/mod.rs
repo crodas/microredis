@@ -5,8 +5,16 @@
 mod entry;
 mod expiration;
 pub mod pool;
+pub mod scan;
 
-use crate::{error::Error, value::Value};
+use crate::{
+    error::Error,
+    value::{
+        cursor::Cursor,
+        typ::{Typ, ValueTyp},
+        Value,
+    },
+};
 use bytes::{BufMut, Bytes, BytesMut};
 use entry::{new_version, Entry};
 use expiration::ExpirationDb;
@@ -536,16 +544,13 @@ impl Db {
     }
 
     /// Returns the name of the value type
-    pub fn get_data_type(&self, key: &Bytes) -> &str {
+    pub fn get_data_type(&self, key: &Bytes) -> String {
         let slots = self.slots[self.get_slot(key)].read();
         slots
             .get(key)
             .filter(|x| x.is_valid())
-            .map_or("none", |x| match x.get() {
-                Value::Hash(_) => "hash",
-                Value::List(_) => "list",
-                Value::Set(_) => "set",
-                _ => "string",
+            .map_or("none".to_owned(), |x| {
+                Typ::get_type(x.get()).to_string().to_lowercase()
             })
     }
 
@@ -782,10 +787,82 @@ impl Db {
     }
 }
 
+impl scan::Scan for Db {
+    fn scan(
+        &self,
+        cursor: Cursor,
+        pattern: Option<&Bytes>,
+        count: Option<usize>,
+        typ: Option<Typ>,
+    ) -> Result<scan::Result, Error> {
+        let mut keys = vec![];
+        let mut slot_id = cursor.bucket as usize;
+        let mut last_pos = cursor.last_position as usize;
+        let pattern = pattern
+            .map(|pattern| {
+                let pattern = String::from_utf8_lossy(pattern);
+                Pattern::new(&pattern).map_err(|_| Error::InvalidPattern(pattern.to_string()))
+            })
+            .transpose()?;
+
+        loop {
+            let slot = if let Some(value) = self.slots.get(slot_id) {
+                value.read()
+            } else {
+                // We iterated through all the entries, time to signal that to
+                // the client but returning a "0" cursor.
+                slot_id = 0;
+                last_pos = 0;
+                break;
+            };
+
+            for (key, value) in slot.iter().skip(last_pos) {
+                if !value.is_valid() {
+                    // Entry still exists in memory but it is not longer valid
+                    // and will soon be gargabe collected.
+                    last_pos += 1;
+                    continue;
+                }
+                if let Some(pattern) = &pattern {
+                    let str_key = String::from_utf8_lossy(key);
+                    if !pattern.matches(&str_key) {
+                        last_pos += 1;
+                        continue;
+                    }
+                }
+                if let Some(typ) = &typ {
+                    if !typ.is_value_type(value.get()) {
+                        last_pos += 1;
+                        continue;
+                    }
+                }
+                keys.push(Value::new(key));
+                last_pos += 1;
+                if keys.len() == count.unwrap_or(10) {
+                    break;
+                }
+            }
+
+            if keys.len() == count.unwrap_or(10) {
+                break;
+            }
+
+            last_pos = 0;
+            slot_id += 1;
+        }
+
+        Ok(scan::Result {
+            cursor: Cursor::new(slot_id as u16, last_pos as u64)?,
+            result: keys,
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bytes;
+    use crate::{bytes, db::scan::Scan};
+    use std::str::FromStr;
 
     #[test]
     fn incr_wrong_type() {
@@ -920,5 +997,70 @@ mod test {
 
         // Purge should return 0 as the expired key has been removed already
         assert_eq!(0, db.purge());
+    }
+
+    #[test]
+    fn scan_skip_expired() {
+        let db = Db::new(100);
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"two"), Value::Ok, Some(Duration::from_secs(0)));
+        for i in 0u64..20u64 {
+            let key: Bytes = i.to_string().into();
+            db.set(&key, Value::Ok, None);
+        }
+        let result = db
+            .scan(Cursor::from_str("0").unwrap(), None, None, None)
+            .unwrap();
+        // first 10 records
+        assert_eq!(10, result.result.len());
+        // make sure the cursor is valid
+        assert_ne!("0", result.cursor.to_string());
+        let result = db.scan(result.cursor, None, None, None).unwrap();
+        // 10 more records
+        assert_eq!(10, result.result.len());
+        // make sure the cursor is valid
+        assert_ne!("0", result.cursor.to_string());
+
+        let result = db.scan(result.cursor, None, None, None).unwrap();
+        // No more results!
+        assert_eq!(0, result.result.len());
+        assert_eq!("0", result.cursor.to_string());
+    }
+
+    #[test]
+    fn scan_limit() {
+        let db = Db::new(10);
+        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(&bytes!(b"two"), Value::Ok, Some(Duration::from_secs(0)));
+        for i in 0u64..2000u64 {
+            let key: Bytes = i.to_string().into();
+            db.set(&key, Value::Ok, None);
+        }
+        let result = db
+            .scan(Cursor::from_str("0").unwrap(), None, Some(2), None)
+            .unwrap();
+        assert_eq!(2, result.result.len());
+        assert_ne!("0", result.cursor.to_string());
+    }
+
+    #[test]
+    fn scan_filter() {
+        let db = Db::new(100);
+        db.set(&bytes!(b"fone"), Value::Ok, None);
+        db.set(&bytes!(b"ftwo"), Value::Ok, None);
+        for i in 0u64..20u64 {
+            let key: Bytes = i.to_string().into();
+            db.set(&key, Value::Ok, None);
+        }
+        let result = db
+            .scan(
+                Cursor::from_str("0").unwrap(),
+                Some(&bytes!(b"f*")),
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(2, result.result.len());
+        assert_eq!("0", result.cursor.to_string());
     }
 }

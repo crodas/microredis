@@ -623,6 +623,15 @@ dispatcher! {
             1,
             true,
         },
+        SCAN {
+            cmd::key::scan,
+            [Flag::ReadOnly Flag::Random],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
         TTL {
             cmd::key::ttl,
             [Flag::ReadOnly Flag::Random Flag::Fast],
