@@ -5,12 +5,14 @@ use crate::{
     connection::Connection,
     db::scan::Scan,
     error::Error,
-    value::bytes_to_number,
-    value::{cursor::Cursor, Value},
+    value::{bytes_to_number, cursor::Cursor, typ::Typ, Value},
 };
 use bytes::Bytes;
-use std::convert::TryInto;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    convert::TryInto,
+    str::FromStr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::time::{Duration, Instant};
 
 /// This command copies the value stored at the source key to the destination
@@ -225,7 +227,44 @@ pub async fn rename(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// the cursor argument in the next call.
 pub async fn scan(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let cursor: Cursor = (&args[1]).try_into()?;
-    Ok(conn.db().scan(cursor, None, None, None)?.into())
+    let mut current = 2;
+    let pattern = if check_arg!(args, current, "MATCH") {
+        current += 2;
+        Some(
+            args.get(current - 1)
+                .ok_or_else(|| Error::InvalidArgsCount("SCAN".to_owned()))?,
+        )
+    } else {
+        None
+    };
+    let count = if check_arg!(args, current, "COUNT") {
+        current += 2;
+        let number: usize = bytes_to_number(
+            args.get(current - 1)
+                .ok_or_else(|| Error::InvalidArgsCount("SCAN".to_owned()))?,
+        )?;
+        Some(number)
+    } else {
+        None
+    };
+    let typ = if check_arg!(args, current, "TYPE") {
+        current += 2;
+        Some(
+            Typ::from_str(&String::from_utf8_lossy(
+                args.get(current - 1)
+                    .ok_or_else(|| Error::InvalidArgsCount("SCAN".to_owned()))?,
+            ))
+            .map_err(|_| Error::Syntax)?,
+        )
+    } else {
+        None
+    };
+
+    if current != args.len() {
+        return Err(Error::Syntax);
+    }
+
+    Ok(conn.db().scan(cursor, pattern, count, typ)?.into())
 }
 
 /// Returns the remaining time to live of a key that has a timeout. This introspection capability
@@ -256,6 +295,8 @@ pub async fn persist(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 
 #[cfg(test)]
 mod test {
+    use std::convert::TryInto;
+
     use crate::{
         cmd::test::{create_connection, run_command},
         error::Error,
@@ -481,5 +522,68 @@ mod test {
             Ok(0.into()),
             run_command(&c, &["renamenx", "xxx", "bar-1650"]).await
         );
+    }
+
+    #[tokio::test]
+    async fn scan_no_args() {
+        let c = create_connection();
+        for i in (1..100) {
+            assert_eq!(
+                Ok(1.into()),
+                run_command(&c, &["incr", &format!("foo-{}", i)]).await
+            );
+        }
+
+        let r: Vec<Value> = run_command(&c, &["scan", "0"])
+            .await
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let values: Vec<Value> = r[1].clone().try_into().unwrap();
+
+        assert_eq!(2, r.len());
+        assert_eq!(10, values.len());
+    }
+
+    #[tokio::test]
+    async fn scan_with_count_match() {
+        let c = create_connection();
+        for i in (1..100) {
+            assert_eq!(
+                Ok(1.into()),
+                run_command(&c, &["incr", &format!("foo-{}", i)]).await
+            );
+        }
+
+        let r: Vec<Value> = run_command(&c, &["scan", "0", "match", "foo-1*", "count", "50"])
+            .await
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let values: Vec<Value> = r[1].clone().try_into().unwrap();
+
+        assert_eq!(2, r.len());
+        assert_eq!(11, values.len());
+    }
+
+    #[tokio::test]
+    async fn scan_with_count() {
+        let c = create_connection();
+        for i in (1..100) {
+            assert_eq!(
+                Ok(1.into()),
+                run_command(&c, &["incr", &format!("foo-{}", i)]).await
+            );
+        }
+
+        let r: Vec<Value> = run_command(&c, &["scan", "0", "count", "50"])
+            .await
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let values: Vec<Value> = r[1].clone().try_into().unwrap();
+
+        assert_eq!(2, r.len());
+        assert_eq!(50, values.len());
     }
 }
