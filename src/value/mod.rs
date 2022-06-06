@@ -204,3 +204,14 @@ impl From<Vec<Value>> for Value {
         Value::Array(value)
     }
 }
+
+impl TryInto<Vec<Value>> for Value {
+    type Error = Error;
+
+    fn try_into(self) -> Result<Vec<Value>, Self::Error> {
+        match self {
+            Self::Array(x) => Ok(x),
+            _ => Err(Error::Internal),
+        }
+    }
+}
