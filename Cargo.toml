@@ -29,3 +29,6 @@ rand = "0.8.0"
 thiserror = "1.0.30"
 strum = "0.24"
 strum_macros = "0.24"
+
+[workspace]
+members = ["redis-config-parser"]
