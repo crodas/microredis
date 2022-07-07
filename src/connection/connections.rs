@@ -5,8 +5,7 @@
 use super::{pubsub_connection::PubsubClient, pubsub_server::Pubsub, Connection, ConnectionInfo};
 use crate::{db::pool::Databases, db::Db, dispatcher::Dispatcher, value::Value};
 use parking_lot::RwLock;
-use std::{collections::BTreeMap, net::SocketAddr, sync::Arc};
-
+use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::mpsc;
 
 /// Connections struct
@@ -53,10 +52,10 @@ impl Connections {
     }
 
     /// Creates a new connection
-    pub fn new_connection(
+    pub fn new_connection<T: ToString>(
         self: &Arc<Connections>,
         db: Arc<Db>,
-        addr: SocketAddr,
+        addr: T,
     ) -> (mpsc::Receiver<Value>, Arc<Connection>) {
         let mut id = self.counter.write();
         *id += 1;
@@ -65,7 +64,7 @@ impl Connections {
 
         let conn = Arc::new(Connection {
             id: *id,
-            addr,
+            addr: addr.to_string(),
             all_connections: self.clone(),
             info: RwLock::new(ConnectionInfo::new(db.new_db_instance(*id))),
             pubsub_client: PubsubClient::new(pubsub_sender),

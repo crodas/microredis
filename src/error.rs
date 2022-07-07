@@ -7,6 +7,9 @@ use thiserror::Error;
 /// Redis errors
 #[derive(Debug, PartialEq, Error)]
 pub enum Error {
+    /// IO Error
+    #[error("IO error {0}")]
+    Io(String),
     /// A command is not found
     #[error("Command {0} not found")]
     CommandNotFound(String),
@@ -63,6 +66,12 @@ pub enum Error {
     Cursor(#[from] crate::value::cursor::Error),
 }
 
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(err.to_string())
+    }
+}
+
 impl From<Error> for Value {
     fn from(value: Error) -> Value {
         let err_type = match value {
@@ -88,6 +97,7 @@ impl From<Error> for Value {
             Error::NotFound => "no such key".to_owned(),
             Error::NotSuchDatabase => "DB index is out of range".to_owned(),
             Error::NestedTx => "calls can not be nested".to_owned(),
+            Error::Io(io) => format!("io error: {}", io),
             Error::PubsubOnly(x) => format!("Can't execute '{}': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context", x),
             Error::WrongArgument(x, y) => format!(
                 "Unknown subcommand or wrong number of arguments for '{}'. Try {} HELP.",
