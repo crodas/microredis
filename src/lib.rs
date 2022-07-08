@@ -5,6 +5,7 @@
 #![allow(warnings)]
 
 pub mod cmd;
+pub mod config;
 pub mod connection;
 pub mod db;
 pub mod dispatcher;

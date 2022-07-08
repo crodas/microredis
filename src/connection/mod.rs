@@ -2,7 +2,7 @@
 use crate::{db::Db, error::Error, value::Value};
 use bytes::Bytes;
 use parking_lot::RwLock;
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use self::pubsub_server::Pubsub;
 
@@ -46,7 +46,7 @@ pub struct ConnectionInfo {
 pub struct Connection {
     id: u128,
     all_connections: Arc<connections::Connections>,
-    addr: SocketAddr,
+    addr: String,
     info: RwLock<ConnectionInfo>,
     pubsub_client: pubsub_connection::PubsubClient,
 }
