@@ -3,6 +3,7 @@
 //! Redis TCP server. This module also includes a simple HTTP server to dump the prometheus
 //! metrics.
 use crate::{
+    config::Config,
     connection::{connections::Connections, Connection, ConnectionStatus},
     db::{pool::Databases, Db},
     error::Error,
@@ -103,11 +104,11 @@ async fn server_metrics(all_connections: Arc<Connections>) -> Result<(), Error> 
 
 /// Spawn the TCP/IP micro-redis server.
 async fn serve_tcp(
-    addr: String,
+    addr: &str,
     default_db: Arc<Db>,
     all_connections: Arc<Connections>,
 ) -> Result<(), Error> {
-    let listener = TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(addr).await?;
     info!("Listening on: {}", addr);
     loop {
         match listener.accept().await {
@@ -182,7 +183,7 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
 /// This process is also listening for any incoming message through the internal pub-sub.
 ///
 /// This function will block the main thread and will never exit.
-pub async fn serve(addr: String) -> Result<(), Error> {
+pub async fn serve(config: Config) -> Result<(), Error> {
     let (default_db, all_dbs) = Databases::new(16, 1000);
     let all_connections = Arc::new(Connections::new(all_dbs.clone()));
     let all_connections_for_metrics = all_connections.clone();
@@ -203,9 +204,18 @@ pub async fn serve(addr: String) -> Result<(), Error> {
         server_metrics(all_connections_for_metrics).await
     })];
 
-    services.push(tokio::spawn(async move {
-        serve_tcp(addr, default_db, all_connections).await
-    }));
+    config
+        .get_tcp_hostnames()
+        .iter()
+        .map(|host| {
+            let default_db = default_db.clone();
+            let all_connections = all_connections.clone();
+            let host = host.clone();
+            services.push(tokio::spawn(async move {
+                serve_tcp(&host, default_db, all_connections).await
+            }));
+        })
+        .for_each(drop);
 
     future::join_all(services).await;
 

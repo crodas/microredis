@@ -10,6 +10,9 @@ pub enum Error {
     /// IO Error
     #[error("IO error {0}")]
     Io(String),
+    /// Config
+    #[error("Config error {0}")]
+    Config(#[from] redis_config_parser::de::Error),
     /// A command is not found
     #[error("Command {0} not found")]
     CommandNotFound(String),
@@ -98,6 +101,7 @@ impl From<Error> for Value {
             Error::NotSuchDatabase => "DB index is out of range".to_owned(),
             Error::NestedTx => "calls can not be nested".to_owned(),
             Error::Io(io) => format!("io error: {}", io),
+            Error::Config(c) => format!("failed to parse config: {}", c),
             Error::PubsubOnly(x) => format!("Can't execute '{}': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context", x),
             Error::WrongArgument(x, y) => format!(
                 "Unknown subcommand or wrong number of arguments for '{}'. Try {} HELP.",
