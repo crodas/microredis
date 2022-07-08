@@ -14,6 +14,8 @@ use futures::{channel::mpsc::Receiver, future, SinkExt};
 use log::{info, trace, warn};
 use redis_zero_protocol_parser::{parse_server, Error as RedisError};
 use std::{io, net::SocketAddr, sync::Arc};
+#[cfg(unix)]
+use tokio::net::UnixListener;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -109,7 +111,7 @@ async fn serve_tcp(
     all_connections: Arc<Connections>,
 ) -> Result<(), Error> {
     let listener = TcpListener::bind(addr).await?;
-    info!("Listening on: {}", addr);
+    info!("Listening on {}", addr);
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
@@ -125,6 +127,39 @@ async fn serve_tcp(
         }
     }
 
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn serve_unixsocket(
+    file: &str,
+    default_db: Arc<Db>,
+    all_connections: Arc<Connections>,
+) -> Result<(), Error> {
+    info!("Listening on unix://{}", file);
+    let listener = UnixListener::bind(file)?;
+    loop {
+        match listener.accept().await {
+            Ok((socket, addr)) => {
+                let mut transport = Framed::new(socket, RedisParser);
+                let all_connections = all_connections.clone();
+                let default_db = default_db.clone();
+
+                tokio::spawn(async move {
+                    handle_new_connection(
+                        transport,
+                        all_connections,
+                        default_db,
+                        addr.as_pathname()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or_default(),
+                    )
+                    .await;
+                });
+            }
+            Err(e) => println!("error accepting socket; error = {:?}", e),
+        }
+    }
     Ok(())
 }
 
@@ -216,6 +251,13 @@ pub async fn serve(config: Config) -> Result<(), Error> {
             }));
         })
         .for_each(drop);
+
+    #[cfg(unix)]
+    if let Some(file) = config.unixsocket {
+        services.push(tokio::spawn(async move {
+            serve_unixsocket(&file, default_db, all_connections).await
+        }))
+    }
 
     future::join_all(services).await;
 
