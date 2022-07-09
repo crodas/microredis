@@ -230,7 +230,7 @@ mod test {
     #[test]
     fn real_config() {
         let x: Config = from_str(
-            "always-show-logo yes
+            "always-show-logo yes # this is a comment
         notify-keyspace-events KEA
         daemonize no
         pidfile /var/run/redis.pid
@@ -246,6 +246,7 @@ mod test {
         dbfilename dump.rdb
         dir ./tests/tmp/server.64463.1
         slave-serve-stale-data yes
+        #this should be ignored
         appendonly no
         appendfsync everysec 
         no-appendfsync-on-rewrite no
