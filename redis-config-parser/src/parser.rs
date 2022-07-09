@@ -25,9 +25,10 @@ macro_rules! skip {
     ($bytes:ident, $to_skip:expr) => {{
         let len = $bytes.len();
         let mut ret = &$bytes[len..];
+        let to_skip = $to_skip;
 
         for i in 0..len {
-            if $to_skip.iter().find(|x| **x == $bytes[i]).is_none() {
+            if to_skip.iter().find(|x| **x == $bytes[i]).is_none() {
                 ret = &$bytes[i..];
                 break;
             }
@@ -40,8 +41,9 @@ macro_rules! read_until {
     ($bytes:ident, $stop:expr) => {{
         let len = $bytes.len();
         let mut result = None;
+        let stop = $stop;
         for i in 0..len {
-            if $stop.iter().find(|x| **x == $bytes[i]).is_some() {
+            if stop.iter().find(|x| **x == $bytes[i]).is_some() {
                 result = Some((&$bytes[i..], String::from_utf8_lossy(&$bytes[0..i])));
                 break;
             }
@@ -57,6 +59,13 @@ macro_rules! read_until {
 
 pub fn parse(bytes: &'_ [u8]) -> Result<(&'_ [u8], ConfigValue<'_>), Error> {
     let bytes = skip!(bytes, vec![b' ', b'\t', b'\r', b'\n']);
+    let bytes = if bytes.get(0) == Some(&b'#') {
+        // The entire line is a comment, skip the whole line
+        let (bytes, _) = read_until!(bytes, vec![b'\n']);
+        skip!(bytes, vec![b' ', b'\t', b'\r', b'\n'])
+    } else {
+        bytes
+    };
     let (bytes, name) = read_until!(bytes, vec![b' ', b'\t', b'\r']);
     let bytes = skip!(bytes, vec![b' ', b'\t', b'\r']);
 
@@ -74,6 +83,11 @@ pub fn parse(bytes: &'_ [u8]) -> Result<(&'_ [u8], ConfigValue<'_>), Error> {
             b' ' | b'\t' | b'\r' => {}
             b'\n' => {
                 i += 1;
+                break;
+            }
+            b'#' => {
+                let (_, skipped) = read_until!(bytes, vec![b'\n']);
+                i += skipped.len() + 1;
                 break;
             }
             b'"' | b'\'' => {
@@ -162,7 +176,8 @@ mod test {
     #[test]
     fn test_real_config() {
         let mut data: &[u8] = b"
-        always-show-logo yes
+        #this is a comment that should be ignored
+        always-show-logo yes #this should be ignored as well
         notify-keyspace-events KEA
         daemonize no
         pidfile /var/run/redis.pid
