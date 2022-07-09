@@ -136,7 +136,10 @@ async fn serve_unixsocket(
     default_db: Arc<Db>,
     all_connections: Arc<Connections>,
 ) -> Result<(), Error> {
+    use std::fs::remove_file;
+
     info!("Listening on unix://{}", file);
+    let _ = remove_file(file);
     let listener = UnixListener::bind(file)?;
     loop {
         match listener.accept().await {
