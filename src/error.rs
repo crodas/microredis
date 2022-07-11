@@ -13,6 +13,9 @@ pub enum Error {
     /// Config
     #[error("Config error {0}")]
     Config(#[from] redis_config_parser::de::Error),
+    /// Empty line
+    #[error("No command provided")]
+    EmptyLine,
     /// A command is not found
     #[error("Command {0} not found")]
     CommandNotFound(String),
@@ -110,6 +113,7 @@ impl From<Error> for Value {
             Error::WrongType => {
                 "Operation against a key holding the wrong kind of value".to_owned()
             }
+            _ => value.to_string(),
         };
 
         Value::Err(err_type.to_string(), err_msg)

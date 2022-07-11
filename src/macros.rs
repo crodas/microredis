@@ -119,10 +119,14 @@ macro_rules! dispatcher {
             #[inline(always)]
             pub fn execute<'a>(&'a self, conn: &'a Connection, args: &'a [Bytes]) -> futures::future::BoxFuture<'a, Result<Value, Error>> {
                 async move {
-                    let command = String::from_utf8_lossy(&args[0]).to_uppercase();
+                    let command = match args.get(0) {
+                        Some(s) => Ok(String::from_utf8_lossy(s).to_uppercase()),
+                        None => Err(Error::EmptyLine),
+                    }?;
                     match command.as_str() {
                         $($(
                             stringify!($command) => {
+                                log::info!("Command: {}", stringify!($command));
                                 let command = &self.$command;
                                 if ! command.check_number_args(args.len()) {
                                     Err(Error::InvalidArgsCount(command.name().into()))

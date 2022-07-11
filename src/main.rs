@@ -17,8 +17,8 @@ async fn main() -> Result<(), Error> {
     let logger = Logger::try_with_str(config.log.level.to_string()).unwrap();
 
     if let Some(log_path) = config.log.file.as_ref() {
-        if log_path == "" {
-            logger.start().unwrap();
+        if log_path.is_empty() {
+            logger.log_to_stdout().start().unwrap();
         } else {
             logger
                 .log_to_file(FileSpec::try_from(log_path).unwrap())
@@ -26,8 +26,10 @@ async fn main() -> Result<(), Error> {
                 .unwrap();
         }
     } else {
-        logger.start().unwrap();
+        logger.log_to_stdout().start().unwrap();
     }
+
+    log::info!("PID: {}", std::process::id());
 
     server::serve(config).await
 }

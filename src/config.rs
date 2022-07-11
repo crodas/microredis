@@ -57,11 +57,8 @@ pub enum LogLevel {
     #[serde(rename = "trace")]
     Trace,
     /// Debug
-    #[serde(rename = "debug")]
-    Debug,
-    /// Verbose
     #[serde(rename = "verbose")]
-    Verbose,
+    Debug,
     /// Notice
     #[serde(rename = "notice")]
     Notice,

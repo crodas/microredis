@@ -46,7 +46,11 @@ impl Decoder for RedisParser {
             let (unused, val) = match parse_server(src) {
                 Ok((buf, val)) => (buf, val),
                 Err(RedisError::Partial) => return Ok(None),
-                Err(_) => return Err(io::Error::new(io::ErrorKind::Other, "something")),
+                Err(e) => {
+                    log::debug!("{:?}", e);
+
+                    return Err(io::Error::new(io::ErrorKind::Other, "something"));
+                }
             };
             (
                 val.iter().map(|e| Bytes::copy_from_slice(e)).collect(),
@@ -111,7 +115,8 @@ async fn serve_tcp(
     all_connections: Arc<Connections>,
 ) -> Result<(), Error> {
     let listener = TcpListener::bind(addr).await?;
-    info!("Listening on {}", addr);
+    info!("Starting server {}", addr);
+    info!("Ready to accept connections on {}", addr);
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
@@ -138,7 +143,7 @@ async fn serve_unixsocket(
 ) -> Result<(), Error> {
     use std::fs::remove_file;
 
-    info!("Listening on unix://{}", file);
+    info!("Ready to accept connections on unix://{}", file);
     let _ = remove_file(file);
     let listener = UnixListener::bind(file)?;
     loop {
@@ -195,6 +200,9 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
                         if transport.send(result).await.is_err() {
                             break;
                         }
+                    },
+                    Err(Error::EmptyLine) => {
+                        // do nothing
                     },
                     Err(err) => {
                         if transport.send(err.into()).await.is_err() {
