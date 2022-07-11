@@ -16,6 +16,7 @@ parking_lot="0.11.2"
 tokio-util={version="^0.6", features = ["full"] }
 crc32fast="1.3.2"
 futures = { version = "0.3.0", features = ["thread-pool"]}
+git-version = "0.3.5"
 tokio-stream="0.1"
 seahash = "4"
 glob="0.3.0"

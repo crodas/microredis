@@ -1020,6 +1020,15 @@ dispatcher! {
             0,
             true,
         },
+        INFO {
+            cmd::server::info,
+            [Flag::Random Flag::Loading Flag::Stale],
+            -1,
+            0,
+            0,
+            0,
+            true,
+        },
         FLUSHDB {
             cmd::server::flushdb,
             [Flag::Write],

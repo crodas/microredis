@@ -228,40 +228,29 @@ pub async fn rename(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 pub async fn scan(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let cursor: Cursor = (&args[1]).try_into()?;
     let mut current = 2;
-    let pattern = if check_arg!(args, current, "MATCH") {
-        current += 2;
-        Some(
-            args.get(current - 1)
-                .ok_or_else(|| Error::InvalidArgsCount("SCAN".to_owned()))?,
-        )
-    } else {
-        None
-    };
-    let count = if check_arg!(args, current, "COUNT") {
-        current += 2;
-        let number: usize = bytes_to_number(
-            args.get(current - 1)
-                .ok_or_else(|| Error::InvalidArgsCount("SCAN".to_owned()))?,
-        )?;
-        Some(number)
-    } else {
-        None
-    };
-    let typ = if check_arg!(args, current, "TYPE") {
-        current += 2;
-        Some(
-            Typ::from_str(&String::from_utf8_lossy(
-                args.get(current - 1)
-                    .ok_or_else(|| Error::InvalidArgsCount("SCAN".to_owned()))?,
-            ))
-            .map_err(|_| Error::Syntax)?,
-        )
-    } else {
-        None
-    };
+    let mut pattern = None;
+    let mut count = None;
+    let mut typ = None;
 
-    if current != args.len() {
-        return Err(Error::Syntax);
+    for i in (2..args.len()).step_by(2) {
+        let value = args
+            .get(i + 1)
+            .ok_or(Error::InvalidArgsCount("SCAN".to_owned()))?;
+        match String::from_utf8_lossy(&args[i]).to_uppercase().as_str() {
+            "MATCH" => pattern = Some(value),
+            "COUNT" => {
+                count = Some(
+                    bytes_to_number(value)
+                        .map_err(|_| Error::InvalidArgsCount("SCAN".to_owned()))?,
+                )
+            }
+            "TYPE" => {
+                typ = Some(
+                    Typ::from_str(&String::from_utf8_lossy(&value)).map_err(|_| Error::Syntax)?,
+                )
+            }
+            _ => return Err(Error::Syntax),
+        }
     }
 
     Ok(conn.db().scan(cursor, pattern, count, typ)?.into())

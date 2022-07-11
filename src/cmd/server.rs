@@ -3,9 +3,12 @@ use crate::{
     check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
 };
 use bytes::Bytes;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
-use std::{convert::TryInto, ops::Neg};
+use git_version::git_version;
+use std::{
+    convert::TryInto,
+    ops::Neg,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::time::Duration;
 
 /// Returns Array reply of details about all Redis commands.
@@ -60,6 +63,20 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
             String::from_utf8_lossy(&args[0]).into(),
         )),
     }
+}
+
+/// The INFO command returns information and statistics about the server in a
+/// format that is simple to parse by computers and easy to read by humans.
+pub async fn info(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    Ok(Value::Blob(
+        format!(
+            "redis_version: {}\r\nredis_git_sha1:{}\r\n",
+            git_version!(),
+            git_version!()
+        )
+        .as_str()
+        .into(),
+    ))
 }
 
 /// Delete all the keys of the currently selected DB. This command never fails.
