@@ -62,6 +62,16 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     }
 }
 
+/// Delete all the keys of the currently selected DB. This command never fails.
+pub async fn flushdb(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    conn.db().flushdb()
+}
+
+/// Return the number of keys in the currently-selected database.
+pub async fn dbsize(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    conn.db().len().map(|s| s.into())
+}
+
 /// The TIME command returns the current server time as a two items lists: a
 /// Unix timestamp and the amount of microseconds already elapsed in the current
 /// second. Basically the interface is very similar to the one of the

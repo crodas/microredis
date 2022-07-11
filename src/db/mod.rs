@@ -222,6 +222,24 @@ impl Db {
         }
     }
 
+    /// Flushes the entire database
+    pub fn flushdb(&self) -> Result<Value, Error> {
+        self.expirations.lock().flush();
+        self.slots
+            .iter()
+            .map(|s| {
+                let mut s = s.write();
+                s.clear();
+            })
+            .for_each(drop);
+        Ok(Value::Ok)
+    }
+
+    /// Returns the number of elements in the database
+    pub fn len(&self) -> Result<usize, Error> {
+        Ok(self.slots.iter().map(|s| s.read().len()).sum())
+    }
+
     /// Increments a key's value by a given number
     ///
     /// If the stored value cannot be converted into a number an error will be
