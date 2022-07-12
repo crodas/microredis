@@ -244,7 +244,7 @@ dispatcher! {
         LPOS {
             cmd::list::lpos,
             [Flag::ReadOnly],
-            -2,
+            -3,
             1,
             1,
             1,

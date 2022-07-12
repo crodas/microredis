@@ -291,28 +291,34 @@ impl Db {
 
                 number += incr_by;
 
-                x.change_value(Value::Blob(
-                    number
-                        .to_string()
-                        .trim_end_matches(|c| c == '0' || c == '.')
-                        .into(),
-                ));
+                let number_to_str = number
+                    .to_string()
+                    .trim_end_matches(|c| c == '0' || c == '.')
+                    .to_string();
+
+                let number_to_str = if number_to_str.is_empty() {
+                    "0"
+                } else {
+                    number_to_str.as_str()
+                }
+                .into();
+
+                x.change_value(Value::Blob(number_to_str));
 
                 Ok(number)
             }
             None => {
-                slot.insert(
-                    key.clone(),
-                    Entry::new(
-                        Value::Blob(
-                            incr_by
-                                .to_string()
-                                .trim_end_matches(|c| c == '0' || c == '.')
-                                .into(),
-                        ),
-                        None,
-                    ),
-                );
+                let number_to_str = incr_by
+                    .to_string()
+                    .trim_end_matches(|c| c == '0' || c == '.')
+                    .to_string();
+                let str = if number_to_str.is_empty() {
+                    "0"
+                } else {
+                    number_to_str.as_str()
+                }
+                .into();
+                slot.insert(key.clone(), Entry::new(Value::Blob(str), None));
                 Ok(incr_by)
             }
         }
@@ -984,14 +990,14 @@ mod test {
     #[test]
     fn incr_blob_int_set() {
         let db = Db::new(100);
-        assert_eq!(Ok(Value::Integer(1)), db.incr(&bytes!("num"), 1));
+        assert_eq!(Ok(1), db.incr(&bytes!("num"), 1));
         assert_eq!(Value::Blob(bytes!("1")), db.get(&bytes!("num")));
     }
 
     #[test]
     fn incr_blob_float_set() {
         let db = Db::new(100);
-        assert_eq!(Ok(Value::Float(1.1)), db.incr(&bytes!("num"), 1.1));
+        assert_eq!(Ok(1.1), db.incr(&bytes!("num"), 1.1));
         assert_eq!(Value::Blob(bytes!("1.1")), db.get(&bytes!("num")));
     }
 

@@ -37,6 +37,9 @@ pub enum Error {
     /// Unexpected argument
     #[error("Wrong argument {1} for command {0}")]
     WrongArgument(String, String),
+    /// We cannot incr by infinity
+    #[error("increment would produce NaN or Infinity")]
+    IncrByInfOrNan,
     /// Wrong number of arguments
     #[error("wrong number of arguments for '{0}' command")]
     WrongNumberArgument(String),
@@ -103,7 +106,7 @@ impl From<Error> for Value {
             Error::Protocol(x, y) => format!("Protocol error: expected '{}', got '{}'", x, y),
             Error::NotInTx => " without MULTI".to_owned(),
             Error::SameEntry => "source and destination objects are the same".to_owned(),
-            Error::NotANumber => "value is not an integer or out of range".to_owned(),
+            Error::NotANumber => "value is not a valid number or out of range".to_owned(),
             Error::OutOfRange => "index out of range".to_owned(),
             Error::Syntax => "syntax error".to_owned(),
             Error::NotFound => "no such key".to_owned(),
