@@ -139,7 +139,7 @@ pub async fn getrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
             } else {
                 end.try_into().expect("Positive number")
             };
-            let end = min(end, len - 1);
+            let end = min(end, len.checked_sub(1).unwrap_or_default());
 
             if end < start {
                 return Ok("".into());
