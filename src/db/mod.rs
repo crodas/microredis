@@ -338,7 +338,7 @@ impl Db {
     /// make offset fit. Non-existing keys are considered as empty strings, so this
     /// command will make sure it holds a string large enough to be able to set
     /// value at offset.
-    pub fn set_range(&self, key: &Bytes, offset: u64, data: &[u8]) -> Result<Value, Error> {
+    pub fn set_range(&self, key: &Bytes, offset: i128, data: &[u8]) -> Result<Value, Error> {
         let mut slot = self.slots[self.get_slot(key)].write();
         let value = slot.get_mut(key).map(|value| {
             if !value.is_valid() {
@@ -347,6 +347,14 @@ impl Db {
             }
             value.get_mut()
         });
+
+        if offset < 0 {
+            return Err(Error::OutOfRange);
+        }
+
+        if offset >= 512 * 1024 * 1024 - 4 {
+            return Err(Error::MaxAllowedSize);
+        }
 
         let length = offset as usize + data.len();
         match value {
@@ -359,6 +367,9 @@ impl Db {
                 Ok(bytes.len().into())
             }
             None => {
+                if data.len() == 0 {
+                    return Ok(0.into());
+                }
                 let mut bytes = BytesMut::new();
                 bytes.resize(length, 0);
                 let writer = &mut bytes[offset as usize..];

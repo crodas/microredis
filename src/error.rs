@@ -46,6 +46,9 @@ pub enum Error {
     /// Index out of range
     #[error("Index out of range")]
     OutOfRange,
+    /// String is bigger than max allowed size
+    #[error("string exceeds maximum allowed size (proto-max-bulk-len)")]
+    MaxAllowedSize,
     /// Attempting to move or copy to the same key
     #[error("Cannot move same key")]
     SameEntry,
