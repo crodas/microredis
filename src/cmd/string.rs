@@ -282,7 +282,12 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// It is not possible for clients to see that some of the keys were
 /// updated while others are unchanged.
 pub async fn mset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().multi_set(&args[1..], true))
+    conn.db().multi_set(&args[1..], true).map_err(|e| match e {
+        Error::Syntax => {
+            Error::WrongNumberArgument(String::from_utf8_lossy(&args[0]).to_uppercase())
+        }
+        e => e,
+    })
 }
 
 /// Sets the given keys to their respective values. MSETNX will not perform any
@@ -296,7 +301,12 @@ pub async fn mset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// clients to see that some of the keys were updated while others are
 /// unchanged.
 pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().multi_set(&args[1..], false))
+    conn.db().multi_set(&args[1..], false).map_err(|e| match e {
+        Error::Syntax => {
+            Error::WrongNumberArgument(String::from_utf8_lossy(&args[0]).to_uppercase())
+        }
+        e => e,
+    })
 }
 
 /// Set key to hold the string value and set key to timeout after a given number of seconds. This
@@ -454,6 +464,18 @@ mod test {
         assert_eq!(
             Ok(Value::Array(vec!["bar".into()])),
             run_command(&c, &["mget", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn mset_incorrect_values() {
+        let c = create_connection();
+        let x = run_command(&c, &["mset", "foo", "bar", "bar"]).await;
+        assert_eq!(Err(Error::WrongNumberArgument("MSET".to_owned())), x);
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Null, Value::Null])),
+            run_command(&c, &["mget", "foo", "bar"]).await
         );
     }
 

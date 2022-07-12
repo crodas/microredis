@@ -37,6 +37,9 @@ pub enum Error {
     /// Unexpected argument
     #[error("Wrong argument {1} for command {0}")]
     WrongArgument(String, String),
+    /// Wrong number of arguments
+    #[error("wrong number of arguments for '{0}' command")]
+    WrongNumberArgument(String),
     /// Key not found
     #[error("Key not found")]
     NotFound,

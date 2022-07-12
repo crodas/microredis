@@ -674,7 +674,11 @@ impl Db {
     /// If override_all is set to false, all entries must be new entries or the
     /// entire operation fails, in this case 1 or is returned. Otherwise `Ok` is
     /// returned.
-    pub fn multi_set(&self, key_values: &[Bytes], override_all: bool) -> Value {
+    pub fn multi_set(&self, key_values: &[Bytes], override_all: bool) -> Result<Value, Error> {
+        if key_values.len() % 2 == 1 {
+            return Err(Error::Syntax);
+        }
+
         let keys = key_values
             .iter()
             .step_by(2)
@@ -688,7 +692,7 @@ impl Db {
                 let slot = self.slots[self.get_slot(key)].read();
                 if slot.get(key).is_some() {
                     self.unlock_keys(&keys);
-                    return 0.into();
+                    return Ok(0.into());
                 }
             }
         }
@@ -704,9 +708,9 @@ impl Db {
         self.unlock_keys(&keys);
 
         if override_all {
-            Value::Ok
+            Ok(Value::Ok)
         } else {
-            1.into()
+            Ok(1.into())
         }
     }
 
