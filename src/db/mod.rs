@@ -281,8 +281,11 @@ impl Db {
         incr_by: T,
     ) -> Result<Value, Error> {
         let mut slot = self.slots[self.get_slot(key)].write();
-        match slot.get_mut(key) {
+        match slot.get_mut(key).filter(|x| x.is_valid()) {
             Some(x) => {
+                if !x.is_clonable() {
+                    return Err(Error::WrongType);
+                }
                 let value = x.get();
                 let mut number: T = value.try_into()?;
 
