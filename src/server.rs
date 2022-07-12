@@ -43,7 +43,6 @@ impl Decoder for RedisParser {
 
     fn decode(&mut self, src: &mut BytesMut) -> io::Result<Option<Self::Item>> {
         let (frame, proccesed) = {
-            log::debug!("Receive {}", String::from_utf8_lossy(&src));
             let (unused, val) = match parse_server(src) {
                 Ok((buf, val)) => (buf, val),
                 Err(RedisError::Partial) => return Ok(None),

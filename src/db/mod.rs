@@ -727,7 +727,7 @@ impl Db {
     ) -> Value {
         let mut slot = self.slots[self.get_slot(key)].write();
         let expires_at = expires_in.map(|duration| Instant::now() + duration);
-        let previous = slot.get(key);
+        let previous = slot.get(key).filter(|x| x.is_valid());
 
         let expires_at = if keep_ttl {
             if let Some(previous) = previous {
