@@ -279,7 +279,7 @@ impl Db {
         &self,
         key: &Bytes,
         incr_by: T,
-    ) -> Result<Value, Error> {
+    ) -> Result<T, Error> {
         let mut slot = self.slots[self.get_slot(key)].write();
         match slot.get_mut(key).filter(|x| x.is_valid()) {
             Some(x) => {
@@ -291,16 +291,29 @@ impl Db {
 
                 number += incr_by;
 
-                x.change_value(Value::Blob(number.to_string().as_str().into()));
+                x.change_value(Value::Blob(
+                    number
+                        .to_string()
+                        .trim_end_matches(|c| c == '0' || c == '.')
+                        .into(),
+                ));
 
-                Ok(number.into())
+                Ok(number)
             }
             None => {
                 slot.insert(
                     key.clone(),
-                    Entry::new(Value::Blob(incr_by.to_string().as_str().into()), None),
+                    Entry::new(
+                        Value::Blob(
+                            incr_by
+                                .to_string()
+                                .trim_end_matches(|c| c == '0' || c == '.')
+                                .into(),
+                        ),
+                        None,
+                    ),
                 );
-                Ok((incr_by as T).into())
+                Ok(incr_by)
             }
         }
     }
@@ -946,7 +959,7 @@ mod test {
         let db = Db::new(100);
         db.set(&bytes!(b"num"), Value::Blob(bytes!("1.1")), None);
 
-        assert_eq!(Ok(Value::Float(2.2)), db.incr(&bytes!("num"), 1.1));
+        assert_eq!(Ok(2.2), db.incr(&bytes!("num"), 1.1));
         assert_eq!(Value::Blob(bytes!("2.2")), db.get(&bytes!("num")));
     }
 
@@ -955,7 +968,7 @@ mod test {
         let db = Db::new(100);
         db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
-        assert_eq!(Ok(Value::Float(2.1)), db.incr(&bytes!("num"), 1.1));
+        assert_eq!(Ok(2.1), db.incr(&bytes!("num"), 1.1));
         assert_eq!(Value::Blob(bytes!("2.1")), db.get(&bytes!("num")));
     }
 
@@ -964,7 +977,7 @@ mod test {
         let db = Db::new(100);
         db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
-        assert_eq!(Ok(Value::Integer(2)), db.incr(&bytes!("num"), 1));
+        assert_eq!(Ok(2), db.incr(&bytes!("num"), 1));
         assert_eq!(Value::Blob(bytes!("2")), db.get(&bytes!("num")));
     }
 

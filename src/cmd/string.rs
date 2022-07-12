@@ -28,7 +28,7 @@ pub async fn append(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// contains a string that can not be represented as integer. This operation is limited to 64 bit
 /// signed integers.
 pub async fn incr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().incr(&args[1], 1_i64)
+    conn.db().incr(&args[1], 1_i64).map(|n| n.into())
 }
 
 /// Increments the number stored at key by increment. If the key does not exist, it is set to 0
@@ -37,7 +37,7 @@ pub async fn incr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// 64 bit signed integers.
 pub async fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let by: i64 = bytes_to_number(&args[2])?;
-    conn.db().incr(&args[1], by)
+    conn.db().incr(&args[1], by).map(|n| n.into())
 }
 
 /// Increment the string representing a floating point number stored at key by the specified
@@ -46,7 +46,13 @@ pub async fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// 0 before performing the operation.
 pub async fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let by: f64 = bytes_to_number(&args[2])?;
-    conn.db().incr(&args[1], by)
+    conn.db().incr(&args[1], by).map(|f| {
+        if f.fract() == 0.0 {
+            (f as i64).into()
+        } else {
+            f.into()
+        }
+    })
 }
 
 /// Decrements the number stored at key by one. If the key does not exist, it is set to 0 before
@@ -54,7 +60,7 @@ pub async fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, E
 /// contains a string that can not be represented as integer. This operation is limited to 64 bit
 /// signed integers.
 pub async fn decr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().incr(&args[1], -1_i64)
+    conn.db().incr(&args[1], -1_i64).map(|n| n.into())
 }
 
 /// Decrements the number stored at key by decrement. If the key does not exist, it is set to 0
@@ -63,7 +69,7 @@ pub async fn decr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// 64 bit signed integers.
 pub async fn decr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let by: i64 = (&Value::new(&args[2])).try_into()?;
-    conn.db().incr(&args[1], by.neg())
+    conn.db().incr(&args[1], by.neg()).map(|n| n.into())
 }
 
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
