@@ -69,7 +69,7 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// developing and testing Redis.
 pub async fn debug(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
-        "object" => panic!("Not implemented"),
+        "object" => Ok(conn.db().debug(args.get(2).ok_or(Error::Syntax)?)?.into()),
         "set-active-expire" => Ok(Value::Ok),
         "digest-value" => Ok(Value::Array(conn.db().digest(&args[2..])?)),
         _ => Err(Error::Syntax),

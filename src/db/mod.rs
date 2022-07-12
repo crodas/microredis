@@ -7,7 +7,7 @@ use crate::{
     value::{
         cursor::Cursor,
         typ::{Typ, ValueTyp},
-        Value,
+        VDebug, Value,
     },
 };
 use bytes::{BufMut, Bytes, BytesMut};
@@ -220,6 +220,17 @@ impl Db {
         for key in keys.iter() {
             lock.remove(key);
         }
+    }
+
+    /// Return debug info for a key
+    pub fn debug(&self, key: &Bytes) -> Result<VDebug, Error> {
+        let slot = self.slots[self.get_slot(key)].read();
+        Ok(slot
+            .get(key)
+            .filter(|x| x.is_valid())
+            .ok_or(Error::NotFound)?
+            .value
+            .debug())
     }
 
     /// Return the digest for each key. This used for testing only

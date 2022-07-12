@@ -51,6 +51,25 @@ pub enum Value {
     Ok,
 }
 
+/// Value debug struct
+#[derive(Debug)]
+pub struct VDebug {
+    /// Value encoding
+    pub encoding: &'static str,
+    /// Length of serialized value
+    pub serialize_len: usize,
+}
+
+impl From<VDebug> for Value {
+    fn from(v: VDebug) -> Self {
+        Value::Blob(format!(
+            "Value at:0x6000004a8840 refcount:1 encoding:{} serializedlength:{} lru:13421257 lru_seconds_idle:367",
+            v.encoding, v.serialize_len
+            ).as_str().into()
+        )
+    }
+}
+
 impl Value {
     /// Creates a new Redis value from a stream of bytes
     pub fn new(value: &[u8]) -> Self {
@@ -58,12 +77,21 @@ impl Value {
     }
 
     /// Returns the internal encoding of the redis
-    pub fn encoding(&self) -> &str {
+    pub fn encoding(&self) -> &'static str {
         match self {
             Self::Hash(_) | Self::Set(_) => "hashtable",
             Self::List(_) => "linkedlist",
             Self::Array(_) => "vector",
             _ => "embstr",
+        }
+    }
+
+    /// Return debug information for the type
+    pub fn debug(&self) -> VDebug {
+        let bytes: Vec<u8> = self.into();
+        VDebug {
+            encoding: self.encoding(),
+            serialize_len: bytes.len(),
         }
     }
 
