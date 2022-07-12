@@ -755,7 +755,13 @@ impl Db {
         };
 
         let to_return = if return_previous {
-            Some(previous.map_or(Value::Null, |v| v.clone_value()))
+            let previous = previous.map_or(Value::Null, |v| v.clone_value());
+            if previous.is_err() {
+                // Error while trying to clone the previous value to return, we
+                // must halt and return immediately.
+                return previous;
+            }
+            Some(previous)
         } else {
             None
         };

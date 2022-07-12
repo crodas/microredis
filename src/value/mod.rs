@@ -86,6 +86,14 @@ impl Value {
         }
     }
 
+    /// Is the current value an error?
+    pub fn is_err(&self) -> bool {
+        match self {
+            Self::Err(..) => true,
+            _ => false,
+        }
+    }
+
     /// Return debug information for the type
     pub fn debug(&self) -> VDebug {
         let bytes: Vec<u8> = self.into();
