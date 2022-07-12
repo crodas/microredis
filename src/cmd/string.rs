@@ -181,97 +181,79 @@ pub async fn mget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// of its type. Any previous time to live associated with the key is discarded on successful SET
 /// operation.
 pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    match args.len() {
-        3 => Ok(conn.db().set(&args[1], Value::new(&args[2]), None)),
-        4 | 5 | 6 | 7 => {
-            let mut offset = 3;
-            let mut expiration = None;
-            let mut override_value = Override::Yes;
-            let mut return_previous = false;
-            let mut keep_ttl = false;
-            match String::from_utf8_lossy(&args[offset])
-                .to_uppercase()
-                .as_str()
-            {
-                "EX" => {
-                    expiration = Some(Duration::from_secs(bytes_to_number::<u64>(try_get_arg!(
-                        args, 4
-                    ))?));
-                    offset += 2;
-                }
-                "PX" => {
-                    expiration = Some(Duration::from_millis(bytes_to_number::<u64>(
-                        try_get_arg!(args, 4),
-                    )?));
-                    offset += 2;
-                }
-                "EXAT" => {
-                    expiration = Some(Duration::from_secs(
-                        bytes_to_number::<u64>(try_get_arg!(args, 4))? - now().as_secs(),
-                    ));
-                    offset += 2;
-                }
-                "PXAT" => {
-                    expiration = Some(Duration::from_millis(
-                        bytes_to_number::<u64>(try_get_arg!(args, 4))? - (now().as_millis() as u64),
-                    ));
-                    offset += 2;
-                }
-                "KEEPTTL" => {
-                    keep_ttl = true;
-                    offset += 1;
-                }
-                "NX" | "XX" | "GET" => {}
-                _ => return Err(Error::Syntax),
-            };
+    let len = args.len();
+    let mut i = 3;
+    let mut expiration = None;
+    let mut keep_ttl = false;
+    let mut override_value = Override::Yes;
+    let mut return_previous = false;
 
-            if offset < args.len() {
-                match String::from_utf8_lossy(&args[offset])
-                    .to_uppercase()
-                    .as_str()
-                {
-                    "NX" => {
-                        override_value = Override::No;
-                        offset += 1;
-                    }
-                    "XX" => {
-                        override_value = Override::Only;
-                        offset += 1;
-                    }
-                    "GET" => {}
-                    _ => return Err(Error::Syntax),
-                };
-            }
-
-            if offset < args.len() {
-                if String::from_utf8_lossy(&args[offset])
-                    .to_uppercase()
-                    .as_str()
-                    == "GET"
-                {
-                    return_previous = true;
-                } else {
+    loop {
+        if i >= len {
+            break;
+        }
+        match String::from_utf8_lossy(&args[i]).to_uppercase().as_str() {
+            "EX" => {
+                if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
+                expiration = Some(Duration::from_secs(bytes_to_number::<u64>(try_get_arg!(
+                    args,
+                    i + 1
+                ))?));
+                i += 1;
             }
-
-            Ok(
-                match conn.db().set_advanced(
-                    &args[1],
-                    Value::new(&args[2]),
-                    expiration,
-                    override_value,
-                    keep_ttl,
-                    return_previous,
-                ) {
-                    Value::Integer(1) => Value::Ok,
-                    Value::Integer(0) => Value::Null,
-                    any_return => any_return,
-                },
-            )
+            "PX" => {
+                if expiration.is_some() {
+                    return Err(Error::Syntax);
+                }
+                expiration = Some(Duration::from_millis(bytes_to_number::<u64>(
+                    try_get_arg!(args, i + 1),
+                )?));
+                i += 1;
+            }
+            "EXAT" => {
+                if expiration.is_some() {
+                    return Err(Error::Syntax);
+                }
+                expiration = Some(Duration::from_secs(
+                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))? - now().as_secs(),
+                ));
+                i += 1;
+            }
+            "PXAT" => {
+                if expiration.is_some() {
+                    return Err(Error::Syntax);
+                }
+                expiration = Some(Duration::from_millis(
+                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))? - (now().as_millis() as u64),
+                ));
+                i += 1;
+            }
+            "KEEPTTL" => keep_ttl = true,
+            "NX" => override_value = Override::No,
+            "XX" => override_value = Override::Only,
+            "GET" => return_previous = true,
+            _ => return Err(Error::Syntax),
         }
-        _ => Err(Error::Syntax),
+
+        i += 1;
     }
+
+    Ok(
+        match conn.db().set_advanced(
+            &args[1],
+            Value::new(&args[2]),
+            expiration,
+            override_value,
+            keep_ttl,
+            return_previous,
+        ) {
+            Value::Integer(1) => Value::Ok,
+            Value::Integer(0) => Value::Null,
+            any_return => any_return,
+        },
+    )
 }
 
 /// Sets the given keys to their respective values. MSET replaces existing

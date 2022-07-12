@@ -1,6 +1,7 @@
 //! # Server command handlers
 use crate::{
-    check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
+    check_arg, connection::Connection, error::Error, try_get_arg, value::bytes_to_number,
+    value::Value,
 };
 use bytes::Bytes;
 use git_version::git_version;
@@ -69,7 +70,7 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// developing and testing Redis.
 pub async fn debug(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
-        "object" => Ok(conn.db().debug(args.get(2).ok_or(Error::Syntax)?)?.into()),
+        "object" => Ok(conn.db().debug(try_get_arg!(args, 2))?.into()),
         "set-active-expire" => Ok(Value::Ok),
         "digest-value" => Ok(Value::Array(conn.db().digest(&args[2..])?)),
         _ => Err(Error::Syntax),

@@ -222,7 +222,7 @@ macro_rules! check_arg {
 /// is thrown
 #[macro_export]
 macro_rules! try_get_arg {
-    {$args: tt, $pos: tt} => {{
+    {$args: tt, $pos: expr} => {{
         match $args.get($pos) {
             Some(bytes) => bytes,
             None => return Err(Error::Syntax),

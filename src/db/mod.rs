@@ -763,12 +763,20 @@ impl Db {
         match override_value {
             Override::No => {
                 if previous.is_some() {
-                    return 0.into();
+                    return if let Some(to_return) = to_return {
+                        to_return
+                    } else {
+                        0.into()
+                    };
                 }
             }
             Override::Only => {
                 if previous.is_none() {
-                    return 0.into();
+                    return if let Some(to_return) = to_return {
+                        to_return
+                    } else {
+                        0.into()
+                    };
                 }
             }
             _ => {}
