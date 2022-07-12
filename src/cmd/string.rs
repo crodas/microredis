@@ -79,7 +79,7 @@ pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         2 => (None, false),
         3 => {
             if check_arg!(args, 2, "PERSIST") {
-                (None, Default::default())
+                (None, true)
             } else {
                 return Err(Error::Syntax);
             }
