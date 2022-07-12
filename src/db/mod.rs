@@ -455,30 +455,25 @@ impl Db {
         if slot1 == slot2 {
             let mut slot = self.slots[slot1].write();
 
+            if override_value == Override::No && slot.get(target).is_some() {
+                return Ok(false);
+            }
+
             if let Some(value) = slot.remove(source) {
-                Ok(
-                    if override_value == Override::No && slot.get(target).is_some() {
-                        false
-                    } else {
-                        slot.insert(target.clone(), value);
-                        true
-                    },
-                )
+                slot.insert(target.clone(), value);
+                Ok(true)
             } else {
                 Err(Error::NotFound)
             }
         } else {
             let mut slot1 = self.slots[slot1].write();
             let mut slot2 = self.slots[slot2].write();
+            if override_value == Override::No && slot2.get(target).is_some() {
+                return Ok(false);
+            }
             if let Some(value) = slot1.remove(source) {
-                Ok(
-                    if override_value == Override::No && slot2.get(target).is_some() {
-                        false
-                    } else {
-                        slot2.insert(target.clone(), value);
-                        true
-                    },
-                )
+                slot2.insert(target.clone(), value);
+                Ok(true)
             } else {
                 Err(Error::NotFound)
             }
@@ -653,7 +648,7 @@ impl Db {
             x.clone_value()
         })
     }
-    ///
+
     /// Set a key, value with an optional expiration time
     pub fn append(&self, key: &Bytes, value_to_append: &Bytes) -> Result<Value, Error> {
         let mut slot = self.slots[self.get_slot(key)].write();

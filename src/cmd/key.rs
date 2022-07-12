@@ -489,13 +489,13 @@ mod test {
     #[tokio::test]
     async fn renamenx() {
         let c = create_connection();
-        assert_eq!(Ok(1.into()), run_command(&c, &["incr", "foo"]).await);
+        assert_eq!(Ok(1i64.into()), run_command(&c, &["incr", "foo"]).await);
         assert_eq!(
-            Ok(1.into()),
+            Ok(1i64.into()),
             run_command(&c, &["renamenx", "foo", "bar-1650"]).await
         );
         assert_eq!(
-            Ok(1.into()),
+            Ok(1i64.into()),
             run_command(&c, &["renamenx", "bar-1650", "xxx"]).await
         );
         assert_eq!(
@@ -508,8 +508,12 @@ mod test {
             run_command(&c, &["set", "bar-1650", "xxx"]).await
         );
         assert_eq!(
-            Ok(0.into()),
+            Ok(0i64.into()),
             run_command(&c, &["renamenx", "xxx", "bar-1650"]).await
+        );
+        assert_eq!(
+            Ok(Value::Blob("1".into())),
+            run_command(&c, &["get", "xxx"]).await
         );
     }
 
