@@ -1020,6 +1020,15 @@ dispatcher! {
             0,
             true,
         },
+        DEBUG {
+            cmd::server::debug,
+            [Flag::Random Flag::Loading Flag::Stale],
+            -2,
+            0,
+            0,
+            0,
+            true,
+        },
         INFO {
             cmd::server::info,
             [Flag::Random Flag::Loading Flag::Stale],

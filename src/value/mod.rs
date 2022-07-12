@@ -9,6 +9,7 @@ pub mod typ;
 use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     convert::{TryFrom, TryInto},
@@ -30,7 +31,7 @@ pub enum Value {
     Array(Vec<Value>),
     /// Bytes/Strings/Binary data
     Blob(BytesMut),
-    /// String. This type does not allowe new lines
+    /// String. This type does not allow new lines
     String(String),
     /// An error
     Err(String, String),
@@ -64,6 +65,14 @@ impl Value {
             Self::Array(_) => "vector",
             _ => "embstr",
         }
+    }
+
+    /// Returns the hash of the value
+    pub fn digest(&self) -> Vec<u8> {
+        let bytes: Vec<u8> = self.into();
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        hasher.finalize().to_vec()
     }
 }
 

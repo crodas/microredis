@@ -321,12 +321,12 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 let mut x = x.write();
                 match &rand {
                     Value::Blob(value) => {
-                        x.remove(value.as_ref().into());
+                        x.remove(value.as_ref());
                     }
                     Value::Array(values) => {
                         for value in values.iter() {
                             if let Value::Blob(value) = value {
-                                x.remove(value.as_ref().into());
+                                x.remove(value.as_ref());
                             }
                         }
                     }

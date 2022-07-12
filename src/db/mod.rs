@@ -2,11 +2,6 @@
 //!
 //! This database module is the core of the miniredis project. All other modules around this
 //! database module.
-mod entry;
-mod expiration;
-pub mod pool;
-pub mod scan;
-
 use crate::{
     error::Error,
     value::{
@@ -30,6 +25,11 @@ use std::{
     thread,
 };
 use tokio::time::{Duration, Instant};
+
+mod entry;
+mod expiration;
+pub mod pool;
+pub mod scan;
 
 /// Override database entries
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -64,7 +64,7 @@ impl Default for Override {
 /// The slots property is shared for all connections.
 ///
 /// To avoid lock contention this database is *not* a single HashMap, instead it is a vector of
-/// HashMaps. Each key is presharded and a bucket is selected. By doing this pre-step instead of
+/// HashMaps. Each key is pre-sharded and a bucket is selected. By doing this pre-step instead of
 /// locking the entire database, only a small portion is locked (shared or exclusively) at a time,
 /// making this database implementation thread-friendly. The number of number_of_slots available cannot be
 /// changed at runtime.
@@ -222,6 +222,24 @@ impl Db {
         }
     }
 
+    /// Return the digest for each key. This used for testing only
+    pub fn digest(&self, keys: &[Bytes]) -> Result<Vec<Value>, Error> {
+        Ok(keys
+            .iter()
+            .map(|key| {
+                let slot = self.slots[self.get_slot(key)].read();
+                Value::Blob(
+                    slot.get(key)
+                        .filter(|v| v.is_valid())
+                        .map(|v| hex::encode(&v.value.digest()))
+                        .unwrap_or("00000".into())
+                        .as_str()
+                        .into(),
+                )
+            })
+            .collect::<Vec<Value>>())
+    }
+
     /// Flushes the entire database
     pub fn flushdb(&self) -> Result<Value, Error> {
         self.expirations.lock().flush();
@@ -251,8 +269,8 @@ impl Db {
         key: &Bytes,
         incr_by: T,
     ) -> Result<Value, Error> {
-        let mut slots = self.slots[self.get_slot(key)].write();
-        match slots.get_mut(key) {
+        let mut slot = self.slots[self.get_slot(key)].write();
+        match slot.get_mut(key) {
             Some(x) => {
                 let value = x.get();
                 let mut number: T = value.try_into()?;
@@ -264,7 +282,7 @@ impl Db {
                 Ok(number.into())
             }
             None => {
-                slots.insert(
+                slot.insert(
                     key.clone(),
                     Entry::new(Value::Blob(incr_by.to_string().as_str().into()), None),
                 );
@@ -275,9 +293,8 @@ impl Db {
 
     /// Removes any expiration associated with a given key
     pub fn persist(&self, key: &Bytes) -> Value {
-        let mut slots = self.slots[self.get_slot(key)].write();
-        slots
-            .get_mut(key)
+        let mut slot = self.slots[self.get_slot(key)].write();
+        slot.get_mut(key)
             .filter(|x| x.is_valid())
             .map_or(0.into(), |x| {
                 if x.has_ttl() {
@@ -292,11 +309,10 @@ impl Db {
 
     /// Set time to live for a given key
     pub fn set_ttl(&self, key: &Bytes, expires_in: Duration) -> Value {
-        let mut slots = self.slots[self.get_slot(key)].write();
+        let mut slot = self.slots[self.get_slot(key)].write();
         let expires_at = Instant::now() + expires_in;
 
-        slots
-            .get_mut(key)
+        slot.get_mut(key)
             .filter(|x| x.is_valid())
             .map_or(0.into(), |x| {
                 self.expirations.lock().add(key, expires_at);
@@ -312,8 +328,8 @@ impl Db {
     /// command will make sure it holds a string large enough to be able to set
     /// value at offset.
     pub fn set_range(&self, key: &Bytes, offset: u64, data: &[u8]) -> Result<Value, Error> {
-        let mut slots = self.slots[self.get_slot(key)].write();
-        let value = slots.get_mut(key).map(|value| {
+        let mut slot = self.slots[self.get_slot(key)].write();
+        let value = slot.get_mut(key).map(|value| {
             if !value.is_valid() {
                 self.expirations.lock().remove(key);
                 value.persist();
@@ -336,7 +352,7 @@ impl Db {
                 bytes.resize(length, 0);
                 let writer = &mut bytes[offset as usize..];
                 writer.copy_from_slice(data);
-                slots.insert(key.clone(), Entry::new(Value::new(&bytes), None));
+                slot.insert(key.clone(), Entry::new(Value::new(&bytes), None));
                 Ok(bytes.len().into())
             }
             _ => Err(Error::WrongType),
@@ -351,13 +367,13 @@ impl Db {
         replace: Override,
         target_db: Option<Arc<Db>>,
     ) -> Result<bool, Error> {
-        let slots = self.slots[self.get_slot(source)].read();
-        let value = if let Some(value) = slots.get(source).filter(|x| x.is_valid()) {
+        let slot = self.slots[self.get_slot(source)].read();
+        let value = if let Some(value) = slot.get(source).filter(|x| x.is_valid()) {
             value.clone()
         } else {
             return Ok(false);
         };
-        drop(slots);
+        drop(slot);
 
         if let Some(db) = target_db {
             if db.db_id == self.db_id && source == target {
@@ -383,8 +399,8 @@ impl Db {
             if replace == Override::No && self.exists(&[target.clone()]) > 0 {
                 return Ok(false);
             }
-            let mut slots = self.slots[self.get_slot(target)].write();
-            slots.insert(target.clone(), value);
+            let mut slot = self.slots[self.get_slot(target)].write();
+            slot.insert(target.clone(), value);
 
             Ok(true)
         }
@@ -499,8 +515,8 @@ impl Db {
         let mut matches = 0;
         keys.iter()
             .map(|key| {
-                let slots = self.slots[self.get_slot(key)].read();
-                if slots.get(key).is_some() {
+                let slot = self.slots[self.get_slot(key)].read();
+                if slot.get(key).is_some() {
                     matches += 1;
                 }
             })
@@ -526,14 +542,14 @@ impl Db {
         F1: FnOnce(&Value) -> Result<Value, Error>,
         F2: FnOnce() -> Result<Value, Error>,
     {
-        let slots = self.slots[self.get_slot(key)].read();
-        let entry = slots.get(key).filter(|x| x.is_valid()).map(|e| e.get());
+        let slot = self.slots[self.get_slot(key)].read();
+        let entry = slot.get(key).filter(|x| x.is_valid()).map(|e| e.get());
 
         if let Some(entry) = entry {
             found(entry)
         } else {
             // drop lock
-            drop(slots);
+            drop(slot);
 
             not_found()
         }
@@ -541,9 +557,8 @@ impl Db {
 
     /// Updates the entry version of a given key
     pub fn bump_version(&self, key: &Bytes) -> bool {
-        let mut slots = self.slots[self.get_slot(key)].write();
-        slots
-            .get_mut(key)
+        let mut slot = self.slots[self.get_slot(key)].write();
+        slot.get_mut(key)
             .filter(|x| x.is_valid())
             .map(|entry| {
                 entry.bump_version();
@@ -553,9 +568,8 @@ impl Db {
 
     /// Returns the version of a given key
     pub fn get_version(&self, key: &Bytes) -> u128 {
-        let slots = self.slots[self.get_slot(key)].read();
-        slots
-            .get(key)
+        let slot = self.slots[self.get_slot(key)].read();
+        slot.get(key)
             .filter(|x| x.is_valid())
             .map(|entry| entry.version())
             .unwrap_or_else(new_version)
@@ -563,9 +577,8 @@ impl Db {
 
     /// Returns the name of the value type
     pub fn get_data_type(&self, key: &Bytes) -> String {
-        let slots = self.slots[self.get_slot(key)].read();
-        slots
-            .get(key)
+        let slot = self.slots[self.get_slot(key)].read();
+        slot.get(key)
             .filter(|x| x.is_valid())
             .map_or("none".to_owned(), |x| {
                 Typ::get_type(x.get()).to_string().to_lowercase()
@@ -574,18 +587,16 @@ impl Db {
 
     /// Get a copy of an entry
     pub fn get(&self, key: &Bytes) -> Value {
-        let slots = self.slots[self.get_slot(key)].read();
-        slots
-            .get(key)
+        let slot = self.slots[self.get_slot(key)].read();
+        slot.get(key)
             .filter(|x| x.is_valid())
             .map_or(Value::Null, |x| x.clone_value())
     }
 
     /// Get a copy of an entry and modifies the expiration of the key
     pub fn getex(&self, key: &Bytes, expires_in: Option<Duration>, make_persistent: bool) -> Value {
-        let mut slots = self.slots[self.get_slot(key)].write();
-        slots
-            .get_mut(key)
+        let mut slot = self.slots[self.get_slot(key)].write();
+        slot.get_mut(key)
             .filter(|x| x.is_valid())
             .map(|value| {
                 if make_persistent {
@@ -605,9 +616,8 @@ impl Db {
     pub fn get_multi(&self, keys: &[Bytes]) -> Value {
         keys.iter()
             .map(|key| {
-                let slots = self.slots[self.get_slot(key)].read();
-                slots
-                    .get(key)
+                let slot = self.slots[self.get_slot(key)].read();
+                slot.get(key)
                     .filter(|x| x.is_valid() && x.is_clonable())
                     .map_or(Value::Null, |x| x.clone_value())
             })
@@ -617,18 +627,17 @@ impl Db {
 
     /// Get a key or set a new value for the given key.
     pub fn getset(&self, key: &Bytes, value: Value) -> Value {
-        let mut slots = self.slots[self.get_slot(key)].write();
+        let mut slot = self.slots[self.get_slot(key)].write();
         self.expirations.lock().remove(key);
-        slots
-            .insert(key.clone(), Entry::new(value, None))
+        slot.insert(key.clone(), Entry::new(value, None))
             .filter(|x| x.is_valid())
             .map_or(Value::Null, |x| x.clone_value())
     }
 
     /// Takes an entry from the database.
     pub fn getdel(&self, key: &Bytes) -> Value {
-        let mut slots = self.slots[self.get_slot(key)].write();
-        slots.remove(key).map_or(Value::Null, |x| {
+        let mut slot = self.slots[self.get_slot(key)].write();
+        slot.remove(key).map_or(Value::Null, |x| {
             self.expirations.lock().remove(key);
             x.clone_value()
         })
@@ -636,10 +645,10 @@ impl Db {
     ///
     /// Set a key, value with an optional expiration time
     pub fn append(&self, key: &Bytes, value_to_append: &Bytes) -> Result<Value, Error> {
-        let mut slots = self.slots[self.get_slot(key)].write();
-        let mut entry = slots.get_mut(key).filter(|x| x.is_valid());
+        let mut slot = self.slots[self.get_slot(key)].write();
+        let mut entry = slot.get_mut(key).filter(|x| x.is_valid());
 
-        if let Some(entry) = slots.get_mut(key).filter(|x| x.is_valid()) {
+        if let Some(entry) = slot.get_mut(key).filter(|x| x.is_valid()) {
             match entry.get_mut() {
                 Value::Blob(value) => {
                     value.put(value_to_append.as_ref());
@@ -648,7 +657,7 @@ impl Db {
                 _ => Err(Error::WrongType),
             }
         } else {
-            slots.insert(key.clone(), Entry::new(Value::new(value_to_append), None));
+            slot.insert(key.clone(), Entry::new(Value::new(value_to_append), None));
             Ok(value_to_append.len().into())
         }
     }
@@ -670,8 +679,8 @@ impl Db {
 
         if !override_all {
             for key in keys.iter() {
-                let slots = self.slots[self.get_slot(key)].read();
-                if slots.get(key).is_some() {
+                let slot = self.slots[self.get_slot(key)].read();
+                if slot.get(key).is_some() {
                     self.unlock_keys(&keys);
                     return 0.into();
                 }
@@ -679,8 +688,8 @@ impl Db {
         }
 
         for (i, _) in key_values.iter().enumerate().step_by(2) {
-            let mut slots = self.slots[self.get_slot(&key_values[i])].write();
-            slots.insert(
+            let mut slot = self.slots[self.get_slot(&key_values[i])].write();
+            slot.insert(
                 key_values[i].clone(),
                 Entry::new(Value::new(&key_values[i + 1]), None),
             );
@@ -710,9 +719,9 @@ impl Db {
         keep_ttl: bool,
         return_previous: bool,
     ) -> Value {
-        let mut slots = self.slots[self.get_slot(key)].write();
+        let mut slot = self.slots[self.get_slot(key)].write();
         let expires_at = expires_in.map(|duration| Instant::now() + duration);
-        let previous = slots.get(key);
+        let previous = slot.get(key);
 
         let expires_at = if keep_ttl {
             if let Some(previous) = previous {
@@ -752,7 +761,7 @@ impl Db {
             self.expirations.lock().remove(key);
         }
 
-        slots.insert(key.clone(), Entry::new(value, expires_at));
+        slot.insert(key.clone(), Entry::new(value, expires_at));
 
         if let Some(to_return) = to_return {
             to_return
@@ -765,8 +774,8 @@ impl Db {
 
     /// Returns the TTL of a given key
     pub fn ttl(&self, key: &Bytes) -> Option<Option<Instant>> {
-        let slots = self.slots[self.get_slot(key)].read();
-        slots.get(key).filter(|x| x.is_valid()).map(|x| x.get_ttl())
+        let slot = self.slots[self.get_slot(key)].read();
+        slot.get(key).filter(|x| x.is_valid()).map(|x| x.get_ttl())
     }
 
     /// Check whether a given key is in the list of keys to be purged or not.
@@ -793,8 +802,8 @@ impl Db {
 
         keys.iter()
             .map(|key| {
-                let mut slots = self.slots[self.get_slot(key)].write();
-                if slots.remove(key).is_some() {
+                let mut slot = self.slots[self.get_slot(key)].write();
+                if slot.remove(key).is_some() {
                     trace!("Removed key {:?} due timeout", key);
                     removed += 1;
                 }

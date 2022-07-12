@@ -65,6 +65,17 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     }
 }
 
+/// The DEBUG command is an internal command. It is meant to be used for
+/// developing and testing Redis.
+pub async fn debug(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
+        "object" => panic!("Not implemented"),
+        "set-active-expire" => Ok(Value::Ok),
+        "digest-value" => Ok(Value::Array(conn.db().digest(&args[2..])?)),
+        _ => Err(Error::Syntax),
+    }
+}
+
 /// The INFO command returns information and statistics about the server in a
 /// format that is simple to parse by computers and easy to read by humans.
 pub async fn info(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
