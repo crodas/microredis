@@ -16,7 +16,7 @@ use tokio::time::{sleep, Duration, Instant};
 fn remove_element(
     conn: &Connection,
     key: &Bytes,
-    count: usize,
+    limit: Option<usize>,
     front: bool,
 ) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
@@ -25,15 +25,17 @@ fn remove_element(
             Value::List(x) => {
                 let mut x = x.write();
 
-                if count == 0 {
+                let limit = if let Some(limit) = limit {
+                    limit
+                } else {
                     // Return a single element
                     return Ok((if front { x.pop_front() } else { x.pop_back() })
                         .map_or(Value::Null, |x| x.clone_value()));
-                }
+                };
 
-                let mut ret = vec![None; count];
+                let mut ret = vec![None; limit];
 
-                for i in 0..count {
+                for i in 0..limit {
                     if front {
                         ret[i] = x.pop_front();
                     } else {
@@ -41,13 +43,12 @@ fn remove_element(
                     }
                 }
 
-                let ret: Vec<Value> = ret.iter().flatten().map(|m| m.clone_value()).collect();
-
-                Ok(if ret.is_empty() {
-                    Value::Null
-                } else {
-                    ret.into()
-                })
+                Ok(ret
+                    .iter()
+                    .flatten()
+                    .map(|m| m.clone_value())
+                    .collect::<Vec<Value>>()
+                    .into())
             }
             _ => Err(Error::WrongType),
         },
@@ -70,7 +71,7 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
     loop {
         for key in args[1..len].iter() {
-            match remove_element(conn, key, 0, true)? {
+            match remove_element(conn, key, None, true)? {
                 Value::Null => (),
                 n => return Ok(vec![Value::new(&key), n].into()),
             };
@@ -97,7 +98,7 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
     loop {
         for key in args[1..len].iter() {
-            match remove_element(conn, key, 0, false)? {
+            match remove_element(conn, key, None, false)? {
                 Value::Null => (),
                 n => return Ok(vec![Value::new(&key), n].into()),
             };
@@ -288,10 +289,9 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// with the optional count argument, the reply will consist of up to count elements, depending on
 /// the list's length.
 pub async fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let count = if args.len() > 2 {
-        bytes_to_number(&args[2])?
-    } else {
-        0
+    let count = match args.get(2) {
+        Some(v) => Some(bytes_to_number(&v)?),
+        None => None,
     };
 
     remove_element(conn, &args[1], count, true)
@@ -637,10 +637,9 @@ pub async fn ltrim(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// optional count argument, the reply will consist of up to count elements, depending on the
 /// list's length.
 pub async fn rpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let count = if args.len() > 2 {
-        bytes_to_number(&args[2])?
-    } else {
-        0
+    let count = match args.get(2) {
+        Some(v) => Some(bytes_to_number(&v)?),
+        None => None,
     };
 
     remove_element(conn, &args[1], count, false)
