@@ -51,6 +51,12 @@ pub enum Value {
     Ok,
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Self::Null
+    }
+}
+
 /// Value debug struct
 #[derive(Debug)]
 pub struct VDebug {

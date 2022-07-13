@@ -3,6 +3,7 @@ use crate::{
     check_arg,
     connection::{Connection, ConnectionStatus},
     error::Error,
+    try_get_arg, try_get_arg_str,
     value::bytes_to_number,
     value::checksum,
     value::Value,
@@ -298,63 +299,113 @@ pub async fn lpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// "element". If the element is found, its index (the zero-based position in the list) is
 /// returned. Otherwise, if no match is found, nil is returned.
 pub async fn lpos(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let mut index = 3;
     let element = checksum::Ref::new(&args[2]);
-    let rank = if check_arg!(args, index, "RANK") {
+    let mut rank = None;
+    let mut count = None;
+    let mut max_len = None;
+
+    let mut index = 3;
+    loop {
+        if args.len() <= index {
+            break;
+        }
+
+        let next = try_get_arg!(args, index + 1);
+        match try_get_arg_str!(args, index).to_uppercase().as_str() {
+            "RANK" => rank = Some(bytes_to_number::<i64>(&next)?),
+            "COUNT" => count = Some(bytes_to_number::<usize>(&next)?),
+            "MAXLEN" => max_len = Some(bytes_to_number::<usize>(&next)?),
+            _ => return Err(Error::Syntax),
+        }
+
         index += 2;
-        Some(bytes_to_number::<usize>(&args[index - 1])?)
+    }
+
+    let (must_reverse, rank) = if let Some(rank) = rank {
+        if rank == 0 {
+            return Err(Error::InvalidRank("RANK".to_owned()));
+        }
+        if rank < 0 {
+            (true, Some((rank * -1) as usize))
+        } else {
+            (false, Some(rank as usize))
+        }
     } else {
-        None
-    };
-    let count = if check_arg!(args, index, "COUNT") {
-        index += 2;
-        Some(bytes_to_number::<usize>(&args[index - 1])?)
-    } else {
-        None
-    };
-    let max_len = if check_arg!(args, index, "MAXLEN") {
-        index += 2;
-        bytes_to_number::<i64>(&args[index - 1])?
-    } else {
-        -1
+        (false, None)
     };
 
-    if index != args.len() {
-        return Err(Error::Syntax);
-    }
+    let max_len = max_len.unwrap_or_default();
 
     conn.db().get_map_or(
         &args[1],
         |v| match v {
             Value::List(x) => {
                 let x = x.read();
-                let mut ret: Vec<Value> = vec![];
+                let mut result: Vec<Value> = vec![];
 
-                for (i, val) in x.iter().enumerate() {
-                    if *val == element {
+                let mut values = x
+                    .iter()
+                    .enumerate()
+                    .collect::<Vec<(usize, &checksum::Value)>>();
+
+                if must_reverse {
+                    values.reverse();
+                }
+
+                let mut checks = 1;
+
+                for (id, val) in values.iter() {
+                    if **val == element {
                         // Match!
                         if let Some(count) = count {
-                            ret.push(i.into());
-                            if ret.len() > count {
-                                return Ok(ret.into());
+                            result.push((*id).into());
+                            if result.len() == count && count != 0 && rank.is_none() {
+                                // There is no point in keep looping. No RANK provided, COUNT is not 0
+                                // therefore we can return the vector of result as IS
+                                return Ok(result.into());
                             }
                         } else if let Some(rank) = rank {
-                            ret.push(i.into());
-                            if ret.len() == rank {
-                                return Ok(ret[rank - 1].clone());
+                            result.push((*id).into());
+                            if result.len() == rank {
+                                return Ok((*id).into());
                             }
                         } else {
                             // return first match!
-                            return Ok(i.into());
+                            return Ok((*id).into());
                         }
                     }
-                    if (i as i64) == max_len {
+                    if checks == max_len {
                         break;
                     }
+                    checks += 1;
+                }
+
+                if let Some(rank) = rank {
+                    let rank = rank - 1;
+
+                    let result = if rank < result.len() {
+                        (&result[rank..]).to_vec()
+                    } else {
+                        vec![]
+                    };
+
+                    return Ok(if let Some(count) = count {
+                        if count > 0 && count < result.len() {
+                            (&result[0..count]).to_vec().into()
+                        } else {
+                            result.to_vec().into()
+                        }
+                    } else {
+                        result
+                            .to_vec()
+                            .get(0)
+                            .map(|c| c.clone())
+                            .unwrap_or_default()
+                    });
                 }
 
                 if count.is_some() {
-                    Ok(ret.into())
+                    Ok(result.into())
                 } else {
                     Ok(Value::Null)
                 }
@@ -1162,6 +1213,104 @@ mod test {
     }
 
     #[tokio::test]
+    async fn lpos_with_negative_rank_with_count() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Integer(8)),
+            run_command(
+                &c,
+                &["RPUSH", "mylist", "a", "b", "c", "1", "2", "3", "c", "c"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Integer(7), Value::Integer(6)])),
+            run_command(&c, &["lpos", "mylist", "c", "count", "2", "rank", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lpos_with_negative_rank_with_count_max_len() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Integer(8)),
+            run_command(
+                &c,
+                &["RPUSH", "mylist", "a", "b", "c", "1", "2", "3", "c", "c"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Integer(7), Value::Integer(6)])),
+            run_command(
+                &c,
+                &["lpos", "mylist", "c", "count", "0", "maxlen", "3", "rank", "-1"]
+            )
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn lpos_rank_with_count() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Integer(8)),
+            run_command(
+                &c,
+                &["RPUSH", "mylist", "a", "b", "c", "1", "2", "3", "c", "c"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Integer(6), Value::Integer(7)])),
+            run_command(&c, &["lpos", "mylist", "c", "count", "0", "rank", "2"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lpos_all_settings() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Integer(8)),
+            run_command(
+                &c,
+                &["RPUSH", "mylist", "a", "b", "c", "1", "2", "3", "c", "c"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Integer(6)])),
+            run_command(
+                &c,
+                &["lpos", "mylist", "c", "count", "0", "rank", "2", "maxlen", "7"]
+            )
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn lpos_negative_rank() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Integer(8)),
+            run_command(
+                &c,
+                &["RPUSH", "mylist", "a", "b", "c", "1", "2", "3", "c", "c"]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Integer(7)),
+            run_command(&c, &["lpos", "mylist", "c", "rank", "-1"]).await
+        );
+    }
+
+    #[tokio::test]
     async fn lpos_single_skip() {
         let c = create_connection();
         assert_eq!(
@@ -1223,11 +1372,7 @@ mod test {
         );
 
         assert_eq!(
-            Ok(Value::Array(vec![
-                Value::Integer(6),
-                Value::Integer(8),
-                Value::Integer(9),
-            ])),
+            Ok(Value::Array(vec![Value::Integer(6), Value::Integer(8),])),
             run_command(&c, &["lpos", "mylist", "3", "count", "5", "maxlen", "9"]).await
         );
     }

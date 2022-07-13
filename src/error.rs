@@ -23,8 +23,11 @@ pub enum Error {
     #[error("Subcommand {0} / {1} not found")]
     SubCommandNotFound(String, String),
     /// Invalid number of arguments
-    #[error("Invalid number of argumetns for command {0}")]
+    #[error("Invalid number of arguments for command {0}")]
     InvalidArgsCount(String),
+    /// Invalid Rank value
+    #[error("{0} can't be zero: use 1 to start from the first match, 2 from the second, ...")]
+    InvalidRank(String),
     /// The glob-pattern is not valid
     #[error("Invalid pattern {0}")]
     InvalidPattern(String),

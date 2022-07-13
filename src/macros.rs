@@ -229,6 +229,13 @@ macro_rules! try_get_arg {
         }
     }}
 }
+/// Reads an argument index as an utf-8 string or return an Error::Syntax
+#[macro_export]
+macro_rules! try_get_arg_str {
+    {$args: tt, $pos: expr} => {{
+        String::from_utf8_lossy(try_get_arg!($args, $pos))
+    }}
+}
 
 /// Convert a stream to a Bytes
 #[macro_export]
