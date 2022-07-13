@@ -125,16 +125,19 @@ pub async fn lindex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 let mut index: i64 = bytes_to_number(&args[2])?;
                 let x = x.read();
 
-                if index < 0 {
-                    index += x.len() as i64;
-                }
+                let index = if index < 0 {
+                    x.len()
+                        .checked_sub((index * -1) as usize)
+                        .unwrap_or(x.len())
+                } else {
+                    index as usize
+                };
 
-                Ok(x.get(index as usize)
-                    .map_or(Value::Null, |x| x.clone_value()))
+                Ok(x.get(index).map_or(Value::Null, |x| x.clone_value()))
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(0.into()),
+        || Ok(Value::Null),
     )
 }
 
