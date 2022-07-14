@@ -67,6 +67,9 @@ pub enum Error {
     /// Byte cannot be converted to a number
     #[error("value is not a valid number or out of range")]
     NotANumber,
+    /// Unexpected negative number
+    #[error("{0} is negative")]
+    NegativeNumber(String),
     /// The connection is not in a transaction
     #[error(" without MULTI")]
     NotInTx,

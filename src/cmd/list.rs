@@ -74,12 +74,7 @@ fn remove_element(
 /// popped from the head of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout = bytes_to_number::<u64>(&args[args.len() - 1])?;
-    let timeout = if timeout == 0 {
-        None
-    } else {
-        Some(Instant::now() + Duration::from_secs(timeout))
-    };
+    let timeout = parse_timeout(&args[args.len() - 1])?;
     let len = args.len() - 1;
 
     loop {
@@ -106,17 +101,27 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     Ok(Value::Null)
 }
 
+fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
+    let raw_timeout = bytes_to_number::<f64>(arg)?;
+    if raw_timeout < 0f64 {
+        return Err(Error::NegativeNumber("timeout".to_owned()));
+    }
+
+    if raw_timeout == 0.0 {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        Instant::now() + Duration::from_micros((raw_timeout * 1000f64).round() as u64),
+    ))
+}
+
 /// BRPOP is a blocking list pop primitive. It is the blocking version of RPOP because it blocks
 /// the connection when there are no elements to pop from any of the given lists. An element is
 /// popped from the tail of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout = bytes_to_number::<u64>(&args[args.len() - 1])?;
-    let timeout = if timeout == 0 {
-        None
-    } else {
-        Some(Instant::now() + Duration::from_secs(timeout))
-    };
+    let timeout = parse_timeout(&args[args.len() - 1])?;
     let len = args.len() - 1;
 
     loop {
