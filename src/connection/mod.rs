@@ -29,6 +29,15 @@ impl Default for ConnectionStatus {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+/// Reason while a client was unblocked
+pub enum UnblockReason {
+    /// Timeout
+    Timeout,
+    /// Throw an error
+    Error,
+}
+
 /// Connection information
 #[derive(Debug)]
 pub struct ConnectionInfo {
@@ -39,6 +48,8 @@ pub struct ConnectionInfo {
     tx_keys: HashSet<Bytes>,
     status: ConnectionStatus,
     commands: Option<Vec<Vec<Bytes>>>,
+    is_blocked: bool,
+    unblock_reason: Option<UnblockReason>,
 }
 
 /// Connection
@@ -62,6 +73,8 @@ impl ConnectionInfo {
             tx_keys: HashSet::new(),
             commands: None,
             status: ConnectionStatus::Normal,
+            is_blocked: false,
+            unblock_reason: None,
         }
     }
 }
@@ -95,6 +108,30 @@ impl Connection {
             }
             _ => Err(Error::NestedTx),
         }
+    }
+
+    /// Block the connection
+    pub fn block(&self) {
+        let mut info = self.info.write();
+        info.is_blocked = true;
+        info.unblock_reason = None;
+    }
+
+    /// Unblock connection
+    pub fn unblock(&self, reason: UnblockReason) -> bool {
+        let mut info = self.info.write();
+        if info.is_blocked {
+            info.is_blocked = false;
+            info.unblock_reason = Some(reason);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// If the current connection has been externally unblocked
+    pub fn is_unblocked(&self) -> Option<UnblockReason> {
+        self.info.read().unblock_reason
     }
 
     /// Connection ID

@@ -74,6 +74,11 @@ impl Connections {
         (pubsub_receiver, conn)
     }
 
+    /// Get a connection by their connection id
+    pub fn get_by_conn_id(&self, conn_id: u128) -> Option<Arc<Connection>> {
+        self.connections.read().get(&conn_id).cloned()
+    }
+
     /// Iterates over all connections
     pub fn iter(&self, f: &mut dyn FnMut(Arc<Connection>)) {
         for (_, value) in self.connections.read().iter() {

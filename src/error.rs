@@ -85,6 +85,10 @@ pub enum Error {
     /// Cursor error
     #[error("Error while creating or parsing the cursor: {0}")]
     Cursor(#[from] crate::value::cursor::Error),
+    /// The connection has been unblocked by another connection and it wants to signal it
+    /// through an error.
+    #[error("client unblocked via CLIENT UNBLOCK")]
+    UnblockByError,
 }
 
 impl From<std::io::Error> for Error {
@@ -99,6 +103,7 @@ impl From<Error> for Value {
             Error::WrongType => "WRONGTYPE",
             Error::NestedTx => "ERR MULTI",
             Error::NotInTx => "ERR EXEC",
+            Error::UnblockByError => "UNBLOCKED",
             _ => "ERR",
         };
 

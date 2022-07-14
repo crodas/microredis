@@ -1,7 +1,7 @@
 //!  # Client-group command handlers
 
 use crate::{
-    connection::Connection,
+    connection::{Connection, UnblockReason},
     error::Error,
     option,
     value::{bytes_to_number, Value},
@@ -17,15 +17,18 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let sub = String::from_utf8_lossy(&args[1]);
 
     let expected = match sub.to_lowercase().as_str() {
-        "setname" => 3,
-        _ => 2,
+        "setname" => Some(3),
+        "unblock" => None,
+        _ => Some(2),
     };
 
-    if args.len() != expected {
-        return Err(Error::WrongArgument(
-            "client".to_owned(),
-            sub.to_uppercase(),
-        ));
+    if let Some(expected) = expected {
+        if args.len() != expected {
+            return Err(Error::WrongArgument(
+                "client".to_owned(),
+                sub.to_uppercase(),
+            ));
+        }
     }
 
     match sub.to_lowercase().as_str() {
@@ -37,6 +40,29 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             conn.all_connections()
                 .iter(&mut |conn: Arc<Connection>| list_client.push_str(&conn.to_string()));
             Ok(list_client.into())
+        }
+        "unblock" => {
+            let reason = match args.get(3) {
+                Some(x) => match String::from_utf8_lossy(&x).to_uppercase().as_str() {
+                    "TIMEOUT" => UnblockReason::Timeout,
+                    "ERROR" => UnblockReason::Error,
+                    _ => return Err(Error::Syntax),
+                },
+                None => UnblockReason::Timeout,
+            };
+            let other_conn = match conn
+                .all_connections()
+                .get_by_conn_id(bytes_to_number(&args[2])?)
+            {
+                Some(conn) => conn,
+                None => return Ok(0.into()),
+            };
+
+            Ok(if other_conn.unblock(reason) {
+                1.into()
+            } else {
+                0.into()
+            })
         }
         "setname" => {
             let name = String::from_utf8_lossy(&args[2]).to_string();

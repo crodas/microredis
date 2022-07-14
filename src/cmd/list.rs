@@ -1,7 +1,7 @@
 //! # List command handlers
 use crate::{
     check_arg,
-    connection::{Connection, ConnectionStatus},
+    connection::{Connection, ConnectionStatus, UnblockReason},
     error::Error,
     try_get_arg, try_get_arg_str,
     value::bytes_to_number,
@@ -77,6 +77,8 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let timeout = parse_timeout(&args[args.len() - 1])?;
     let len = args.len() - 1;
 
+    conn.block();
+
     loop {
         for key in args[1..len].iter() {
             match remove_element(conn, key, None, true)? {
@@ -87,12 +89,21 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
         if let Some(timeout) = timeout {
             if Instant::now() >= timeout {
+                conn.unblock(UnblockReason::Timeout);
                 break;
             }
         }
 
         if conn.status() == ConnectionStatus::ExecutingTx {
+            conn.unblock(UnblockReason::Timeout);
             break;
+        }
+
+        if let Some(reason) = conn.is_unblocked() {
+            return match reason {
+                UnblockReason::Error => Err(Error::UnblockByError),
+                UnblockReason::Timeout => Ok(Value::Null),
+            };
         }
 
         sleep(Duration::from_millis(100)).await;
@@ -124,6 +135,8 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let timeout = parse_timeout(&args[args.len() - 1])?;
     let len = args.len() - 1;
 
+    conn.block();
+
     loop {
         for key in args[1..len].iter() {
             match remove_element(conn, key, None, false)? {
@@ -134,11 +147,20 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
         if let Some(timeout) = timeout {
             if Instant::now() >= timeout {
+                conn.unblock(UnblockReason::Timeout);
                 break;
             }
         }
         if conn.status() == ConnectionStatus::ExecutingTx {
+            conn.unblock(UnblockReason::Timeout);
             break;
+        }
+
+        if let Some(reason) = conn.is_unblocked() {
+            return match reason {
+                UnblockReason::Error => Err(Error::UnblockByError),
+                UnblockReason::Timeout => Ok(Value::Null),
+            };
         }
 
         sleep(Duration::from_millis(100)).await;
@@ -770,7 +792,7 @@ mod test {
             run_command(&c, &["blpop", "foobar", "1"]).await
         );
 
-        assert!(Instant::now() - x > Duration::from_millis(1000));
+        assert!(Instant::now() - x <= Duration::from_millis(1000));
     }
 
     #[tokio::test]
@@ -950,7 +972,7 @@ mod test {
             run_command(&c, &["brpop", "foobar", "1"]).await
         );
 
-        assert!(Instant::now() - x > Duration::from_millis(1000));
+        assert!(Instant::now() - x < Duration::from_millis(1000));
     }
 
     #[tokio::test]
