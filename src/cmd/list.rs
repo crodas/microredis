@@ -19,7 +19,9 @@ fn remove_element(
     limit: Option<usize>,
     front: bool,
 ) -> Result<Value, Error> {
-    let result = conn.db().get_map_or(
+    let db = conn.db();
+    let mut new_len = 0;
+    let result = db.get_map_or(
         key,
         |v| match v {
             Value::List(x) => {
@@ -29,8 +31,10 @@ fn remove_element(
                     limit
                 } else {
                     // Return a single element
-                    return Ok((if front { x.pop_front() } else { x.pop_back() })
+                    let ret = Ok((if front { x.pop_front() } else { x.pop_back() })
                         .map_or(Value::Null, |x| x.clone_value()));
+                    new_len = x.len();
+                    return ret;
                 };
 
                 let mut ret = vec![None; limit];
@@ -42,6 +46,7 @@ fn remove_element(
                         ret[i] = x.pop_back();
                     }
                 }
+                new_len = x.len();
 
                 Ok(ret
                     .iter()
@@ -55,7 +60,11 @@ fn remove_element(
         || Ok(Value::Null),
     )?;
 
-    conn.db().bump_version(key);
+    if new_len == 0 {
+        let _ = db.del(&[key.clone()]);
+    } else {
+        db.bump_version(key);
+    }
 
     Ok(result)
 }
