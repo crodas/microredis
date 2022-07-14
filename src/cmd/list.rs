@@ -65,8 +65,12 @@ fn remove_element(
 /// popped from the head of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout =
-        Instant::now() + Duration::from_secs(bytes_to_number::<u64>(&args[args.len() - 1])?);
+    let timeout = bytes_to_number::<u64>(&args[args.len() - 1])?;
+    let timeout = if timeout == 0 {
+        None
+    } else {
+        Some(Instant::now() + Duration::from_secs(timeout))
+    };
     let len = args.len() - 1;
 
     loop {
@@ -77,7 +81,13 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if Instant::now() >= timeout || conn.status() == ConnectionStatus::ExecutingTx {
+        if let Some(timeout) = timeout {
+            if Instant::now() >= timeout {
+                break;
+            }
+        }
+
+        if conn.status() == ConnectionStatus::ExecutingTx {
             break;
         }
 
@@ -92,8 +102,12 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// popped from the tail of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout =
-        Instant::now() + Duration::from_secs(bytes_to_number::<u64>(&args[args.len() - 1])?);
+    let timeout = bytes_to_number::<u64>(&args[args.len() - 1])?;
+    let timeout = if timeout == 0 {
+        None
+    } else {
+        Some(Instant::now() + Duration::from_secs(timeout))
+    };
     let len = args.len() - 1;
 
     loop {
@@ -104,7 +118,12 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if Instant::now() >= timeout || conn.status() == ConnectionStatus::ExecutingTx {
+        if let Some(timeout) = timeout {
+            if Instant::now() >= timeout {
+                break;
+            }
+        }
+        if conn.status() == ConnectionStatus::ExecutingTx {
             break;
         }
 
