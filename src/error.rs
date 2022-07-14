@@ -17,28 +17,28 @@ pub enum Error {
     #[error("No command provided")]
     EmptyLine,
     /// A command is not found
-    #[error("Command {0} not found")]
+    #[error("unknown command `{0}`")]
     CommandNotFound(String),
     /// A sub-command is not found
-    #[error("Subcommand {0} / {1} not found")]
+    #[error("Unknown subcommand or wrong number of arguments for '{0}'. Try {1} HELP.")]
     SubCommandNotFound(String, String),
     /// Invalid number of arguments
-    #[error("Invalid number of arguments for command {0}")]
+    #[error("wrong number of arguments for '{0}' command")]
     InvalidArgsCount(String),
     /// Invalid Rank value
     #[error("{0} can't be zero: use 1 to start from the first match, 2 from the second, ...")]
     InvalidRank(String),
     /// The glob-pattern is not valid
-    #[error("Invalid pattern {0}")]
+    #[error("'{0}' is not a valid pattern")]
     InvalidPattern(String),
     /// Internal Error
-    #[error("Internal error")]
+    #[error("internal error")]
     Internal,
     /// Protocol error
-    #[error("Protocol error {0} expecting {1}")]
+    #[error("Protocol error: expected '{1}', got '{0}'")]
     Protocol(String, String),
     /// Unexpected argument
-    #[error("Wrong argument {1} for command {0}")]
+    #[error("Unknown subcommand or wrong number of arguments for '{1}'. Try {0} HELP.")]
     WrongArgument(String, String),
     /// We cannot incr by infinity
     #[error("increment would produce NaN or Infinity")]
@@ -47,37 +47,37 @@ pub enum Error {
     #[error("wrong number of arguments for '{0}' command")]
     WrongNumberArgument(String),
     /// Key not found
-    #[error("Key not found")]
+    #[error("no such key")]
     NotFound,
     /// Index out of range
-    #[error("Index out of range")]
+    #[error("index out of range")]
     OutOfRange,
     /// String is bigger than max allowed size
     #[error("string exceeds maximum allowed size (proto-max-bulk-len)")]
     MaxAllowedSize,
     /// Attempting to move or copy to the same key
-    #[error("Cannot move same key")]
+    #[error("source and destination objects are the same")]
     SameEntry,
-    /// The connection is in pubsub only mode and the current command is not compabible.
-    #[error("Invalid command {0} in pubsub mode")]
+    /// The connection is in pubsub only mode and the current command is not compatible.
+    #[error("Can't execute '{0}': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context")]
     PubsubOnly(String),
     /// Syntax error
-    #[error("Syntax error")]
+    #[error("syntax error")]
     Syntax,
     /// Byte cannot be converted to a number
-    #[error("Not a number")]
+    #[error("value is not a valid number or out of range")]
     NotANumber,
     /// The connection is not in a transaction
-    #[error("Not in a transaction")]
+    #[error(" without MULTI")]
     NotInTx,
     /// The requested database does not exists
-    #[error("Database does not exists")]
+    #[error("DB index is out of range")]
     NotSuchDatabase,
     /// The connection is in a transaction and nested transactions are not supported
-    #[error("Nested transaction not allowed")]
+    #[error("calls can not be nested")]
     NestedTx,
     /// Wrong data type
-    #[error("Wrong type")]
+    #[error("Operation against a key holding the wrong kind of value")]
     WrongType,
     /// Cursor error
     #[error("Error while creating or parsing the cursor: {0}")]
@@ -99,35 +99,6 @@ impl From<Error> for Value {
             _ => "ERR",
         };
 
-        let err_msg = match value {
-            Error::Cursor(_) => "internal error".to_owned(),
-            Error::CommandNotFound(x) => format!("unknown command `{}`", x),
-            Error::SubCommandNotFound(x, y) => format!("Unknown subcommand or wrong number of arguments for '{}'. Try {} HELP.", x, y),
-            Error::InvalidArgsCount(x) => format!("wrong number of arguments for '{}' command", x),
-            Error::InvalidPattern(x) => format!("'{}' is not a valid pattern", x),
-            Error::Internal => "internal error".to_owned(),
-            Error::Protocol(x, y) => format!("Protocol error: expected '{}', got '{}'", x, y),
-            Error::NotInTx => " without MULTI".to_owned(),
-            Error::SameEntry => "source and destination objects are the same".to_owned(),
-            Error::NotANumber => "value is not a valid number or out of range".to_owned(),
-            Error::OutOfRange => "index out of range".to_owned(),
-            Error::Syntax => "syntax error".to_owned(),
-            Error::NotFound => "no such key".to_owned(),
-            Error::NotSuchDatabase => "DB index is out of range".to_owned(),
-            Error::NestedTx => "calls can not be nested".to_owned(),
-            Error::Io(io) => format!("io error: {}", io),
-            Error::Config(c) => format!("failed to parse config: {}", c),
-            Error::PubsubOnly(x) => format!("Can't execute '{}': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context", x),
-            Error::WrongArgument(x, y) => format!(
-                "Unknown subcommand or wrong number of arguments for '{}'. Try {} HELP.",
-                y, x
-            ),
-            Error::WrongType => {
-                "Operation against a key holding the wrong kind of value".to_owned()
-            }
-            _ => value.to_string(),
-        };
-
-        Value::Err(err_type.to_string(), err_msg)
+        Value::Err(err_type.to_string(), value.to_string())
     }
 }
