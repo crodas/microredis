@@ -67,6 +67,9 @@ pub enum Error {
     /// Byte cannot be converted to a number
     #[error("value is not a valid number or out of range")]
     NotANumber,
+    /// Not a number with specific number type
+    #[error("value is not {0} or out of range")]
+    NotANumberType(String),
     /// Unexpected negative number
     #[error("{0} is negative")]
     NegativeNumber(String),

@@ -50,10 +50,10 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 },
                 None => UnblockReason::Timeout,
             };
-            let other_conn = match conn
-                .all_connections()
-                .get_by_conn_id(bytes_to_number(&args[2])?)
-            {
+            let other_conn = match conn.all_connections().get_by_conn_id(
+                bytes_to_number(&args[2])
+                    .map_err(|_| Error::NotANumberType("an integer".to_owned()))?,
+            ) {
                 Some(conn) => conn,
                 None => return Ok(0.into()),
             };
