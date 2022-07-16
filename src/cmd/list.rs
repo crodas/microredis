@@ -536,23 +536,34 @@ pub async fn lrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         &args[1],
         |v| match v {
             Value::List(x) => {
-                let mut start: i64 = bytes_to_number(&args[2])?;
-                let mut end: i64 = bytes_to_number(&args[3])?;
+                let start: i64 = bytes_to_number(&args[2])?;
+                let end: i64 = bytes_to_number(&args[3])?;
                 let mut ret = vec![];
                 let x = x.read();
 
-                if start < 0 {
-                    start += x.len() as i64;
-                }
+                let start = if start < 0 {
+                    x.len()
+                        .checked_sub((start * -1) as usize)
+                        .unwrap_or_default()
+                } else {
+                    (start as usize)
+                };
 
-                if end < 0 {
-                    end += x.len() as i64;
-                }
-
-                for (i, val) in x.iter().enumerate() {
-                    if i >= start as usize && i <= end as usize {
-                        ret.push(val.clone_value());
+                let end = if end < 0 {
+                    if let Some(x) = x.len().checked_sub((end * -1) as usize) {
+                        x
+                    } else {
+                        return Ok(Value::Array((vec![])));
                     }
+                } else {
+                    end as usize
+                };
+
+                for (i, val) in x.iter().enumerate().skip(start) {
+                    if i > end {
+                        break;
+                    }
+                    ret.push(val.clone_value());
                 }
                 Ok(ret.into())
             }
@@ -1772,6 +1783,57 @@ mod test {
         assert_eq!(
             Ok(Value::Integer(0)),
             run_command(&c, &["rpushx", "foobar", "6", "7", "8", "9", "10"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn lrange_test_1() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(10)),
+            run_command(
+                &c,
+                &[
+                    "rpush",
+                    "mylist",
+                    "largevalue",
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "7",
+                    "8",
+                    "9"
+                ]
+            )
+            .await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec![
+                "1".into(),
+                "2".into(),
+                "3".into(),
+                "4".into(),
+                "5".into(),
+                "6".into(),
+                "7".into(),
+                "8".into()
+            ])),
+            run_command(&c, &["lrange", "mylist", "1", "-2"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec!["7".into(), "8".into(), "9".into()])),
+            run_command(&c, &["lrange", "mylist", "-3", "-1"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Array(vec!["4".into()])),
+            run_command(&c, &["lrange", "mylist", "4", "4"]).await
         );
     }
 }
