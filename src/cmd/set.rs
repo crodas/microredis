@@ -248,7 +248,13 @@ pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(0.into()),
+        || {
+            Ok((&args[2..])
+                .iter()
+                .map(|_| 0.into())
+                .collect::<Vec<Value>>()
+                .into())
+        },
     )
 }
 
