@@ -313,35 +313,38 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Set(set1) => {
-                if !set1.read().contains(&args[3]) {
-                    return Ok(0.into());
-                }
-
-                conn.db().get_map_or(
-                    &args[2],
-                    |v| match v {
-                        Value::Set(set2) => {
-                            let mut set2 = set2.write();
-                            set1.write().remove(&args[3]);
-                            if set2.insert(args[3].clone()) {
-                                Ok(1.into())
-                            } else {
-                                Ok(0.into())
-                            }
+            Value::Set(set1) => conn.db().get_map_or(
+                &args[2],
+                |v| match v {
+                    Value::Set(set2) => {
+                        let mut set1 = set1.write();
+                        if !set1.contains(&args[3]) {
+                            return Ok(0.into());
                         }
-                        _ => Err(Error::WrongType),
-                    },
-                    || {
-                        set1.write().remove(&args[3]);
-                        #[allow(clippy::mutable_key_type)]
-                        let mut x = HashSet::new();
-                        x.insert(args[3].clone());
-                        conn.db().set(&args[2], x.into(), None);
-                        Ok(1.into())
-                    },
-                )
-            }
+
+                        if args[1] == args[2] {
+                            return Ok(1.into());
+                        }
+
+                        let mut set2 = set2.write();
+                        set1.remove(&args[3]);
+                        if set2.insert(args[3].clone()) {
+                            Ok(1.into())
+                        } else {
+                            Ok(0.into())
+                        }
+                    }
+                    _ => Err(Error::WrongType),
+                },
+                || {
+                    set1.write().remove(&args[3]);
+                    #[allow(clippy::mutable_key_type)]
+                    let mut x = HashSet::new();
+                    x.insert(args[3].clone());
+                    conn.db().set(&args[2], x.into(), None);
+                    Ok(1.into())
+                },
+            ),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),

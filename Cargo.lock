@@ -822,9 +822,9 @@ dependencies = [
 
 [[package]]
 name = "redis-zero-protocol-parser"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a6816141aa20c0569f7752fd2e0390f59b887a60797422633f57d47c2271fe8"
+checksum = "ce09ac67be4dea57370b1f198244d9da12df26c09a3ccd33a88a6a2478528773"
 
 [[package]]
 name = "redox_syscall"

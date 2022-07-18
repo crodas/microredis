@@ -261,6 +261,7 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// Sets field in the hash stored at key to value. If key does not exist, a new key holding a hash
 /// is created. If field already exists in the hash, it is overwritten.
 pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let is_hmset = check_arg!(args, 0, "HMSET");
     if args.len() % 2 == 1 {
         return Err(Error::InvalidArgsCount("hset".to_owned()));
     }
@@ -275,7 +276,11 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                         e += 1;
                     }
                 }
-                Ok(e.into())
+                if is_hmset {
+                    Ok(Value::Ok)
+                } else {
+                    Ok(e.into())
+                }
             }
             _ => Err(Error::WrongType),
         },
@@ -287,7 +292,11 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             }
             let len = h.len();
             conn.db().set(&args[1], h.into(), None);
-            Ok(len.into())
+            if is_hmset {
+                Ok(Value::Ok)
+            } else {
+                Ok(len.into())
+            }
         },
     )?;
 

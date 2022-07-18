@@ -126,7 +126,7 @@ macro_rules! dispatcher {
                     match command.as_str() {
                         $($(
                             stringify!($command) => {
-                                log::info!("Command: {}", stringify!($command));
+                                //log::info!("Command: {} -> {:?}", stringify!($command), args);
                                 let command = &self.$command;
                                 if ! command.check_number_args(args.len()) {
                                     Err(Error::InvalidArgsCount(command.name().into()))
