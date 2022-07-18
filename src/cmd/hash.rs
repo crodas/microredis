@@ -15,6 +15,7 @@ use std::{
 /// within this hash are ignored. If key does not exist, it is treated as an empty hash and this
 /// command returns 0.
 pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let mut is_empty = false;
     let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -28,6 +29,8 @@ pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     }
                 }
 
+                is_empty = h.len() == 0;
+
                 Ok(total.into())
             }
             _ => Err(Error::WrongType),
@@ -35,7 +38,11 @@ pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         || Ok(0.into()),
     )?;
 
-    conn.db().bump_version(&args[1]);
+    if is_empty {
+        let _ = conn.db().del(&[args[1].clone()]);
+    } else {
+        conn.db().bump_version(&args[1]);
+    }
 
     Ok(result)
 }
