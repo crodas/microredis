@@ -189,7 +189,13 @@ pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(Value::Array(vec![])),
+        || {
+            Ok((&args[2..])
+                .iter()
+                .map(|_| Value::Null)
+                .collect::<Vec<Value>>()
+                .into())
+        },
     )
 }
 
