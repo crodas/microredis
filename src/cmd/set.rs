@@ -418,15 +418,45 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
                 items.sort_by(|a, b| a.1.cmp(&b.1));
 
                 if args.len() == 2 {
-                    let item = items[0].0.clone();
-                    Ok(Value::new(&item))
+                    // Two arguments provided, return the first element or null if the array is null
+                    if items.is_empty() {
+                        Ok(Value::Null)
+                    } else {
+                        let item = items[0].0.clone();
+                        Ok(Value::new(&item))
+                    }
                 } else {
-                    let len: usize = min(items.len(), bytes_to_number(&args[2])?);
-                    Ok(items[0..len]
-                        .iter()
-                        .map(|item| Value::new(&item.0))
-                        .collect::<Vec<Value>>()
-                        .into())
+                    if items.is_empty() {
+                        return Ok(Value::Array(vec![]));
+                    }
+                    let len = bytes_to_number::<i64>(&args[2])?;
+
+                    if len > 0 {
+                        // required length is positive, return *up* to the requested number and no duplicated allowed
+                        let len: usize = min(items.len(), len as usize);
+                        Ok(items[0..len]
+                            .iter()
+                            .map(|item| Value::new(&item.0))
+                            .collect::<Vec<Value>>()
+                            .into())
+                    } else {
+                        // duplicated results are allowed and the requested number must be returned
+                        let len = (len * -1) as usize;
+                        let total = items.len() - 1;
+                        let mut i = 0;
+                        let items = (0..len)
+                            .map(|_| {
+                                let r = (items[i].0, rng.gen());
+                                i = if i >= total { 0 } else { i + 1 };
+                                r
+                            })
+                            .collect::<Vec<(&Bytes, i128)>>();
+                        Ok(items
+                            .iter()
+                            .map(|item| Value::new(&item.0))
+                            .collect::<Vec<Value>>()
+                            .into())
+                    }
                 }
             }
             _ => Err(Error::WrongType),
