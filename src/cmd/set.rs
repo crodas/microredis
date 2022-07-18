@@ -58,7 +58,35 @@ where
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(Value::Array(vec![])),
+        || {
+            #[allow(clippy::mutable_key_type)]
+            let mut all_entries: HashSet<Bytes> = HashSet::new();
+            for key in keys[1..].iter() {
+                let mut do_break = false;
+                let _ = conn.db().get_map_or(
+                    key,
+                    |v| match v {
+                        Value::Set(x) => {
+                            if !op(&mut all_entries, &x.read()) {
+                                do_break = true;
+                            }
+                            Ok(Value::Null)
+                        }
+                        _ => Err(Error::WrongType),
+                    },
+                    || Ok(Value::Null),
+                )?;
+                if do_break {
+                    break;
+                }
+            }
+
+            Ok(all_entries
+                .iter()
+                .map(|entry| Value::new(&entry))
+                .collect::<Vec<Value>>()
+                .into())
+        },
     )
 }
 
@@ -791,6 +819,35 @@ mod test {
         assert_eq!(
             6,
             if let Ok(Value::Array(x)) = run_command(&c, &["sunion", "1", "2", "3"]).await {
+                x.len()
+            } else {
+                0
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn sunion_first_key_do_not_exists() {
+        let c = create_connection();
+
+        assert_eq!(
+            run_command(&c, &["sadd", "1", "a", "b", "c", "d"]).await,
+            run_command(&c, &["scard", "1"]).await
+        );
+
+        assert_eq!(
+            run_command(&c, &["sadd", "2", "c", "x"]).await,
+            run_command(&c, &["scard", "2"]).await
+        );
+
+        assert_eq!(
+            run_command(&c, &["sadd", "3", "a", "c", "e"]).await,
+            run_command(&c, &["scard", "3"]).await
+        );
+
+        assert_eq!(
+            6,
+            if let Ok(Value::Array(x)) = run_command(&c, &["sunion", "0", "1", "2", "3"]).await {
                 x.len()
             } else {
                 0
