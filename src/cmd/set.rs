@@ -385,7 +385,7 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(0.into()),
+        || Ok(Value::Null),
     )?;
 
     conn.db().bump_version(&args[1]);
@@ -431,7 +431,13 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(0.into()),
+        || {
+            Ok(if args.len() == 2 {
+                Value::Null
+            } else {
+                Value::Array(vec![])
+            })
+        },
     )
 }
 
