@@ -168,7 +168,12 @@ pub async fn sdiff(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// If destination already exists, it is overwritten.
 pub async fn sdiffstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sdiff(conn, &args[1..]).await? {
-        Ok(store(conn, &args[1], &values).into())
+        if values.len() > 0 {
+            Ok(store(conn, &args[1], &values).into())
+        } else {
+            let _ = conn.db().del(&[args[1].clone()]);
+            Ok(0.into())
+        }
     } else {
         Ok(0.into())
     }
