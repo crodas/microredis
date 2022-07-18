@@ -379,7 +379,7 @@ dispatcher! {
             true,
         },
         HINCRBY {
-            cmd::hash::hincrby::<i64>,
+            cmd::hash::hincrby_int,
             [Flag::Write Flag::DenyOom Flag::Fast],
             4,
             1,
@@ -388,7 +388,7 @@ dispatcher! {
             true,
         },
         HINCRBYFLOAT {
-            cmd::hash::hincrby::<f64>,
+            cmd::hash::hincrby_float,
             [Flag::Write Flag::DenyOom Flag::Fast],
             4,
             1,

@@ -105,37 +105,24 @@ pub async fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// specified increment. If the increment value is negative, the result is to have the hash field
 /// value decremented instead of incremented. If the field does not exist, it is set to 0 before
 /// performing the operation.
-pub async fn hincrby<
-    T: ToString + FromStr + AddAssign + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
->(
-    conn: &Connection,
-    args: &[Bytes],
-) -> Result<Value, Error> {
-    let result = conn.db().get_map_or(
-        &args[1],
-        |v| match v {
-            Value::Hash(h) => {
-                let mut incr_by: T = bytes_to_number(&args[3])?;
-                let mut h = h.write();
-                if let Some(n) = h.get(&args[2]) {
-                    incr_by += bytes_to_number(n)?;
-                }
+pub async fn hincrby_int(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let result = conn
+        .db()
+        .hincrby::<i64>(&args[1], &args[2], &args[3], "an integer")?;
 
-                h.insert(args[2].clone(), incr_by.to_string().into());
+    conn.db().bump_version(&args[1]);
 
-                Ok(incr_by.into())
-            }
-            _ => Err(Error::WrongType),
-        },
-        || {
-            let incr_by: T = bytes_to_number(&args[3])?;
-            #[allow(clippy::mutable_key_type)]
-            let mut h = HashMap::new();
-            h.insert(args[2].clone(), incr_by.to_string().into());
-            conn.db().set(&args[1], h.into(), None);
-            Ok(incr_by.into())
-        },
-    )?;
+    Ok(result)
+}
+
+/// Increment the specified field of a hash stored at key, and representing a number, by the
+/// specified increment. If the increment value is negative, the result is to have the hash field
+/// value decremented instead of incremented. If the field does not exist, it is set to 0 before
+/// performing the operation.
+pub async fn hincrby_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let result = conn
+        .db()
+        .hincrby::<f64>(&args[1], &args[2], &args[3], "a float")?;
 
     conn.db().bump_version(&args[1]);
 

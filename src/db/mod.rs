@@ -5,12 +5,14 @@
 use crate::{
     error::Error,
     value::{
+        bytes_to_number,
         cursor::Cursor,
         typ::{Typ, ValueTyp},
         VDebug, Value,
     },
 };
 use bytes::{BufMut, Bytes, BytesMut};
+use core::num;
 use entry::{new_version, Entry};
 use expiration::ExpirationDb;
 use glob::Pattern;
@@ -21,6 +23,7 @@ use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
     ops::{AddAssign, Deref},
+    str::FromStr,
     sync::Arc,
     thread,
 };
@@ -269,17 +272,91 @@ impl Db {
         Ok(self.slots.iter().map(|s| s.read().len()).sum())
     }
 
+    /// Round numbers to store efficiently, specially float numbers. For instance `1.00` will be converted to `1`.
+    fn round_numbers<T>(number: T) -> BytesMut
+    where
+        T: ToString,
+    {
+        let number_to_str = number.to_string();
+
+        if number_to_str.find('.').is_none() {
+            return number_to_str.as_bytes().into();
+        }
+
+        let number_to_str = number_to_str
+            .trim_end_matches(|c| c == '0' || c == '.')
+            .to_string();
+
+        if number_to_str.is_empty() {
+            "0"
+        } else {
+            number_to_str.as_str()
+        }
+        .into()
+    }
+
+    // Converts a given number to a correct Value, it should be used with Self::round_numbers()
+    fn number_to_value(number: &[u8]) -> Result<Value, Error> {
+        if number.iter().find(|x| **x == b'.').is_some() {
+            Ok(Value::Float(bytes_to_number(number)?))
+        } else {
+            Ok(Value::Integer(bytes_to_number(number)?))
+        }
+    }
+
+    /// Increment a sub-key in a hash
+    ///
+    /// If the stored value cannot be converted into a number an error will be thrown
+    pub fn hincrby<T>(
+        &self,
+        key: &Bytes,
+        sub_key: &Bytes,
+        incr_by: &Bytes,
+        typ: &str,
+    ) -> Result<Value, Error>
+    where
+        T: ToString
+            + FromStr
+            + AddAssign
+            + for<'a> TryFrom<&'a Value, Error = Error>
+            + Into<Value>
+            + Copy,
+    {
+        let mut slot = self.slots[self.get_slot(key)].write();
+        let mut incr_by: T =
+            bytes_to_number(incr_by).map_err(|_| Error::NotANumberType(typ.to_owned()))?;
+        match slot.get_mut(key).filter(|x| x.is_valid()).map(|x| x.get()) {
+            Some(Value::Hash(h)) => {
+                let mut h = h.write();
+                if let Some(n) = h.get(sub_key) {
+                    incr_by +=
+                        bytes_to_number(n).map_err(|_| Error::NotANumberType(typ.to_owned()))?;
+                }
+                let incr_by_bytes = Self::round_numbers(incr_by).freeze();
+                h.insert(sub_key.clone(), incr_by_bytes.clone());
+
+                Self::number_to_value(&incr_by_bytes)
+            }
+            None => {
+                #[allow(clippy::mutable_key_type)]
+                let mut h = HashMap::new();
+                let incr_by_bytes = Self::round_numbers(incr_by).freeze();
+                h.insert(sub_key.clone(), incr_by_bytes.clone());
+                let _ = slot.insert(key.clone(), Entry::new(h.into(), None));
+                Self::number_to_value(&incr_by_bytes)
+            }
+            _ => Err(Error::WrongType),
+        }
+    }
+
     /// Increments a key's value by a given number
     ///
     /// If the stored value cannot be converted into a number an error will be
     /// thrown.
-    pub fn incr<
+    pub fn incr<T>(&self, key: &Bytes, incr_by: T) -> Result<T, Error>
+    where
         T: ToString + AddAssign + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
-    >(
-        &self,
-        key: &Bytes,
-        incr_by: T,
-    ) -> Result<T, Error> {
+    {
         let mut slot = self.slots[self.get_slot(key)].write();
         match slot.get_mut(key).filter(|x| x.is_valid()) {
             Some(x) => {
@@ -291,34 +368,15 @@ impl Db {
 
                 number += incr_by;
 
-                let number_to_str = number
-                    .to_string()
-                    .trim_end_matches(|c| c == '0' || c == '.')
-                    .to_string();
-
-                let number_to_str = if number_to_str.is_empty() {
-                    "0"
-                } else {
-                    number_to_str.as_str()
-                }
-                .into();
-
-                x.change_value(Value::Blob(number_to_str));
+                x.change_value(Value::Blob(Self::round_numbers(number)));
 
                 Ok(number)
             }
             None => {
-                let number_to_str = incr_by
-                    .to_string()
-                    .trim_end_matches(|c| c == '0' || c == '.')
-                    .to_string();
-                let str = if number_to_str.is_empty() {
-                    "0"
-                } else {
-                    number_to_str.as_str()
-                }
-                .into();
-                slot.insert(key.clone(), Entry::new(Value::Blob(str), None));
+                slot.insert(
+                    key.clone(),
+                    Entry::new(Value::Blob(Self::round_numbers(incr_by)), None),
+                );
                 Ok(incr_by)
             }
         }
