@@ -32,10 +32,12 @@ where
                 let mut all_entries = x.read().clone();
                 for key in keys[1..].iter() {
                     let mut do_break = false;
+                    let mut found = false;
                     let _ = conn.db().get_map_or(
                         key,
                         |v| match v {
                             Value::Set(x) => {
+                                found = true;
                                 if !op(&mut all_entries, &x.read()) {
                                     do_break = true;
                                 }
@@ -45,6 +47,9 @@ where
                         },
                         || Ok(Value::Null),
                     )?;
+                    if !found && !op(&mut all_entries, &HashSet::new()) {
+                        break;
+                    }
                     if do_break {
                         break;
                     }
