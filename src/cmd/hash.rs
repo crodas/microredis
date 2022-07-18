@@ -68,11 +68,11 @@ pub async fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
-                Value::new(&v)
-            } else {
-                Value::Null
-            }),
+            Value::Hash(h) => Ok(h
+                .read()
+                .get(&args[2])
+                .map(|v| Value::new(v))
+                .unwrap_or_default()),
             _ => Err(Error::WrongType),
         },
         || Ok(Value::Null),
@@ -171,13 +171,7 @@ pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
                 Ok((&args[2..])
                     .iter()
-                    .map(|key| {
-                        if let Some(value) = h.get(key) {
-                            Value::new(&value)
-                        } else {
-                            Value::Null
-                        }
-                    })
+                    .map(|key| h.get(key).map(|v| Value::new(v)).unwrap_or_default())
                     .collect::<Vec<Value>>()
                     .into())
             }
@@ -349,11 +343,12 @@ pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
-                v.len().into()
-            } else {
-                0.into()
-            }),
+            Value::Hash(h) => Ok(h
+                .read()
+                .get(&args[2])
+                .map(|v| v.len())
+                .unwrap_or_default()
+                .into()),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
