@@ -225,7 +225,12 @@ pub async fn sintercard(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// If destination already exists, it is overwritten.
 pub async fn sinterstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sinter(conn, &args[1..]).await? {
-        Ok(store(conn, &args[1], &values).into())
+        if values.len() > 0 {
+            Ok(store(conn, &args[1], &values).into())
+        } else {
+            let _ = conn.db().del(&[args[1].clone()]);
+            Ok(0.into())
+        }
     } else {
         Ok(0.into())
     }
@@ -477,7 +482,12 @@ pub async fn sunion(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// If destination already exists, it is overwritten.
 pub async fn sunionstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sunion(conn, &args[1..]).await? {
-        Ok(store(conn, &args[1], &values).into())
+        if values.len() > 0 {
+            Ok(store(conn, &args[1], &values).into())
+        } else {
+            let _ = conn.db().del(&[args[1].clone()]);
+            Ok(0.into())
+        }
     } else {
         Ok(0.into())
     }
