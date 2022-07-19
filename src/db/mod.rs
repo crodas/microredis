@@ -635,8 +635,8 @@ impl Db {
         keys.iter()
             .map(|key| {
                 let slot = self.slots[self.get_slot(key)].read();
-                if slot.get(key).is_some() {
-                    matches += 1;
+                if let Some(key) = slot.get(key) {
+                    matches += if key.is_valid() { 1 } else { 0 };
                 }
             })
             .for_each(drop);
