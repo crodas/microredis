@@ -674,7 +674,7 @@ impl Db {
         slot.get(key)
             .filter(|x| x.is_valid())
             .map(|entry| entry.version())
-            .unwrap_or_else(new_version)
+            .unwrap_or_default()
     }
 
     /// Returns the name of the value type
