@@ -299,7 +299,7 @@ impl Db {
     // Converts a given number to a correct Value, it should be used with Self::round_numbers()
     fn number_to_value(number: &[u8]) -> Result<Value, Error> {
         if number.iter().find(|x| **x == b'.').is_some() {
-            Ok(Value::Float(bytes_to_number(number)?))
+            Ok(Value::new(number))
         } else {
             Ok(Value::Integer(bytes_to_number(number)?))
         }

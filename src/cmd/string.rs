@@ -53,7 +53,7 @@ pub async fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, E
         if f.fract() == 0.0 {
             (*f as i64).into()
         } else {
-            f.into()
+            f.to_string().into()
         }
     })
 }
