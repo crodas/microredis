@@ -88,6 +88,9 @@ pub enum Error {
     /// The connection is in a transaction and nested transactions are not supported
     #[error("calls can not be nested")]
     NestedTx,
+    /// Watch is not allowed after a Multi has been called
+    #[error("WATCH inside MULTI is not allowed")]
+    WatchInsideTx,
     /// Wrong data type
     #[error("Operation against a key holding the wrong kind of value")]
     WrongType,

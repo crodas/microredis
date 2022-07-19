@@ -66,6 +66,9 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 
 /// Marks the given keys to be watched for conditional execution of a transaction.
 pub async fn watch(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    if conn.status() == ConnectionStatus::Multi {
+        return Err(Error::WatchInsideTx);
+    }
     conn.watch_key(
         &(&args[1..])
             .iter()
