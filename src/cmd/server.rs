@@ -125,3 +125,9 @@ pub async fn time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
 
     Ok(vec![seconds.as_str(), millis.as_str()].into())
 }
+
+/// Ask the server to close the connection. The connection is closed as soon as
+/// all pending replies have been written to the client.
+pub async fn quit(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    Err(Error::Quit)
+}

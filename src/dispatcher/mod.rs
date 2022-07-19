@@ -1065,5 +1065,14 @@ dispatcher! {
             0,
             true,
         },
+        QUIT {
+            cmd::server::quit,
+            [Flag::Random Flag::Loading Flag::Stale Flag::Fast],
+            1,
+            0,
+            0,
+            0,
+            false,
+        },
     }
 }

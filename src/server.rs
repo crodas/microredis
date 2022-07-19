@@ -204,6 +204,10 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
                     Err(Error::EmptyLine) => {
                         // do nothing
                     },
+                    Err(Error::Quit) => {
+                        let _ = transport.send(Value::Ok).await;
+                        break;
+                    }
                     Err(err) => {
                         if transport.send(err.into()).await.is_err() {
                             break;

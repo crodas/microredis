@@ -101,6 +101,9 @@ pub enum Error {
     /// through an error.
     #[error("client unblocked via CLIENT UNBLOCK")]
     UnblockByError,
+    /// Client manual disconnection
+    #[error("Manual disconnection")]
+    Quit,
 }
 
 impl From<std::io::Error> for Error {
