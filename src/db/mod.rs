@@ -2,6 +2,7 @@
 //!
 //! This database module is the core of the miniredis project. All other modules around this
 //! database module.
+use self::utils::{far_future, ExpirationOpts, Override};
 use crate::{
     error::Error,
     value::{
@@ -34,37 +35,7 @@ mod entry;
 mod expiration;
 pub mod pool;
 pub mod scan;
-
-/// Override database entries
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub enum Override {
-    /// Allow override
-    Yes,
-    /// Do not allow override, only new entries
-    No,
-    /// Allow only override
-    Only,
-}
-
-impl From<bool> for Override {
-    fn from(v: bool) -> Override {
-        if v {
-            Override::Yes
-        } else {
-            Override::No
-        }
-    }
-}
-
-impl Default for Override {
-    fn default() -> Self {
-        Self::Yes
-    }
-}
-
-pub(crate) fn far_future() -> Instant {
-    Instant::now() + Duration::from_secs(86400 * 365 * 30)
-}
+pub(crate) mod utils;
 
 /// Database structure
 ///
@@ -409,7 +380,12 @@ impl Db {
     }
 
     /// Set time to live for a given key
-    pub fn set_ttl(&self, key: &Bytes, expires_in: Duration) -> Value {
+    pub fn set_ttl(
+        &self,
+        key: &Bytes,
+        expires_in: Duration,
+        opts: Option<ExpirationOpts>,
+    ) -> Value {
         let mut slot = self.slots[self.get_slot(key)].write();
         let expires_at = Instant::now()
             .checked_add(expires_in)

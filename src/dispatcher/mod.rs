@@ -509,7 +509,7 @@ dispatcher! {
         EXPIRE {
             cmd::key::expire,
             [Flag::Write Flag::Fast],
-            3,
+            -3,
             1,
             1,
             1,

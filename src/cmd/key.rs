@@ -100,7 +100,11 @@ pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         Duration::from_millis(expires_in)
     };
 
-    Ok(conn.db().set_ttl(&args[1], expires_at))
+    Ok(conn.db().set_ttl(
+        &args[1],
+        expires_at,
+        args.get(3).map(|opts| opts.try_into()).transpose()?,
+    ))
 }
 
 /// Returns the string representation of the type of the value stored at key.
@@ -139,7 +143,11 @@ pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
         Duration::from_millis(expires_in)
     };
 
-    Ok(conn.db().set_ttl(&args[1], expires_at))
+    Ok(conn.db().set_ttl(
+        &args[1],
+        expires_at,
+        args.get(3).map(|opts| opts.try_into()).transpose()?,
+    ))
 }
 
 /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key

@@ -2,7 +2,7 @@
 use crate::{
     check_arg,
     connection::{Connection, ConnectionStatus, UnblockReason},
-    db::far_future,
+    db::utils::far_future,
     error::Error,
     try_get_arg, try_get_arg_str,
     value::bytes_to_number,
