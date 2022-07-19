@@ -62,6 +62,10 @@ impl Default for Override {
     }
 }
 
+pub(crate) fn far_future() -> Instant {
+    Instant::now() + Duration::from_secs(86400 * 365 * 30)
+}
+
 /// Database structure
 ///
 /// Each connection has their own clone of the database and the conn_id is stored in each instance.
@@ -270,6 +274,7 @@ impl Db {
 
     /// Returns the number of elements in the database
     pub fn len(&self) -> Result<usize, Error> {
+        self.purge();
         Ok(self.slots.iter().map(|s| s.read().len()).sum())
     }
 
@@ -406,7 +411,9 @@ impl Db {
     /// Set time to live for a given key
     pub fn set_ttl(&self, key: &Bytes, expires_in: Duration) -> Value {
         let mut slot = self.slots[self.get_slot(key)].write();
-        let expires_at = Instant::now() + expires_in;
+        let expires_at = Instant::now()
+            .checked_add(expires_in)
+            .unwrap_or_else(far_future);
 
         slot.get_mut(key)
             .filter(|x| x.is_valid())
@@ -705,7 +712,9 @@ impl Db {
                     self.expirations.lock().remove(key);
                     value.persist();
                 } else if let Some(expires_in) = expires_in {
-                    let expires_at = Instant::now() + expires_in;
+                    let expires_at = Instant::now()
+                        .checked_add(expires_in)
+                        .unwrap_or_else(far_future);
                     self.expirations.lock().add(key, expires_at);
                     value.set_ttl(expires_at);
                 }
@@ -826,7 +835,11 @@ impl Db {
         return_previous: bool,
     ) -> Value {
         let mut slot = self.slots[self.get_slot(key)].write();
-        let expires_at = expires_in.map(|duration| Instant::now() + duration);
+        let expires_at = expires_in.map(|duration| {
+            Instant::now()
+                .checked_add(duration)
+                .unwrap_or_else(far_future)
+        });
         let previous = slot.get(key).filter(|x| x.is_valid());
 
         let expires_at = if keep_ttl {

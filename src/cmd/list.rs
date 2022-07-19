@@ -2,6 +2,7 @@
 use crate::{
     check_arg,
     connection::{Connection, ConnectionStatus, UnblockReason},
+    db::far_future,
     error::Error,
     try_get_arg, try_get_arg_str,
     value::bytes_to_number,
@@ -123,7 +124,9 @@ fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
     }
 
     Ok(Some(
-        Instant::now() + Duration::from_micros((raw_timeout * 1000f64).round() as u64),
+        Instant::now()
+            .checked_add(Duration::from_micros((raw_timeout * 1000f64).round() as u64))
+            .unwrap_or_else(far_future),
     ))
 }
 

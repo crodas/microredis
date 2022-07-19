@@ -106,11 +106,17 @@ pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 "EX" => (Some(Duration::from_secs(expires_in)), false),
                 "PX" => (Some(Duration::from_millis(expires_in)), false),
                 "EXAT" => (
-                    Some(Duration::from_secs(expires_in - now().as_secs())),
+                    Some(Duration::from_secs(
+                        expires_in.checked_sub(now().as_secs()).unwrap_or_default(),
+                    )),
                     false,
                 ),
                 "PXAT" => (
-                    Some(Duration::from_millis(expires_in - now().as_millis() as u64)),
+                    Some(Duration::from_millis(
+                        expires_in
+                            .checked_sub(now().as_millis() as u64)
+                            .unwrap_or_default(),
+                    )),
                     false,
                 ),
                 "PERSIST" => (None, Default::default()),

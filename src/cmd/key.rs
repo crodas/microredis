@@ -117,9 +117,13 @@ pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
     let secs = check_arg!(args, 0, "EXPIREAT");
     let expires_at: i64 = bytes_to_number(&args[2])?;
     let expires_in: i64 = if secs {
-        expires_at - now().as_secs() as i64
+        expires_at
+            .checked_sub(now().as_secs() as i64)
+            .unwrap_or_default()
     } else {
-        expires_at - now().as_millis() as i64
+        expires_at
+            .checked_sub(now().as_millis() as i64)
+            .unwrap_or_default()
     };
 
     if expires_in <= 0 {
