@@ -366,6 +366,7 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// cardinality.
 pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let rand = srandmember(conn, args).await?;
+    let mut should_remove = false;
     let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -385,6 +386,7 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     _ => unreachable!(),
                 };
 
+                should_remove = x.is_empty();
                 Ok(rand)
             }
             _ => Err(Error::WrongType),
@@ -392,7 +394,11 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         || Ok(Value::Null),
     )?;
 
-    conn.db().bump_version(&args[1]);
+    if should_remove {
+        let _ = conn.db().del(&[args[1].clone()]);
+    } else {
+        conn.db().bump_version(&args[1]);
+    }
 
     Ok(result)
 }
