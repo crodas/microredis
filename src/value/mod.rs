@@ -3,6 +3,7 @@
 //! All redis internal data structures and values are absracted in this mod.
 pub mod checksum;
 pub mod cursor;
+pub mod float;
 pub mod locked;
 pub mod typ;
 

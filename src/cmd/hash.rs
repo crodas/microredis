@@ -1,6 +1,10 @@
 //! # Hash command handlers
 use crate::{
-    check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
+    check_arg,
+    connection::Connection,
+    error::Error,
+    value::Value,
+    value::{bytes_to_number, float::Float},
 };
 use bytes::Bytes;
 use rand::Rng;
@@ -122,7 +126,7 @@ pub async fn hincrby_int(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 pub async fn hincrby_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn
         .db()
-        .hincrby::<f64>(&args[1], &args[2], &args[3], "a float")?;
+        .hincrby::<Float>(&args[1], &args[2], &args[3], "a float")?;
 
     conn.db().bump_version(&args[1]);
 

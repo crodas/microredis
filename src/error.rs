@@ -70,6 +70,9 @@ pub enum Error {
     /// Not a number with specific number type
     #[error("value is not {0} or out of range")]
     NotANumberType(String),
+    /// Number overflow
+    #[error("increment or decrement would overflow")]
+    Overflow,
     /// Unexpected negative number
     #[error("{0} is negative")]
     NegativeNumber(String),

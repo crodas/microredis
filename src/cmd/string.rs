@@ -6,7 +6,7 @@ use crate::{
     db::Override,
     error::Error,
     try_get_arg,
-    value::{bytes_to_number, Value},
+    value::{bytes_to_number, float::Float, Value},
 };
 use bytes::Bytes;
 use std::{
@@ -45,13 +45,13 @@ pub async fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// is decremented (by the obvious properties of addition). If the key does not exist, it is set to
 /// 0 before performing the operation.
 pub async fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let by: f64 = bytes_to_number(&args[2])?;
+    let by = bytes_to_number::<Float>(&args[2])?;
     if by.is_infinite() || by.is_nan() {
         return Err(Error::IncrByInfOrNan);
     }
     conn.db().incr(&args[1], by).map(|f| {
         if f.fract() == 0.0 {
-            (f as i64).into()
+            (*f as i64).into()
         } else {
             f.into()
         }

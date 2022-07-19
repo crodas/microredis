@@ -33,6 +33,7 @@ log="0.4"
 thiserror = "1.0.30"
 strum = "0.24"
 strum_macros = "0.24"
+num-traits = "0.2.15"
 
 [workspace]
 members = ["redis-config-parser"]

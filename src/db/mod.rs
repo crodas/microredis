@@ -17,6 +17,7 @@ use entry::{new_version, Entry};
 use expiration::ExpirationDb;
 use glob::Pattern;
 use log::trace;
+use num_traits::CheckedAdd;
 use parking_lot::{Mutex, RwLock};
 use seahash::hash;
 use std::{
@@ -317,7 +318,7 @@ impl Db {
     where
         T: ToString
             + FromStr
-            + AddAssign
+            + CheckedAdd
             + for<'a> TryFrom<&'a Value, Error = Error>
             + Into<Value>
             + Copy,
@@ -329,8 +330,12 @@ impl Db {
             Some(Value::Hash(h)) => {
                 let mut h = h.write();
                 if let Some(n) = h.get(sub_key) {
-                    incr_by +=
-                        bytes_to_number(n).map_err(|_| Error::NotANumberType(typ.to_owned()))?;
+                    incr_by = incr_by
+                        .checked_add(
+                            &bytes_to_number(n)
+                                .map_err(|_| Error::NotANumberType(typ.to_owned()))?,
+                        )
+                        .ok_or(Error::Overflow)?;
                 }
                 let incr_by_bytes = Self::round_numbers(incr_by).freeze();
                 h.insert(sub_key.clone(), incr_by_bytes.clone());
@@ -355,7 +360,7 @@ impl Db {
     /// thrown.
     pub fn incr<T>(&self, key: &Bytes, incr_by: T) -> Result<T, Error>
     where
-        T: ToString + AddAssign + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
+        T: ToString + CheckedAdd + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
     {
         let mut slot = self.slots[self.get_slot(key)].write();
         match slot.get_mut(key).filter(|x| x.is_valid()) {
@@ -366,7 +371,7 @@ impl Db {
                 let value = x.get();
                 let mut number: T = value.try_into()?;
 
-                number += incr_by;
+                number = incr_by.checked_add(&number).ok_or(Error::Overflow)?;
 
                 x.change_value(Value::Blob(Self::round_numbers(number)));
 
@@ -1003,7 +1008,7 @@ impl scan::Scan for Db {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{bytes, db::scan::Scan};
+    use crate::{bytes, db::scan::Scan, value::float::Float};
     use std::str::FromStr;
 
     #[test]
@@ -1023,7 +1028,7 @@ mod test {
         let db = Db::new(100);
         db.set(&bytes!(b"num"), Value::Blob(bytes!("1.1")), None);
 
-        assert_eq!(Ok(2.2), db.incr(&bytes!("num"), 1.1));
+        assert_eq!(Ok(2.2.into()), db.incr::<Float>(&bytes!("num"), 1.1.into()));
         assert_eq!(Value::Blob(bytes!("2.2")), db.get(&bytes!("num")));
     }
 
@@ -1032,7 +1037,7 @@ mod test {
         let db = Db::new(100);
         db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
-        assert_eq!(Ok(2.1), db.incr(&bytes!("num"), 1.1));
+        assert_eq!(Ok(2.1.into()), db.incr::<Float>(&bytes!("num"), 1.1.into()));
         assert_eq!(Value::Blob(bytes!("2.1")), db.get(&bytes!("num")));
     }
 
@@ -1055,7 +1060,7 @@ mod test {
     #[test]
     fn incr_blob_float_set() {
         let db = Db::new(100);
-        assert_eq!(Ok(1.1), db.incr(&bytes!("num"), 1.1));
+        assert_eq!(Ok(1.1.into()), db.incr::<Float>(&bytes!("num"), 1.1.into()));
         assert_eq!(Value::Blob(bytes!("1.1")), db.get(&bytes!("num")));
     }
 
