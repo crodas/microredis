@@ -131,7 +131,7 @@ impl Command {
 
     /// Can this command be executed in a pub-sub only mode?
     pub fn is_pubsub_executable(&self) -> bool {
-        self.group == "pubsub" || self.name == "ping" || self.name == "reset"
+        self.group == "pubsub" || self.name == "PING" || self.name == "RESET"
     }
 
     /// Can this command be queued in a transaction or should it be executed right away?

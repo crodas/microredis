@@ -76,6 +76,9 @@ pub enum Error {
     /// Unexpected negative number
     #[error("{0} is negative")]
     NegativeNumber(String),
+    /// Invalid expire
+    #[error("invalid expire")]
+    InvalidExpire,
     /// The connection is not in a transaction
     #[error(" without MULTI")]
     NotInTx,

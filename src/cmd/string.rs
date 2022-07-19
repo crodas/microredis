@@ -307,9 +307,9 @@ pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// EXPIRE mykey seconds
 pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let ttl = if check_arg!(args, 0, "SETEX") {
-        Duration::from_secs(bytes_to_number(&args[2])?)
+        Duration::from_secs(bytes_to_number(&args[2]).map_err(|_| Error::InvalidExpire)?)
     } else {
-        Duration::from_millis(bytes_to_number(&args[2])?)
+        Duration::from_millis(bytes_to_number(&args[2]).map_err(|_| Error::InvalidExpire)?)
     };
 
     Ok(conn.db().set(&args[1], Value::new(&args[3]), Some(ttl)))
