@@ -5,7 +5,9 @@ use crate::{
     connection::Connection,
     db::{scan::Scan, utils::ExpirationOpts},
     error::Error,
-    value::{bytes_to_int, bytes_to_number, cursor::Cursor, typ::Typ, Value},
+    value::{
+        bytes_to_int, bytes_to_number, cursor::Cursor, expiration::Expiration, typ::Typ, Value,
+    },
 };
 use bytes::Bytes;
 use std::{
@@ -85,23 +87,17 @@ pub async fn exists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// The timeout can also be cleared, turning the key back into a persistent key, using the PERSIST
 /// command.
 pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let expires_in: i64 = bytes_to_int(&args[2])?;
+    let is_milliseconds = check_arg!(args, 0, "PEXPIRE");
 
-    if expires_in <= 0 {
+    let expires_at = Expiration::new(&args[2], is_milliseconds, false, &args[0])?;
+
+    if expires_at.is_negative {
         // Delete key right away
         return Ok(conn.db().del(&args[1..2]));
     }
 
-    let expires_in: u64 = expires_in as u64;
-
-    let expires_at = if check_arg!(args, 0, "EXPIRE") {
-        Duration::from_secs(expires_in)
-    } else {
-        Duration::from_millis(expires_in)
-    };
-
     conn.db()
-        .set_ttl(&args[1], expires_at, (&args[3..]).try_into()?)
+        .set_ttl(&args[1], expires_at.try_into()?, (&args[3..]).try_into()?)
 }
 
 /// Returns the string representation of the type of the value stored at key.
@@ -115,33 +111,16 @@ pub async fn data_type(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
 /// seconds representing the TTL (time to live), it takes an absolute Unix timestamp (seconds since
 /// January 1, 1970). A timestamp in the past will delete the key immediately.
 pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let secs = check_arg!(args, 0, "EXPIREAT");
-    let expires_at: i64 = bytes_to_int(&args[2])?;
-    let expires_in: i64 = if secs {
-        expires_at
-            .checked_sub(now().as_secs() as i64)
-            .unwrap_or_default()
-    } else {
-        expires_at
-            .checked_sub(now().as_millis() as i64)
-            .unwrap_or_default()
-    };
+    let is_milliseconds = check_arg!(args, 0, "PEXPIREAT");
+    let expires_at = Expiration::new(&args[2], is_milliseconds, true, &args[0])?;
 
-    if expires_in <= 0 {
+    if expires_at.is_negative {
         // Delete key right away
         return Ok(conn.db().del(&args[1..2]));
     }
 
-    let expires_in: u64 = expires_in as u64;
-
-    let expires_at = if secs {
-        Duration::from_secs(expires_in)
-    } else {
-        Duration::from_millis(expires_in)
-    };
-
     conn.db()
-        .set_ttl(&args[1], expires_at, (&args[3..]).try_into()?)
+        .set_ttl(&args[1], expires_at.try_into()?, (&args[3..]).try_into()?)
 }
 
 /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key
@@ -152,10 +131,10 @@ pub async fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
             // Is there a better way? There should be!
             if check_arg!(args, 0, "EXPIRETIME") {
                 let secs: i64 = (ttl - Instant::now()).as_secs() as i64;
-                secs + (now().as_secs() as i64)
+                secs + 1 + (now().as_secs() as i64)
             } else {
                 let secs: i64 = (ttl - Instant::now()).as_millis() as i64;
-                secs + (now().as_millis() as i64)
+                secs + 1 + (now().as_millis() as i64)
             }
         }
         Some(None) => -1,
@@ -270,7 +249,7 @@ pub async fn ttl(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         Some(Some(ttl)) => {
             let ttl = ttl - Instant::now();
             if check_arg!(args, 0, "TTL") {
-                ttl.as_secs() as i64
+                ttl.as_secs() as i64 + 1
             } else {
                 ttl.as_millis() as i64
             }
@@ -376,6 +355,19 @@ mod test {
         assert_eq!(
             Ok(Value::Integer(-2)),
             run_command(&c, &["pttl", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn expire2() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["incr", "foo"]).await
+        );
+        assert_eq!(
+            Err(Error::InvalidExpire("pexpire".to_owned())),
+            run_command(&c, &["pexpire", "foo", "9223372036854770000"]).await
         );
     }
 

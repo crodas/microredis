@@ -3,11 +3,12 @@
 //! All redis internal data structures and values are absracted in this mod.
 pub mod checksum;
 pub mod cursor;
+pub mod expiration;
 pub mod float;
 pub mod locked;
 pub mod typ;
 
-use crate::{error::Error, value_try_from, value_vec_try_from};
+use crate::{cmd::now, error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
 use sha2::{Digest, Sha256};
@@ -15,6 +16,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     convert::{TryFrom, TryInto},
     str::FromStr,
+    time::Duration,
 };
 
 /// Redis Value.
@@ -177,15 +179,17 @@ impl TryFrom<&Value> for f64 {
     }
 }
 
-/// Tries to converts bytes data into a number
+/// Tries to convert bytes data into a number
 ///
 /// If the conversion fails a Error::NotANumber error is returned.
+#[inline]
 pub fn bytes_to_number<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
     let x = String::from_utf8_lossy(bytes);
     x.parse::<T>().map_err(|_| Error::NotANumber)
 }
 
-/// Tries to converts bytes data into an integer number
+/// Tries to convert bytes data into an integer number
+#[inline]
 pub fn bytes_to_int<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
     let x = String::from_utf8_lossy(bytes);
     x.parse::<T>()

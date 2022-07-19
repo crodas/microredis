@@ -6,7 +6,7 @@ use crate::{
     db::utils::Override,
     error::Error,
     try_get_arg,
-    value::{bytes_to_number, float::Float, Value},
+    value::{bytes_to_int, bytes_to_number, expiration::Expiration, float::Float, Value},
 };
 use bytes::Bytes;
 use std::{
@@ -84,7 +84,7 @@ pub async fn get(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// Get the value of key and optionally set its expiration. GETEX is similar to
 /// GET, but is a write command with additional options.
 pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let (expire_at, persist) = match args.len() {
+    let (expires_in, persist) = match args.len() {
         2 => (None, false),
         3 => {
             if check_arg!(args, 2, "PERSIST") {
@@ -93,34 +93,33 @@ pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 return Err(Error::Syntax);
             }
         }
-        4 => {
-            let expires_in: u64 =
-                bytes_to_number(&args[3]).map_err(|_| Error::InvalidExpire("getex".to_owned()))?;
-
-            match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
-                "EX" => (Some(Duration::from_secs(expires_in)), false),
-                "PX" => (Some(Duration::from_millis(expires_in)), false),
-                "EXAT" => (
-                    Some(Duration::from_secs(
-                        expires_in.checked_sub(now().as_secs()).unwrap_or_default(),
-                    )),
-                    false,
-                ),
-                "PXAT" => (
-                    Some(Duration::from_millis(
-                        expires_in
-                            .checked_sub(now().as_millis() as u64)
-                            .unwrap_or_default(),
-                    )),
-                    false,
-                ),
-                "PERSIST" => (None, Default::default()),
-                _ => return Err(Error::Syntax),
-            }
-        }
+        4 => match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
+            "EX" => (
+                Some(Expiration::new(&args[3], false, false, &args[0])?),
+                false,
+            ),
+            "PX" => (
+                Some(Expiration::new(&args[3], true, false, &args[0])?),
+                false,
+            ),
+            "EXAT" => (
+                Some(Expiration::new(&args[3], false, true, &args[0])?),
+                false,
+            ),
+            "PXAT" => (
+                Some(Expiration::new(&args[3], true, true, &args[0])?),
+                false,
+            ),
+            "PERSIST" => (None, Default::default()),
+            _ => return Err(Error::Syntax),
+        },
         _ => return Err(Error::Syntax),
     };
-    Ok(conn.db().getex(&args[1], expire_at, persist))
+    Ok(conn.db().getex(
+        &args[1],
+        expires_in.map(|t| t.try_into()).transpose()?,
+        persist,
+    ))
 }
 
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
@@ -207,46 +206,48 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
-                expiration = Some(Duration::from_secs(
-                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))
-                        .map_err(|_| Error::InvalidExpire("set".to_owned()))?,
-                ));
+                expiration = Some(Expiration::new(
+                    try_get_arg!(args, i + 1),
+                    false,
+                    false,
+                    &args[0],
+                )?);
                 i += 1;
             }
             "PX" => {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
-                expiration = Some(Duration::from_millis(
-                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))
-                        .map_err(|_| Error::InvalidExpire("set".to_owned()))?,
-                ));
+                expiration = Some(Expiration::new(
+                    try_get_arg!(args, i + 1),
+                    true,
+                    false,
+                    &args[0],
+                )?);
                 i += 1;
             }
             "EXAT" => {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
-                expiration = Some(Duration::from_secs(
-                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))
-                        .map_err(|_| Error::InvalidExpire("set".to_owned()))?
-                        .checked_sub(now().as_secs())
-                        .unwrap_or_default()
-                        .checked_sub(1)
-                        .unwrap_or_default(),
-                ));
+                expiration = Some(Expiration::new(
+                    try_get_arg!(args, i + 1),
+                    false,
+                    true,
+                    &args[0],
+                )?);
                 i += 1;
             }
             "PXAT" => {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
-                expiration = Some(Duration::from_millis(
-                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))
-                        .map_err(|_| Error::InvalidExpire("set".to_owned()))?
-                        .checked_sub(now().as_millis() as u64)
-                        .unwrap_or_default(),
-                ));
+                expiration = Some(Expiration::new(
+                    try_get_arg!(args, i + 1),
+                    true,
+                    true,
+                    &args[0],
+                )?);
                 i += 1;
             }
             "KEEPTTL" => keep_ttl = true,
@@ -258,12 +259,11 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
         i += 1;
     }
-
     Ok(
         match conn.db().set_advanced(
             &args[1],
             Value::new(&args[2]),
-            expiration,
+            expiration.map(|t| t.try_into()).transpose()?,
             override_value,
             keep_ttl,
             return_previous,
@@ -316,17 +316,13 @@ pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// SET mykey value
 /// EXPIRE mykey seconds
 pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let ttl = if check_arg!(args, 0, "SETEX") {
-        Duration::from_secs(
-            bytes_to_number(&args[2]).map_err(|_| Error::InvalidExpire("SETEX".to_owned()))?,
-        )
-    } else {
-        Duration::from_millis(
-            bytes_to_number(&args[2]).map_err(|_| Error::InvalidExpire("SETEX".to_owned()))?,
-        )
-    };
+    let is_milliseconds = check_arg!(args, 0, "PSETEX");
 
-    Ok(conn.db().set(&args[1], Value::new(&args[3]), Some(ttl)))
+    let expires_in = Expiration::new(&args[2], is_milliseconds, false, &args[0])?;
+
+    Ok(conn
+        .db()
+        .set(&args[1], Value::new(&args[3]), Some(expires_in.try_into()?)))
 }
 
 /// Set key to hold string value if key does not exist. In that case, it is
@@ -414,13 +410,13 @@ mod test {
         assert_eq!(Ok(Value::Integer(1)), r);
 
         let r = run_command(&c, &["ttl", "foo"]).await;
-        assert_eq!(Ok(Value::Integer(59)), r);
+        assert_eq!(Ok(Value::Integer(60)), r);
 
         let r = run_command(&c, &["incr", "foo"]).await;
         assert_eq!(Ok(Value::Integer(2)), r);
 
         let r = run_command(&c, &["ttl", "foo"]).await;
-        assert_eq!(Ok(Value::Integer(59)), r);
+        assert_eq!(Ok(Value::Integer(60)), r);
     }
 
     #[tokio::test]
@@ -444,13 +440,13 @@ mod test {
         assert_eq!(Ok(Value::Integer(1)), r);
 
         let r = run_command(&c, &["ttl", "foo"]).await;
-        assert_eq!(Ok(Value::Integer(59)), r);
+        assert_eq!(Ok(Value::Integer(60)), r);
 
         let r = run_command(&c, &["decr", "foo"]).await;
         assert_eq!(Ok(Value::Integer(-2)), r);
 
         let r = run_command(&c, &["ttl", "foo"]).await;
-        assert_eq!(Ok(Value::Integer(59)), r);
+        assert_eq!(Ok(Value::Integer(60)), r);
     }
 
     #[tokio::test]
@@ -537,7 +533,7 @@ mod test {
             run_command(&c, &["set", "foo", "bar1", "keepttl"]).await
         );
         assert_eq!(Ok("bar1".into()), run_command(&c, &["get", "foo"]).await);
-        assert_eq!(Ok(59.into()), run_command(&c, &["ttl", "foo"]).await);
+        assert_eq!(Ok(60.into()), run_command(&c, &["ttl", "foo"]).await);
 
         assert_eq!(
             Ok(Value::Ok),
@@ -599,7 +595,7 @@ mod test {
     async fn set_incorrect_params() {
         let c = create_connection();
         assert_eq!(
-            Err(Error::InvalidExpire("set".to_owned())),
+            Err(Error::NotANumberType("an integer".to_owned())),
             run_command(&c, &["set", "foo", "bar1", "ex", "xx"]).await
         );
         assert_eq!(
@@ -704,7 +700,7 @@ mod test {
             run_command(&c, &["setex", "foo", "10", "bar"]).await
         );
         assert_eq!(Ok("bar".into()), run_command(&c, &["get", "foo"]).await);
-        assert_eq!(Ok(9.into()), run_command(&c, &["ttl", "foo"]).await);
+        assert_eq!(Ok(10.into()), run_command(&c, &["ttl", "foo"]).await);
     }
 
     #[tokio::test]
@@ -747,6 +743,15 @@ mod test {
         assert_eq!(
             Ok("\0\0xxx\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xxx\0\0\0\0\0\0\0xxx".into()),
             run_command(&c, &["get", "foo"]).await,
+        );
+    }
+
+    #[tokio::test]
+    async fn test_invalid_ts() {
+        let c = create_connection();
+        assert_eq!(
+            Err(Error::InvalidExpire("set".to_owned())),
+            run_command(&c, &["set", "foo", "bar", "EX", "10000000000000000"]).await
         );
     }
 }
