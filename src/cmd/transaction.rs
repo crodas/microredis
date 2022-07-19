@@ -26,9 +26,14 @@ pub async fn multi(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 /// When using WATCH, EXEC will execute commands only if the watched keys were not modified,
 /// allowing for a check-and-set mechanism.
 pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
-    if conn.status() != ConnectionStatus::Multi {
-        return Err(Error::NotInTx);
-    }
+    match conn.status() {
+        ConnectionStatus::Multi => Ok(()),
+        ConnectionStatus::FailedTx => {
+            conn.stop_transaction();
+            Err(Error::TxAborted)
+        }
+        _ => Err(Error::NotInTx),
+    }?;
 
     if conn.did_keys_change() {
         let _ = conn.stop_transaction();
@@ -259,6 +264,23 @@ mod test {
             run_command(&c, &["reset"]).await
         );
         assert_eq!(Err(Error::NotInTx), run_command(&c, &["exec"]).await);
+    }
+
+    #[tokio::test]
+    async fn test_exec_fails_abort() {
+        let c = create_connection();
+
+        assert_eq!(Ok(Value::Ok), run_command(&c, &["multi"]).await);
+        assert_eq!(
+            Err(Error::CommandNotFound("GETX".to_owned())),
+            run_command(&c, &["getx", "foo"]).await
+        );
+        assert_eq!(
+            Ok(Value::Queued),
+            run_command(&c, &["set", "foo", "foo"]).await
+        );
+        assert_eq!(Err(Error::TxAborted), run_command(&c, &["exec"]).await,);
+        assert_eq!(Err(Error::NotInTx), run_command(&c, &["exec"]).await,);
     }
 
     fn get_keys(args: &[&str]) -> Vec<Bytes> {

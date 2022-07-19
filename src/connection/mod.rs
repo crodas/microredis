@@ -15,6 +15,8 @@ pub mod pubsub_server;
 pub enum ConnectionStatus {
     /// The connection is in a MULTI stage and commands are being queued
     Multi,
+    /// Failed Tx
+    FailedTx,
     /// The connection is executing a transaction
     ExecutingTx,
     /// The connection is in pub-sub only mode
@@ -144,16 +146,25 @@ impl Connection {
     /// If the connection was not in a MULTI stage an error is thrown.
     pub fn stop_transaction(&self) -> Result<Value, Error> {
         let mut info = self.info.write();
-        if info.status == ConnectionStatus::Multi || info.status == ConnectionStatus::ExecutingTx {
-            info.commands = None;
-            info.watch_keys.clear();
-            info.tx_keys.clear();
-            info.status = ConnectionStatus::Normal;
+        match info.status {
+            ConnectionStatus::Multi
+            | ConnectionStatus::FailedTx
+            | ConnectionStatus::ExecutingTx => {
+                info.commands = None;
+                info.watch_keys.clear();
+                info.tx_keys.clear();
+                info.status = ConnectionStatus::Normal;
 
-            Ok(Value::Ok)
-        } else {
-            Err(Error::NotInTx)
+                Ok(Value::Ok)
+            }
+            _ => Err(Error::NotInTx),
         }
+    }
+
+    /// Flag the transaction as failed
+    pub fn fail_transaction(&self) {
+        let mut info = self.info.write();
+        info.status = ConnectionStatus::FailedTx;
     }
 
     /// Starts a transaction/multi

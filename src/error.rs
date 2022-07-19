@@ -79,6 +79,9 @@ pub enum Error {
     /// The connection is not in a transaction
     #[error(" without MULTI")]
     NotInTx,
+    /// Transaction was aborted
+    #[error("Transaction discarded because of previous errors.")]
+    TxAborted,
     /// The requested database does not exists
     #[error("DB index is out of range")]
     NotSuchDatabase,
@@ -109,6 +112,7 @@ impl From<Error> for Value {
             Error::WrongType => "WRONGTYPE",
             Error::NestedTx => "ERR MULTI",
             Error::NotInTx => "ERR EXEC",
+            Error::TxAborted => "EXECABORT",
             Error::UnblockByError => "UNBLOCKED",
             _ => "ERR",
         };

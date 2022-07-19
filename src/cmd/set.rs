@@ -384,6 +384,7 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     }
                     _ => unreachable!(),
                 };
+
                 Ok(rand)
             }
             _ => Err(Error::WrongType),

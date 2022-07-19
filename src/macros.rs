@@ -128,7 +128,11 @@ macro_rules! dispatcher {
                             stringify!($command) => {
                                 //log::info!("Command: {} -> {:?}", stringify!($command), args);
                                 let command = &self.$command;
+                                    let status = conn.status();
                                 if ! command.check_number_args(args.len()) {
+                                    if status == ConnectionStatus::Multi {
+                                        conn.fail_transaction();
+                                    }
                                     Err(Error::InvalidArgsCount(command.name().into()))
                                 } else {
                                     let metrics = command.metrics();
@@ -138,10 +142,11 @@ macro_rules! dispatcher {
                                     let response_time = &metrics.response_time;
                                     let throughput = &metrics.throughput;
 
-                                    let status = conn.status();
                                     if status == ConnectionStatus::Multi && command.is_queueable() {
                                         conn.queue_command(args);
                                         conn.tx_keys(command.get_keys(args));
+                                        return Ok(Value::Queued);
+                                    } else if status == ConnectionStatus::FailedTx && command.is_queueable() {
                                         return Ok(Value::Queued);
                                     } else if status == ConnectionStatus::Pubsub && ! command.is_pubsub_executable() {
                                         return Err(Error::PubsubOnly(stringify!($command).to_owned()));
@@ -159,7 +164,12 @@ macro_rules! dispatcher {
                                 }
                             }
                         )+)+,
-                        _ => Err(Error::CommandNotFound(command.into())),
+                        _ => {
+                            if conn.status() == ConnectionStatus::Multi {
+                                conn.fail_transaction();
+                            }
+                            Err(Error::CommandNotFound(command.into()))
+                        },
                     }
                 }.boxed()
             }
