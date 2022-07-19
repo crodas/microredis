@@ -179,10 +179,17 @@ impl TryFrom<&Value> for f64 {
 
 /// Tries to converts bytes data into a number
 ///
-/// If the convertion fails a Error::NotANumber error is returned.
+/// If the conversion fails a Error::NotANumber error is returned.
 pub fn bytes_to_number<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
     let x = String::from_utf8_lossy(bytes);
     x.parse::<T>().map_err(|_| Error::NotANumber)
+}
+
+/// Tries to converts bytes data into an integer number
+pub fn bytes_to_int<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
+    let x = String::from_utf8_lossy(bytes);
+    x.parse::<T>()
+        .map_err(|_| Error::NotANumberType("an integer".to_owned()))
 }
 
 impl From<Value> for Vec<u8> {

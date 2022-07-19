@@ -212,19 +212,20 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
-                expiration = Some(Duration::from_secs(bytes_to_number::<u64>(try_get_arg!(
-                    args,
-                    i + 1
-                ))?));
+                expiration = Some(Duration::from_secs(
+                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))
+                        .map_err(|_| Error::InvalidExpire("SET".to_owned()))?,
+                ));
                 i += 1;
             }
             "PX" => {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
-                expiration = Some(Duration::from_millis(bytes_to_number::<u64>(
-                    try_get_arg!(args, i + 1),
-                )?));
+                expiration = Some(Duration::from_millis(
+                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))
+                        .map_err(|_| Error::InvalidExpire("SET".to_owned()))?,
+                ));
                 i += 1;
             }
             "EXAT" => {
@@ -232,7 +233,10 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     return Err(Error::Syntax);
                 }
                 expiration = Some(Duration::from_secs(
-                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))? - now().as_secs(),
+                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))
+                        .map_err(|_| Error::InvalidExpire("SET".to_owned()))?
+                        .checked_sub(now().as_secs())
+                        .unwrap_or_default(),
                 ));
                 i += 1;
             }
@@ -241,7 +245,10 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     return Err(Error::Syntax);
                 }
                 expiration = Some(Duration::from_millis(
-                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))? - (now().as_millis() as u64),
+                    bytes_to_number::<u64>(try_get_arg!(args, i + 1))
+                        .map_err(|_| Error::InvalidExpire("SET".to_owned()))?
+                        .checked_sub(now().as_millis() as u64)
+                        .unwrap_or_default(),
                 ));
                 i += 1;
             }
@@ -313,9 +320,13 @@ pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// EXPIRE mykey seconds
 pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let ttl = if check_arg!(args, 0, "SETEX") {
-        Duration::from_secs(bytes_to_number(&args[2]).map_err(|_| Error::InvalidExpire)?)
+        Duration::from_secs(
+            bytes_to_number(&args[2]).map_err(|_| Error::InvalidExpire("SETEX".to_owned()))?,
+        )
     } else {
-        Duration::from_millis(bytes_to_number(&args[2]).map_err(|_| Error::InvalidExpire)?)
+        Duration::from_millis(
+            bytes_to_number(&args[2]).map_err(|_| Error::InvalidExpire("SETEX".to_owned()))?,
+        )
     };
 
     Ok(conn.db().set(&args[1], Value::new(&args[3]), Some(ttl)))
@@ -591,7 +602,7 @@ mod test {
     async fn set_incorrect_params() {
         let c = create_connection();
         assert_eq!(
-            Err(Error::NotANumber),
+            Err(Error::InvalidExpire("SET".to_owned())),
             run_command(&c, &["set", "foo", "bar1", "ex", "xx"]).await
         );
         assert_eq!(

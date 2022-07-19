@@ -384,20 +384,54 @@ impl Db {
         &self,
         key: &Bytes,
         expires_in: Duration,
-        opts: Option<ExpirationOpts>,
-    ) -> Value {
+        opts: ExpirationOpts,
+    ) -> Result<Value, Error> {
+        if (opts.NX && opts.XX) || (opts.NX && opts.GT) || (opts.NX && opts.LT) {
+            return Err(Error::OptsNotCompatible("NX and XX, GT or LT".to_owned()));
+        }
+
+        if opts.GT && opts.LT {
+            return Err(Error::OptsNotCompatible("GT and LT".to_owned()));
+        }
+
         let mut slot = self.slots[self.get_slot(key)].write();
         let expires_at = Instant::now()
             .checked_add(expires_in)
             .unwrap_or_else(far_future);
 
-        slot.get_mut(key)
+        Ok(slot
+            .get_mut(key)
             .filter(|x| x.is_valid())
             .map_or(0.into(), |x| {
+                let current_expire = x.get_ttl();
+                if opts.NX && current_expire.is_some() {
+                    return 0.into();
+                }
+                if opts.XX && current_expire.is_none() {
+                    return 0.into();
+                }
+                if opts.GT {
+                    if let Some(current_expire) = current_expire {
+                        if expires_at <= current_expire {
+                            return 0.into();
+                        }
+                    } else {
+                        return 0.into();
+                    }
+                }
+
+                if opts.LT {
+                    if let Some(current_expire) = current_expire {
+                        if expires_at >= current_expire {
+                            return 0.into();
+                        }
+                    }
+                }
+
                 self.expirations.lock().add(key, expires_at);
                 x.set_ttl(expires_at);
                 1.into()
-            })
+            }))
     }
 
     /// Overwrites part of the string stored at key, starting at the specified

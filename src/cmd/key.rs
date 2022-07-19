@@ -3,9 +3,9 @@ use super::now;
 use crate::{
     check_arg,
     connection::Connection,
-    db::scan::Scan,
+    db::{scan::Scan, utils::ExpirationOpts},
     error::Error,
-    value::{bytes_to_number, cursor::Cursor, typ::Typ, Value},
+    value::{bytes_to_int, bytes_to_number, cursor::Cursor, typ::Typ, Value},
 };
 use bytes::Bytes;
 use std::{
@@ -85,7 +85,7 @@ pub async fn exists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// The timeout can also be cleared, turning the key back into a persistent key, using the PERSIST
 /// command.
 pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let expires_in: i64 = bytes_to_number(&args[2])?;
+    let expires_in: i64 = bytes_to_int(&args[2])?;
 
     if expires_in <= 0 {
         // Delete key right away
@@ -100,11 +100,8 @@ pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         Duration::from_millis(expires_in)
     };
 
-    Ok(conn.db().set_ttl(
-        &args[1],
-        expires_at,
-        args.get(3).map(|opts| opts.try_into()).transpose()?,
-    ))
+    conn.db()
+        .set_ttl(&args[1], expires_at, (&args[3..]).try_into()?)
 }
 
 /// Returns the string representation of the type of the value stored at key.
@@ -119,7 +116,7 @@ pub async fn data_type(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
 /// January 1, 1970). A timestamp in the past will delete the key immediately.
 pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let secs = check_arg!(args, 0, "EXPIREAT");
-    let expires_at: i64 = bytes_to_number(&args[2])?;
+    let expires_at: i64 = bytes_to_int(&args[2])?;
     let expires_in: i64 = if secs {
         expires_at
             .checked_sub(now().as_secs() as i64)
@@ -143,11 +140,8 @@ pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
         Duration::from_millis(expires_in)
     };
 
-    Ok(conn.db().set_ttl(
-        &args[1],
-        expires_at,
-        args.get(3).map(|opts| opts.try_into()).transpose()?,
-    ))
+    conn.db()
+        .set_ttl(&args[1], expires_at, (&args[3..]).try_into()?)
 }
 
 /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key

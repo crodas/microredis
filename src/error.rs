@@ -77,8 +77,11 @@ pub enum Error {
     #[error("{0} is negative")]
     NegativeNumber(String),
     /// Invalid expire
-    #[error("invalid expire")]
-    InvalidExpire,
+    #[error("invalid expire in {0}")]
+    InvalidExpire(String),
+    /// Invalid expiration options
+    #[error("GT and LT options at the same time are not compatible")]
+    InvalidExpireOpts,
     /// The connection is not in a transaction
     #[error(" without MULTI")]
     NotInTx,
@@ -104,6 +107,12 @@ pub enum Error {
     /// through an error.
     #[error("client unblocked via CLIENT UNBLOCK")]
     UnblockByError,
+    /// Options provided are not compatible
+    #[error("{0} options at the same time are not compatible")]
+    OptsNotCompatible(String),
+    /// Unsupported option
+    #[error("Unsupported option {0}")]
+    UnsupportedOption(String),
     /// Client manual disconnection
     #[error("Manual disconnection")]
     Quit,
