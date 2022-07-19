@@ -1038,6 +1038,15 @@ dispatcher! {
             0,
             true,
         },
+        FLUSHALL {
+            cmd::server::flushall,
+            [Flag::Write],
+            -1,
+            0,
+            0,
+            0,
+            true,
+        },
         FLUSHDB {
             cmd::server::flushdb,
             [Flag::Write],

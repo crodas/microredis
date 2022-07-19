@@ -92,8 +92,20 @@ pub async fn info(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 }
 
 /// Delete all the keys of the currently selected DB. This command never fails.
-pub async fn flushdb(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn flushdb(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     conn.db().flushdb()
+}
+
+/// Delete all the keys of all the existing databases, not just the currently
+/// selected one. This command never fails.
+pub async fn flushall(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    conn.all_connections()
+        .get_databases()
+        .into_iter()
+        .map(|db| db.flushdb())
+        .for_each(drop);
+
+    Ok(Value::Ok)
 }
 
 /// Return the number of keys in the currently-selected database.
