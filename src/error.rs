@@ -77,7 +77,7 @@ pub enum Error {
     #[error("{0} is negative")]
     NegativeNumber(String),
     /// Invalid expire
-    #[error("invalid expire in {0}")]
+    #[error("invalid expire time in {0}")]
     InvalidExpire(String),
     /// Invalid expiration options
     #[error("GT and LT options at the same time are not compatible")]
