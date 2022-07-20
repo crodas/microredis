@@ -95,6 +95,12 @@ impl Connection {
         self.all_connections.pubsub()
     }
 
+    /// Queue response, this is the only way that a handler has to send multiple
+    /// responses leveraging internally the pubsub to itself.
+    pub fn append_response(&self, message: Value) {
+        self.pubsub_client.send(message)
+    }
+
     /// Returns a reference to the pubsub client
     pub fn pubsub_client(&self) -> &pubsub_connection::PubsubClient {
         &self.pubsub_client
@@ -106,7 +112,7 @@ impl Connection {
         match info.status {
             ConnectionStatus::Normal | ConnectionStatus::Pubsub => {
                 info.status = ConnectionStatus::Pubsub;
-                Ok(Value::Ok)
+                Ok(Value::Ignore)
             }
             _ => Err(Error::NestedTx),
         }
@@ -190,8 +196,13 @@ impl Connection {
         info.tx_keys = HashSet::new();
 
         let pubsub = self.pubsub();
-        pubsub.unsubscribe(&self.pubsub_client.subscriptions(), self);
-        pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), self);
+        let pubsub_client = self.pubsub_client();
+        if !pubsub_client.subscriptions().is_empty() {
+            pubsub.unsubscribe(&self.pubsub_client.subscriptions(), self);
+        }
+        if !pubsub_client.psubscriptions().is_empty() {
+            pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), self);
+        }
     }
 
     /// Returns the status of the connection

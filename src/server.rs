@@ -194,7 +194,7 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
             result = transport.next() => match result {
                 Some(Ok(args)) => match all_connections.get_dispatcher().execute(&conn, &args).await {
                     Ok(result) => {
-                        if conn.status() == ConnectionStatus::Pubsub {
+                        if result == Value::Ignore {
                             continue;
                         }
                         if transport.send(result).await.is_err() {

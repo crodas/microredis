@@ -64,7 +64,9 @@ pub async fn punsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Er
             .collect::<Result<Vec<Pattern>, Error>>()?
     };
 
-    Ok(conn.pubsub_client().punsubscribe(&channels, conn).into())
+    let _ = conn.pubsub_client().punsubscribe(&channels, conn);
+
+    Ok(Value::Ignore)
 }
 
 /// Unsubscribes the client from the given channels, or from all of them if none is given.
@@ -75,7 +77,8 @@ pub async fn unsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
         (&args[1..]).to_vec()
     };
 
-    Ok(conn.pubsub_client().unsubscribe(&channels, conn).into())
+    let _ = conn.pubsub_client().unsubscribe(&channels, conn);
+    Ok(Value::Ignore)
 }
 
 #[cfg(test)]
@@ -117,7 +120,7 @@ mod test {
         let (mut recv, c1) = create_connection_and_pubsub();
 
         assert_eq!(
-            Ok(Value::Ok),
+            Ok(Value::Ignore),
             run_command(&c1, &["subscribe", "foo", "bar"]).await
         );
 
@@ -144,9 +147,15 @@ mod test {
     async fn test_subscribe_multiple_channels_one_by_one() {
         let (mut recv, c1) = create_connection_and_pubsub();
 
-        assert_eq!(Ok(Value::Ok), run_command(&c1, &["subscribe", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Ignore),
+            run_command(&c1, &["subscribe", "foo"]).await
+        );
 
-        assert_eq!(Ok(Value::Ok), run_command(&c1, &["subscribe", "bar"]).await);
+        assert_eq!(
+            Ok(Value::Ignore),
+            run_command(&c1, &["subscribe", "bar"]).await
+        );
 
         assert_eq!(
             Some(Value::Array(vec![
@@ -172,12 +181,12 @@ mod test {
         let (mut recv, c1) = create_connection_and_pubsub();
 
         assert_eq!(
-            Ok(Value::Ok),
+            Ok(Value::Ignore),
             run_command(&c1, &["subscribe", "foo", "bar"]).await
         );
 
         assert_eq!(
-            Ok(Value::Integer(2)),
+            Ok(Value::Ignore),
             run_command(&c1, &["unsubscribe", "foo", "bar"]).await
         );
 
@@ -212,7 +221,7 @@ mod test {
             Some(Value::Array(vec![
                 "unsubscribe".into(),
                 "bar".into(),
-                1.into()
+                0.into()
             ])),
             recv.recv().await
         );
@@ -224,8 +233,14 @@ mod test {
         let (mut sub2, c2) = create_new_connection_from_connection(&c1);
         let (_, c3) = create_new_connection_from_connection(&c1);
 
-        assert_eq!(Ok(Value::Ok), run_command(&c1, &["subscribe", "foo"]).await);
-        assert_eq!(Ok(Value::Ok), run_command(&c2, &["subscribe", "foo"]).await);
+        assert_eq!(
+            Ok(Value::Ignore),
+            run_command(&c1, &["subscribe", "foo"]).await
+        );
+        assert_eq!(
+            Ok(Value::Ignore),
+            run_command(&c2, &["subscribe", "foo"]).await
+        );
 
         let msg = "foo - message";
 
@@ -248,7 +263,7 @@ mod test {
         let _ = run_command(&c2, &["psubscribe", "foo", "bar*", "xxx*"]).await;
 
         assert_eq!(
-            Ok(Value::Integer(1)),
+            Ok(Value::Integer(3)),
             run_command(&c1, &["pubsub", "numpat"]).await
         );
     }

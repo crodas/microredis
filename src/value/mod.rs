@@ -52,6 +52,8 @@ pub enum Value {
     Queued,
     /// Ok
     Ok,
+    /// Empty response that is not send to the client
+    Ignore,
 }
 
 impl Default for Value {
