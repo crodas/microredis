@@ -1,6 +1,10 @@
 //! # Hash command handlers
 use crate::{
-    check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
+    check_arg,
+    connection::Connection,
+    error::Error,
+    value::Value,
+    value::{bytes_to_number, float::Float},
 };
 use bytes::Bytes;
 use rand::Rng;
@@ -15,6 +19,7 @@ use std::{
 /// within this hash are ignored. If key does not exist, it is treated as an empty hash and this
 /// command returns 0.
 pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let mut is_empty = false;
     let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -28,6 +33,8 @@ pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     }
                 }
 
+                is_empty = h.len() == 0;
+
                 Ok(total.into())
             }
             _ => Err(Error::WrongType),
@@ -35,7 +42,11 @@ pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         || Ok(0.into()),
     )?;
 
-    conn.db().bump_version(&args[1]);
+    if is_empty {
+        let _ = conn.db().del(&[args[1].clone()]);
+    } else {
+        conn.db().bump_version(&args[1]);
+    }
 
     Ok(result)
 }
@@ -61,11 +72,11 @@ pub async fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
-                Value::new(&v)
-            } else {
-                Value::Null
-            }),
+            Value::Hash(h) => Ok(h
+                .read()
+                .get(&args[2])
+                .map(|v| Value::new(v))
+                .unwrap_or_default()),
             _ => Err(Error::WrongType),
         },
         || Ok(Value::Null),
@@ -98,37 +109,24 @@ pub async fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// specified increment. If the increment value is negative, the result is to have the hash field
 /// value decremented instead of incremented. If the field does not exist, it is set to 0 before
 /// performing the operation.
-pub async fn hincrby<
-    T: ToString + FromStr + AddAssign + for<'a> TryFrom<&'a Value, Error = Error> + Into<Value> + Copy,
->(
-    conn: &Connection,
-    args: &[Bytes],
-) -> Result<Value, Error> {
-    let result = conn.db().get_map_or(
-        &args[1],
-        |v| match v {
-            Value::Hash(h) => {
-                let mut incr_by: T = bytes_to_number(&args[3])?;
-                let mut h = h.write();
-                if let Some(n) = h.get(&args[2]) {
-                    incr_by += bytes_to_number(n)?;
-                }
+pub async fn hincrby_int(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let result = conn
+        .db()
+        .hincrby::<i64>(&args[1], &args[2], &args[3], "an integer")?;
 
-                h.insert(args[2].clone(), incr_by.to_string().into());
+    conn.db().bump_version(&args[1]);
 
-                Ok(incr_by.into())
-            }
-            _ => Err(Error::WrongType),
-        },
-        || {
-            let incr_by: T = bytes_to_number(&args[3])?;
-            #[allow(clippy::mutable_key_type)]
-            let mut h = HashMap::new();
-            h.insert(args[2].clone(), incr_by.to_string().into());
-            conn.db().set(&args[1], h.into(), None);
-            Ok(incr_by.into())
-        },
-    )?;
+    Ok(result)
+}
+
+/// Increment the specified field of a hash stored at key, and representing a number, by the
+/// specified increment. If the increment value is negative, the result is to have the hash field
+/// value decremented instead of incremented. If the field does not exist, it is set to 0 before
+/// performing the operation.
+pub async fn hincrby_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let result = conn
+        .db()
+        .hincrby::<Float>(&args[1], &args[2], &args[3], "a float")?;
 
     conn.db().bump_version(&args[1]);
 
@@ -177,19 +175,19 @@ pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
                 Ok((&args[2..])
                     .iter()
-                    .map(|key| {
-                        if let Some(value) = h.get(key) {
-                            Value::new(&value)
-                        } else {
-                            Value::Null
-                        }
-                    })
+                    .map(|key| h.get(key).map(|v| Value::new(v)).unwrap_or_default())
                     .collect::<Vec<Value>>()
                     .into())
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(Value::Array(vec![])),
+        || {
+            Ok((&args[2..])
+                .iter()
+                .map(|_| Value::Null)
+                .collect::<Vec<Value>>()
+                .into())
+        },
     )
 }
 
@@ -261,6 +259,7 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// Sets field in the hash stored at key to value. If key does not exist, a new key holding a hash
 /// is created. If field already exists in the hash, it is overwritten.
 pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let is_hmset = check_arg!(args, 0, "HMSET");
     if args.len() % 2 == 1 {
         return Err(Error::InvalidArgsCount("hset".to_owned()));
     }
@@ -275,7 +274,11 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                         e += 1;
                     }
                 }
-                Ok(e.into())
+                if is_hmset {
+                    Ok(Value::Ok)
+                } else {
+                    Ok(e.into())
+                }
             }
             _ => Err(Error::WrongType),
         },
@@ -287,7 +290,11 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             }
             let len = h.len();
             conn.db().set(&args[1], h.into(), None);
-            Ok(len.into())
+            if is_hmset {
+                Ok(Value::Ok)
+            } else {
+                Ok(len.into())
+            }
         },
     )?;
 
@@ -340,11 +347,12 @@ pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Hash(h) => Ok(if let Some(v) = h.read().get(&args[2]) {
-                v.len().into()
-            } else {
-                0.into()
-            }),
+            Value::Hash(h) => Ok(h
+                .read()
+                .get(&args[2])
+                .map(|v| v.len())
+                .unwrap_or_default()
+                .into()),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),

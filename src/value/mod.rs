@@ -3,16 +3,20 @@
 //! All redis internal data structures and values are absracted in this mod.
 pub mod checksum;
 pub mod cursor;
+pub mod expiration;
+pub mod float;
 pub mod locked;
 pub mod typ;
 
-use crate::{error::Error, value_try_from, value_vec_try_from};
+use crate::{cmd::now, error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     convert::{TryFrom, TryInto},
     str::FromStr,
+    time::Duration,
 };
 
 /// Redis Value.
@@ -30,7 +34,7 @@ pub enum Value {
     Array(Vec<Value>),
     /// Bytes/Strings/Binary data
     Blob(BytesMut),
-    /// String. This type does not allowe new lines
+    /// String. This type does not allow new lines
     String(String),
     /// An error
     Err(String, String),
@@ -48,6 +52,33 @@ pub enum Value {
     Queued,
     /// Ok
     Ok,
+    /// Empty response that is not send to the client
+    Ignore,
+}
+
+impl Default for Value {
+    fn default() -> Self {
+        Self::Null
+    }
+}
+
+/// Value debug struct
+#[derive(Debug)]
+pub struct VDebug {
+    /// Value encoding
+    pub encoding: &'static str,
+    /// Length of serialized value
+    pub serialize_len: usize,
+}
+
+impl From<VDebug> for Value {
+    fn from(v: VDebug) -> Self {
+        Value::Blob(format!(
+            "Value at:0x6000004a8840 refcount:1 encoding:{} serializedlength:{} lru:13421257 lru_seconds_idle:367",
+            v.encoding, v.serialize_len
+            ).as_str().into()
+        )
+    }
 }
 
 impl Value {
@@ -57,13 +88,38 @@ impl Value {
     }
 
     /// Returns the internal encoding of the redis
-    pub fn encoding(&self) -> &str {
+    pub fn encoding(&self) -> &'static str {
         match self {
             Self::Hash(_) | Self::Set(_) => "hashtable",
             Self::List(_) => "linkedlist",
             Self::Array(_) => "vector",
             _ => "embstr",
         }
+    }
+
+    /// Is the current value an error?
+    pub fn is_err(&self) -> bool {
+        match self {
+            Self::Err(..) => true,
+            _ => false,
+        }
+    }
+
+    /// Return debug information for the type
+    pub fn debug(&self) -> VDebug {
+        let bytes: Vec<u8> = self.into();
+        VDebug {
+            encoding: self.encoding(),
+            serialize_len: bytes.len(),
+        }
+    }
+
+    /// Returns the hash of the value
+    pub fn digest(&self) -> Vec<u8> {
+        let bytes: Vec<u8> = self.into();
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        hasher.finalize().to_vec()
     }
 }
 
@@ -125,18 +181,21 @@ impl TryFrom<&Value> for f64 {
     }
 }
 
-/// Tries to converts bytes data into a number
+/// Tries to convert bytes data into a number
 ///
-/// If the convertion fails a Error::NotANumber error is returned.
+/// If the conversion fails a Error::NotANumber error is returned.
+#[inline]
 pub fn bytes_to_number<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
     let x = String::from_utf8_lossy(bytes);
     x.parse::<T>().map_err(|_| Error::NotANumber)
 }
 
-impl From<Value> for Vec<u8> {
-    fn from(value: Value) -> Vec<u8> {
-        (&value).into()
-    }
+/// Tries to convert bytes data into an integer number
+#[inline]
+pub fn bytes_to_int<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
+    let x = String::from_utf8_lossy(bytes);
+    x.parse::<T>()
+        .map_err(|_| Error::NotANumberType("an integer".to_owned()))
 }
 
 impl<'a> From<&ParsedValue<'a>> for Value {
@@ -164,6 +223,28 @@ value_try_from!(i128, Value::BigInteger);
 impl From<usize> for Value {
     fn from(value: usize) -> Value {
         Value::Integer(value as i64)
+    }
+}
+
+impl From<Value> for Vec<u8> {
+    fn from(value: Value) -> Vec<u8> {
+        (&value).into()
+    }
+}
+
+impl From<Option<&Bytes>> for Value {
+    fn from(v: Option<&Bytes>) -> Self {
+        if let Some(v) = v {
+            v.into()
+        } else {
+            Value::Null
+        }
+    }
+}
+
+impl From<&Bytes> for Value {
+    fn from(v: &Bytes) -> Self {
+        Value::new(v)
     }
 }
 

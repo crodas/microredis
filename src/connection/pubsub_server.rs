@@ -16,7 +16,6 @@ type Subscription = HashMap<u128, Sender>;
 pub struct Pubsub {
     subscriptions: RwLock<HashMap<Bytes, Subscription>>,
     psubscriptions: RwLock<HashMap<Pattern, Subscription>>,
-    number_of_psubscriptions: RwLock<i64>,
 }
 
 impl Pubsub {
@@ -25,7 +24,6 @@ impl Pubsub {
         Self {
             subscriptions: RwLock::new(HashMap::new()),
             psubscriptions: RwLock::new(HashMap::new()),
-            number_of_psubscriptions: RwLock::new(0),
         }
     }
 
@@ -35,8 +33,8 @@ impl Pubsub {
     }
 
     /// Returns numbers of pattern-subscriptions
-    pub fn get_number_of_psubscribers(&self) -> i64 {
-        *(self.number_of_psubscriptions.read())
+    pub fn get_number_of_psubscribers(&self) -> usize {
+        self.psubscriptions.read().len()
     }
 
     /// Returns numbers of subscribed for given channels
@@ -71,16 +69,16 @@ impl Pubsub {
                 subscriptions.insert(channel.clone(), h);
             }
             if !conn.pubsub_client().is_psubcribed() {
-                let mut psubs = self.number_of_psubscriptions.write();
                 conn.pubsub_client().make_psubcribed();
-                *psubs += 1;
             }
 
-            let _ = conn.pubsub_client().sender().try_send(
+            conn.pubsub_client().new_psubscription(&channel);
+
+            conn.append_response(
                 vec![
                     "psubscribe".into(),
                     Value::new(&bytes_channel),
-                    conn.pubsub_client().new_psubscription(&channel).into(),
+                    conn.pubsub_client().total_subs().into(),
                 ]
                 .into(),
             );
@@ -131,35 +129,39 @@ impl Pubsub {
     }
 
     /// Unsubscribe from a pattern subscription
-    pub fn punsubscribe(&self, channels: &[Pattern], conn: &Connection) -> u32 {
+    pub fn punsubscribe(&self, channels: &[Pattern], conn: &Connection) {
+        if channels.is_empty() {
+            return conn.append_response(Value::Array(vec![
+                "punsubscribe".into(),
+                Value::Null,
+                0usize.into(),
+            ]));
+        }
         let mut all_subs = self.psubscriptions.write();
         let conn_id = conn.id();
-        let mut removed = 0;
         channels
             .iter()
             .map(|channel| {
                 if let Some(subs) = all_subs.get_mut(channel) {
-                    if let Some(sender) = subs.remove(&conn_id) {
-                        let _ = sender.try_send(Value::Array(vec![
-                            "punsubscribe".into(),
-                            channel.as_str().into(),
-                            1.into(),
-                        ]));
-                        removed += 1;
-                    }
+                    subs.remove(&conn_id);
                     if subs.is_empty() {
                         all_subs.remove(channel);
                     }
                 }
+
+                conn.append_response(Value::Array(vec![
+                    "punsubscribe".into(),
+                    channel.as_str().into(),
+                    conn.pubsub_client().total_subs().into(),
+                ]));
             })
             .for_each(drop);
-
-        removed
     }
 
     /// Subscribe connection to channels
     pub fn subscribe(&self, channels: &[Bytes], conn: &Connection) {
         let mut subscriptions = self.subscriptions.write();
+        let total_psubs = self.psubscriptions.read().len();
 
         channels
             .iter()
@@ -172,11 +174,12 @@ impl Pubsub {
                     subscriptions.insert(channel.clone(), h);
                 }
 
-                let _ = conn.pubsub_client().sender().try_send(
+                conn.pubsub_client().new_subscription(channel);
+                conn.append_response(
                     vec![
                         "subscribe".into(),
                         Value::new(&channel),
-                        conn.pubsub_client().new_subscription(channel).into(),
+                        conn.pubsub_client().total_subs().into(),
                     ]
                     .into(),
                 );
@@ -185,29 +188,32 @@ impl Pubsub {
     }
 
     /// Removes connection subscription to channels.
-    pub fn unsubscribe(&self, channels: &[Bytes], conn: &Connection) -> u32 {
+    pub fn unsubscribe(&self, channels: &[Bytes], conn: &Connection) {
+        if channels.is_empty() {
+            return conn.append_response(Value::Array(vec![
+                "unsubscribe".into(),
+                Value::Null,
+                0usize.into(),
+            ]));
+        }
         let mut all_subs = self.subscriptions.write();
+        let total_psubs = self.psubscriptions.read().len();
         let conn_id = conn.id();
-        let mut removed = 0;
         channels
             .iter()
             .map(|channel| {
                 if let Some(subs) = all_subs.get_mut(channel) {
-                    if let Some(sender) = subs.remove(&conn_id) {
-                        let _ = sender.try_send(Value::Array(vec![
-                            "unsubscribe".into(),
-                            Value::new(&channel),
-                            1.into(),
-                        ]));
-                        removed += 1;
-                    }
+                    subs.remove(&conn_id);
                     if subs.is_empty() {
                         all_subs.remove(channel);
                     }
                 }
+                conn.append_response(Value::Array(vec![
+                    "unsubscribe".into(),
+                    Value::new(&channel),
+                    (all_subs.len() + total_psubs).into(),
+                ]));
             })
             .for_each(drop);
-
-        removed
     }
 }

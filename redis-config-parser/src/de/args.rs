@@ -33,8 +33,8 @@ impl<'de> de::Deserializer<'de> for ArgsDeserializer<'de> {
 }
 
 pub struct SeqArgsDeserializer<'a> {
-    input: Vec<Cow<'a, str>>,
-    id: usize,
+    pub input: Vec<Cow<'a, str>>,
+    pub id: usize,
 }
 
 impl<'de> de::SeqAccess<'de> for SeqArgsDeserializer<'de> {

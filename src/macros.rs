@@ -119,12 +119,20 @@ macro_rules! dispatcher {
             #[inline(always)]
             pub fn execute<'a>(&'a self, conn: &'a Connection, args: &'a [Bytes]) -> futures::future::BoxFuture<'a, Result<Value, Error>> {
                 async move {
-                    let command = String::from_utf8_lossy(&args[0]).to_uppercase();
+                    let command = match args.get(0) {
+                        Some(s) => Ok(String::from_utf8_lossy(s).to_uppercase()),
+                        None => Err(Error::EmptyLine),
+                    }?;
                     match command.as_str() {
                         $($(
                             stringify!($command) => {
+                                //log::info!("Command: {} -> {:?}", stringify!($command), args);
                                 let command = &self.$command;
+                                    let status = conn.status();
                                 if ! command.check_number_args(args.len()) {
+                                    if status == ConnectionStatus::Multi {
+                                        conn.fail_transaction();
+                                    }
                                     Err(Error::InvalidArgsCount(command.name().into()))
                                 } else {
                                     let metrics = command.metrics();
@@ -134,10 +142,11 @@ macro_rules! dispatcher {
                                     let response_time = &metrics.response_time;
                                     let throughput = &metrics.throughput;
 
-                                    let status = conn.status();
                                     if status == ConnectionStatus::Multi && command.is_queueable() {
                                         conn.queue_command(args);
                                         conn.tx_keys(command.get_keys(args));
+                                        return Ok(Value::Queued);
+                                    } else if status == ConnectionStatus::FailedTx && command.is_queueable() {
                                         return Ok(Value::Queued);
                                     } else if status == ConnectionStatus::Pubsub && ! command.is_pubsub_executable() {
                                         return Err(Error::PubsubOnly(stringify!($command).to_owned()));
@@ -155,7 +164,12 @@ macro_rules! dispatcher {
                                 }
                             }
                         )+)+,
-                        _ => Err(Error::CommandNotFound(command.into())),
+                        _ => {
+                            if conn.status() == ConnectionStatus::Multi {
+                                conn.fail_transaction();
+                            }
+                            Err(Error::CommandNotFound(command.into()))
+                        },
                     }
                 }.boxed()
             }
@@ -218,11 +232,18 @@ macro_rules! check_arg {
 /// is thrown
 #[macro_export]
 macro_rules! try_get_arg {
-    {$args: tt, $pos: tt} => {{
+    {$args: tt, $pos: expr} => {{
         match $args.get($pos) {
             Some(bytes) => bytes,
             None => return Err(Error::Syntax),
         }
+    }}
+}
+/// Reads an argument index as an utf-8 string or return an Error::Syntax
+#[macro_export]
+macro_rules! try_get_arg_str {
+    {$args: tt, $pos: expr} => {{
+        String::from_utf8_lossy(try_get_arg!($args, $pos))
     }}
 }
 

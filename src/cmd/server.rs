@@ -1,11 +1,15 @@
 //! # Server command handlers
 use crate::{
-    check_arg, connection::Connection, error::Error, value::bytes_to_number, value::Value,
+    check_arg, connection::Connection, error::Error, try_get_arg, value::bytes_to_number,
+    value::Value,
 };
 use bytes::Bytes;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
-use std::{convert::TryInto, ops::Neg};
+use git_version::git_version;
+use std::{
+    convert::TryInto,
+    ops::Neg,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::time::Duration;
 
 /// Returns Array reply of details about all Redis commands.
@@ -62,6 +66,53 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
     }
 }
 
+/// The DEBUG command is an internal command. It is meant to be used for
+/// developing and testing Redis.
+pub async fn debug(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
+        "object" => Ok(conn.db().debug(try_get_arg!(args, 2))?.into()),
+        "set-active-expire" => Ok(Value::Ok),
+        "digest-value" => Ok(Value::Array(conn.db().digest(&args[2..])?)),
+        _ => Err(Error::Syntax),
+    }
+}
+
+/// The INFO command returns information and statistics about the server in a
+/// format that is simple to parse by computers and easy to read by humans.
+pub async fn info(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    Ok(Value::Blob(
+        format!(
+            "redis_version: {}\r\nredis_git_sha1:{}\r\n",
+            git_version!(),
+            git_version!()
+        )
+        .as_str()
+        .into(),
+    ))
+}
+
+/// Delete all the keys of the currently selected DB. This command never fails.
+pub async fn flushdb(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    conn.db().flushdb()
+}
+
+/// Delete all the keys of all the existing databases, not just the currently
+/// selected one. This command never fails.
+pub async fn flushall(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    conn.all_connections()
+        .get_databases()
+        .into_iter()
+        .map(|db| db.flushdb())
+        .for_each(drop);
+
+    Ok(Value::Ok)
+}
+
+/// Return the number of keys in the currently-selected database.
+pub async fn dbsize(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    conn.db().len().map(|s| s.into())
+}
+
 /// The TIME command returns the current server time as a two items lists: a
 /// Unix timestamp and the amount of microseconds already elapsed in the current
 /// second. Basically the interface is very similar to the one of the
@@ -73,4 +124,10 @@ pub async fn time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
     let millis = format!("{}", since_the_epoch.subsec_millis());
 
     Ok(vec![seconds.as_str(), millis.as_str()].into())
+}
+
+/// Ask the server to close the connection. The connection is closed as soon as
+/// all pending replies have been written to the client.
+pub async fn quit(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    Err(Error::Quit)
 }

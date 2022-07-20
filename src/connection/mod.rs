@@ -15,6 +15,8 @@ pub mod pubsub_server;
 pub enum ConnectionStatus {
     /// The connection is in a MULTI stage and commands are being queued
     Multi,
+    /// Failed Tx
+    FailedTx,
     /// The connection is executing a transaction
     ExecutingTx,
     /// The connection is in pub-sub only mode
@@ -29,6 +31,15 @@ impl Default for ConnectionStatus {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+/// Reason while a client was unblocked
+pub enum UnblockReason {
+    /// Timeout
+    Timeout,
+    /// Throw an error
+    Error,
+}
+
 /// Connection information
 #[derive(Debug)]
 pub struct ConnectionInfo {
@@ -39,6 +50,8 @@ pub struct ConnectionInfo {
     tx_keys: HashSet<Bytes>,
     status: ConnectionStatus,
     commands: Option<Vec<Vec<Bytes>>>,
+    is_blocked: bool,
+    unblock_reason: Option<UnblockReason>,
 }
 
 /// Connection
@@ -62,6 +75,8 @@ impl ConnectionInfo {
             tx_keys: HashSet::new(),
             commands: None,
             status: ConnectionStatus::Normal,
+            is_blocked: false,
+            unblock_reason: None,
         }
     }
 }
@@ -80,6 +95,12 @@ impl Connection {
         self.all_connections.pubsub()
     }
 
+    /// Queue response, this is the only way that a handler has to send multiple
+    /// responses leveraging internally the pubsub to itself.
+    pub fn append_response(&self, message: Value) {
+        self.pubsub_client.send(message)
+    }
+
     /// Returns a reference to the pubsub client
     pub fn pubsub_client(&self) -> &pubsub_connection::PubsubClient {
         &self.pubsub_client
@@ -91,10 +112,34 @@ impl Connection {
         match info.status {
             ConnectionStatus::Normal | ConnectionStatus::Pubsub => {
                 info.status = ConnectionStatus::Pubsub;
-                Ok(Value::Ok)
+                Ok(Value::Ignore)
             }
             _ => Err(Error::NestedTx),
         }
+    }
+
+    /// Block the connection
+    pub fn block(&self) {
+        let mut info = self.info.write();
+        info.is_blocked = true;
+        info.unblock_reason = None;
+    }
+
+    /// Unblock connection
+    pub fn unblock(&self, reason: UnblockReason) -> bool {
+        let mut info = self.info.write();
+        if info.is_blocked {
+            info.is_blocked = false;
+            info.unblock_reason = Some(reason);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// If the current connection has been externally unblocked
+    pub fn is_unblocked(&self) -> Option<UnblockReason> {
+        self.info.read().unblock_reason
     }
 
     /// Connection ID
@@ -107,16 +152,25 @@ impl Connection {
     /// If the connection was not in a MULTI stage an error is thrown.
     pub fn stop_transaction(&self) -> Result<Value, Error> {
         let mut info = self.info.write();
-        if info.status == ConnectionStatus::Multi || info.status == ConnectionStatus::ExecutingTx {
-            info.commands = None;
-            info.watch_keys.clear();
-            info.tx_keys.clear();
-            info.status = ConnectionStatus::Normal;
+        match info.status {
+            ConnectionStatus::Multi
+            | ConnectionStatus::FailedTx
+            | ConnectionStatus::ExecutingTx => {
+                info.commands = None;
+                info.watch_keys.clear();
+                info.tx_keys.clear();
+                info.status = ConnectionStatus::Normal;
 
-            Ok(Value::Ok)
-        } else {
-            Err(Error::NotInTx)
+                Ok(Value::Ok)
+            }
+            _ => Err(Error::NotInTx),
         }
+    }
+
+    /// Flag the transaction as failed
+    pub fn fail_transaction(&self) {
+        let mut info = self.info.write();
+        info.status = ConnectionStatus::FailedTx;
     }
 
     /// Starts a transaction/multi
@@ -142,8 +196,13 @@ impl Connection {
         info.tx_keys = HashSet::new();
 
         let pubsub = self.pubsub();
-        pubsub.unsubscribe(&self.pubsub_client.subscriptions(), self);
-        pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), self);
+        let pubsub_client = self.pubsub_client();
+        if !pubsub_client.subscriptions().is_empty() {
+            pubsub.unsubscribe(&self.pubsub_client.subscriptions(), self);
+        }
+        if !pubsub_client.psubscriptions().is_empty() {
+            pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), self);
+        }
     }
 
     /// Returns the status of the connection

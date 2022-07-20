@@ -32,10 +32,12 @@ where
                 let mut all_entries = x.read().clone();
                 for key in keys[1..].iter() {
                     let mut do_break = false;
+                    let mut found = false;
                     let _ = conn.db().get_map_or(
                         key,
                         |v| match v {
                             Value::Set(x) => {
+                                found = true;
                                 if !op(&mut all_entries, &x.read()) {
                                     do_break = true;
                                 }
@@ -45,6 +47,9 @@ where
                         },
                         || Ok(Value::Null),
                     )?;
+                    if !found && !op(&mut all_entries, &HashSet::new()) {
+                        break;
+                    }
                     if do_break {
                         break;
                     }
@@ -58,7 +63,35 @@ where
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(Value::Array(vec![])),
+        || {
+            #[allow(clippy::mutable_key_type)]
+            let mut all_entries: HashSet<Bytes> = HashSet::new();
+            for key in keys[1..].iter() {
+                let mut do_break = false;
+                let _ = conn.db().get_map_or(
+                    key,
+                    |v| match v {
+                        Value::Set(x) => {
+                            if !op(&mut all_entries, &x.read()) {
+                                do_break = true;
+                            }
+                            Ok(Value::Null)
+                        }
+                        _ => Err(Error::WrongType),
+                    },
+                    || Ok(Value::Null),
+                )?;
+                if do_break {
+                    break;
+                }
+            }
+
+            Ok(all_entries
+                .iter()
+                .map(|entry| Value::new(&entry))
+                .collect::<Vec<Value>>()
+                .into())
+        },
     )
 }
 
@@ -140,7 +173,12 @@ pub async fn sdiff(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// If destination already exists, it is overwritten.
 pub async fn sdiffstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sdiff(conn, &args[1..]).await? {
-        Ok(store(conn, &args[1], &values).into())
+        if values.len() > 0 {
+            Ok(store(conn, &args[1], &values).into())
+        } else {
+            let _ = conn.db().del(&[args[1].clone()]);
+            Ok(0.into())
+        }
     } else {
         Ok(0.into())
     }
@@ -187,7 +225,12 @@ pub async fn sintercard(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// If destination already exists, it is overwritten.
 pub async fn sinterstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sinter(conn, &args[1..]).await? {
-        Ok(store(conn, &args[1], &values).into())
+        if values.len() > 0 {
+            Ok(store(conn, &args[1], &values).into())
+        } else {
+            let _ = conn.db().del(&[args[1].clone()]);
+            Ok(0.into())
+        }
     } else {
         Ok(0.into())
     }
@@ -248,7 +291,13 @@ pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(0.into()),
+        || {
+            Ok((&args[2..])
+                .iter()
+                .map(|_| 0.into())
+                .collect::<Vec<Value>>()
+                .into())
+        },
     )
 }
 
@@ -264,35 +313,38 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
-            Value::Set(set1) => {
-                if !set1.read().contains(&args[3]) {
-                    return Ok(0.into());
-                }
-
-                conn.db().get_map_or(
-                    &args[2],
-                    |v| match v {
-                        Value::Set(set2) => {
-                            let mut set2 = set2.write();
-                            set1.write().remove(&args[3]);
-                            if set2.insert(args[3].clone()) {
-                                Ok(1.into())
-                            } else {
-                                Ok(0.into())
-                            }
+            Value::Set(set1) => conn.db().get_map_or(
+                &args[2],
+                |v| match v {
+                    Value::Set(set2) => {
+                        let mut set1 = set1.write();
+                        if !set1.contains(&args[3]) {
+                            return Ok(0.into());
                         }
-                        _ => Err(Error::WrongType),
-                    },
-                    || {
-                        set1.write().remove(&args[3]);
-                        #[allow(clippy::mutable_key_type)]
-                        let mut x = HashSet::new();
-                        x.insert(args[3].clone());
-                        conn.db().set(&args[2], x.into(), None);
-                        Ok(1.into())
-                    },
-                )
-            }
+
+                        if args[1] == args[2] {
+                            return Ok(1.into());
+                        }
+
+                        let mut set2 = set2.write();
+                        set1.remove(&args[3]);
+                        if set2.insert(args[3].clone()) {
+                            Ok(1.into())
+                        } else {
+                            Ok(0.into())
+                        }
+                    }
+                    _ => Err(Error::WrongType),
+                },
+                || {
+                    set1.write().remove(&args[3]);
+                    #[allow(clippy::mutable_key_type)]
+                    let mut x = HashSet::new();
+                    x.insert(args[3].clone());
+                    conn.db().set(&args[2], x.into(), None);
+                    Ok(1.into())
+                },
+            ),
             _ => Err(Error::WrongType),
         },
         || Ok(0.into()),
@@ -314,6 +366,7 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// cardinality.
 pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let rand = srandmember(conn, args).await?;
+    let mut should_remove = false;
     let result = conn.db().get_map_or(
         &args[1],
         |v| match v {
@@ -321,25 +374,31 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                 let mut x = x.write();
                 match &rand {
                     Value::Blob(value) => {
-                        x.remove(value.as_ref().into());
+                        x.remove(value.as_ref());
                     }
                     Value::Array(values) => {
                         for value in values.iter() {
                             if let Value::Blob(value) = value {
-                                x.remove(value.as_ref().into());
+                                x.remove(value.as_ref());
                             }
                         }
                     }
                     _ => unreachable!(),
                 };
+
+                should_remove = x.is_empty();
                 Ok(rand)
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(0.into()),
+        || Ok(Value::Null),
     )?;
 
-    conn.db().bump_version(&args[1]);
+    if should_remove {
+        let _ = conn.db().del(&[args[1].clone()]);
+    } else {
+        conn.db().bump_version(&args[1]);
+    }
 
     Ok(result)
 }
@@ -369,20 +428,56 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
                 items.sort_by(|a, b| a.1.cmp(&b.1));
 
                 if args.len() == 2 {
-                    let item = items[0].0.clone();
-                    Ok(Value::new(&item))
+                    // Two arguments provided, return the first element or null if the array is null
+                    if items.is_empty() {
+                        Ok(Value::Null)
+                    } else {
+                        let item = items[0].0.clone();
+                        Ok(Value::new(&item))
+                    }
                 } else {
-                    let len: usize = min(items.len(), bytes_to_number(&args[2])?);
-                    Ok(items[0..len]
-                        .iter()
-                        .map(|item| Value::new(&item.0))
-                        .collect::<Vec<Value>>()
-                        .into())
+                    if items.is_empty() {
+                        return Ok(Value::Array(vec![]));
+                    }
+                    let len = bytes_to_number::<i64>(&args[2])?;
+
+                    if len > 0 {
+                        // required length is positive, return *up* to the requested number and no duplicated allowed
+                        let len: usize = min(items.len(), len as usize);
+                        Ok(items[0..len]
+                            .iter()
+                            .map(|item| Value::new(&item.0))
+                            .collect::<Vec<Value>>()
+                            .into())
+                    } else {
+                        // duplicated results are allowed and the requested number must be returned
+                        let len = (len * -1) as usize;
+                        let total = items.len() - 1;
+                        let mut i = 0;
+                        let items = (0..len)
+                            .map(|_| {
+                                let r = (items[i].0, rng.gen());
+                                i = if i >= total { 0 } else { i + 1 };
+                                r
+                            })
+                            .collect::<Vec<(&Bytes, i128)>>();
+                        Ok(items
+                            .iter()
+                            .map(|item| Value::new(&item.0))
+                            .collect::<Vec<Value>>()
+                            .into())
+                    }
                 }
             }
             _ => Err(Error::WrongType),
         },
-        || Ok(0.into()),
+        || {
+            Ok(if args.len() == 2 {
+                Value::Null
+            } else {
+                Value::Array(vec![])
+            })
+        },
     )
 }
 
@@ -433,7 +528,12 @@ pub async fn sunion(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// If destination already exists, it is overwritten.
 pub async fn sunionstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     if let Value::Array(values) = sunion(conn, &args[1..]).await? {
-        Ok(store(conn, &args[1], &values).into())
+        if values.len() > 0 {
+            Ok(store(conn, &args[1], &values).into())
+        } else {
+            let _ = conn.db().del(&[args[1].clone()]);
+            Ok(0.into())
+        }
     } else {
         Ok(0.into())
     }
@@ -785,6 +885,35 @@ mod test {
         assert_eq!(
             6,
             if let Ok(Value::Array(x)) = run_command(&c, &["sunion", "1", "2", "3"]).await {
+                x.len()
+            } else {
+                0
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn sunion_first_key_do_not_exists() {
+        let c = create_connection();
+
+        assert_eq!(
+            run_command(&c, &["sadd", "1", "a", "b", "c", "d"]).await,
+            run_command(&c, &["scard", "1"]).await
+        );
+
+        assert_eq!(
+            run_command(&c, &["sadd", "2", "c", "x"]).await,
+            run_command(&c, &["scard", "2"]).await
+        );
+
+        assert_eq!(
+            run_command(&c, &["sadd", "3", "a", "c", "e"]).await,
+            run_command(&c, &["scard", "3"]).await
+        );
+
+        assert_eq!(
+            6,
+            if let Ok(Value::Array(x)) = run_command(&c, &["sunion", "0", "1", "2", "3"]).await {
                 x.len()
             } else {
                 0

@@ -22,7 +22,6 @@ struct MetaData {
     subscriptions: HashMap<Bytes, bool>,
     psubscriptions: HashMap<Pattern, bool>,
     is_psubcribed: bool,
-    id: usize,
 }
 
 impl PubsubClient {
@@ -33,38 +32,39 @@ impl PubsubClient {
                 subscriptions: HashMap::new(),
                 psubscriptions: HashMap::new(),
                 is_psubcribed: false,
-                id: 0,
             }),
             sender,
         }
     }
 
     /// Unsubscribe from pattern subscriptions
-    pub fn punsubscribe(&self, channels: &[Pattern], conn: &Connection) -> u32 {
+    pub fn punsubscribe(&self, channels: &[Pattern], conn: &Connection) {
         let mut meta = self.meta.write();
         channels
             .iter()
             .map(|channel| meta.psubscriptions.remove(channel))
             .for_each(drop);
-        if meta.psubscriptions.len() + meta.subscriptions.len() == 0 {
-            drop(meta);
+        drop(meta);
+        conn.pubsub().punsubscribe(channels, conn);
+
+        if self.total_subs() == 0 {
             conn.reset();
         }
-        conn.pubsub().punsubscribe(channels, conn)
     }
 
     /// Unsubscribe from channels
-    pub fn unsubscribe(&self, channels: &[Bytes], conn: &Connection) -> u32 {
+    pub fn unsubscribe(&self, channels: &[Bytes], conn: &Connection) {
         let mut meta = self.meta.write();
         channels
             .iter()
             .map(|channel| meta.subscriptions.remove(channel))
             .for_each(drop);
-        if meta.psubscriptions.len() + meta.subscriptions.len() == 0 {
-            drop(meta);
+        drop(meta);
+        conn.pubsub().unsubscribe(channels, conn);
+
+        if self.total_subs() == 0 {
             conn.reset();
         }
-        conn.pubsub().unsubscribe(channels, conn)
     }
 
     /// Return list of subscriptions for this connection
@@ -87,20 +87,22 @@ impl PubsubClient {
             .collect::<Vec<Pattern>>()
     }
 
-    /// Creates a new subscription and returns the ID for this new subscription.
-    pub fn new_subscription(&self, channel: &Bytes) -> usize {
-        let mut meta = self.meta.write();
-        meta.subscriptions.insert(channel.clone(), true);
-        meta.id += 1;
-        meta.id
+    /// Return total number of subscriptions + psubscription
+    pub fn total_subs(&self) -> usize {
+        let meta = self.meta.read();
+        meta.subscriptions.len() + meta.psubscriptions.len()
     }
 
-    /// Creates a new pattern subscription and returns the ID for this new subscription.
-    pub fn new_psubscription(&self, channel: &Pattern) -> usize {
+    /// Creates a new subscription
+    pub fn new_subscription(&self, channel: &Bytes) {
+        let mut meta = self.meta.write();
+        meta.subscriptions.insert(channel.clone(), true);
+    }
+
+    /// Creates a new pattern subscription
+    pub fn new_psubscription(&self, channel: &Pattern) {
         let mut meta = self.meta.write();
         meta.psubscriptions.insert(channel.clone(), true);
-        meta.id += 1;
-        meta.id
     }
 
     /// Does this connection has a pattern subscription?
@@ -117,5 +119,11 @@ impl PubsubClient {
     /// other connections) to this connection.
     pub fn sender(&self) -> mpsc::Sender<Value> {
         self.sender.clone()
+    }
+
+    /// Sends a message
+    #[inline]
+    pub fn send(&self, message: Value) {
+        let _ = self.sender.try_send(message);
     }
 }

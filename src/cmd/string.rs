@@ -3,10 +3,10 @@ use super::now;
 use crate::{
     check_arg,
     connection::Connection,
-    db::Override,
+    db::utils::Override,
     error::Error,
     try_get_arg,
-    value::{bytes_to_number, Value},
+    value::{bytes_to_int, bytes_to_number, expiration::Expiration, float::Float, Value},
 };
 use bytes::Bytes;
 use std::{
@@ -28,7 +28,7 @@ pub async fn append(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// contains a string that can not be represented as integer. This operation is limited to 64 bit
 /// signed integers.
 pub async fn incr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().incr(&args[1], 1_i64)
+    conn.db().incr(&args[1], 1_i64).map(|n| n.into())
 }
 
 /// Increments the number stored at key by increment. If the key does not exist, it is set to 0
@@ -37,7 +37,7 @@ pub async fn incr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// 64 bit signed integers.
 pub async fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let by: i64 = bytes_to_number(&args[2])?;
-    conn.db().incr(&args[1], by)
+    conn.db().incr(&args[1], by).map(|n| n.into())
 }
 
 /// Increment the string representing a floating point number stored at key by the specified
@@ -45,8 +45,17 @@ pub async fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// is decremented (by the obvious properties of addition). If the key does not exist, it is set to
 /// 0 before performing the operation.
 pub async fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let by: f64 = bytes_to_number(&args[2])?;
-    conn.db().incr(&args[1], by)
+    let by = bytes_to_number::<Float>(&args[2])?;
+    if by.is_infinite() || by.is_nan() {
+        return Err(Error::IncrByInfOrNan);
+    }
+    conn.db().incr(&args[1], by).map(|f| {
+        if f.fract() == 0.0 {
+            (*f as i64).into()
+        } else {
+            f.to_string().into()
+        }
+    })
 }
 
 /// Decrements the number stored at key by one. If the key does not exist, it is set to 0 before
@@ -54,7 +63,7 @@ pub async fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, E
 /// contains a string that can not be represented as integer. This operation is limited to 64 bit
 /// signed integers.
 pub async fn decr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().incr(&args[1], -1_i64)
+    conn.db().incr(&args[1], -1_i64).map(|n| n.into())
 }
 
 /// Decrements the number stored at key by decrement. If the key does not exist, it is set to 0
@@ -63,7 +72,7 @@ pub async fn decr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// 64 bit signed integers.
 pub async fn decr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     let by: i64 = (&Value::new(&args[2])).try_into()?;
-    conn.db().incr(&args[1], by.neg())
+    conn.db().incr(&args[1], by.neg()).map(|n| n.into())
 }
 
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
@@ -75,42 +84,42 @@ pub async fn get(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// Get the value of key and optionally set its expiration. GETEX is similar to
 /// GET, but is a write command with additional options.
 pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let (expire_at, persist) = match args.len() {
+    let (expires_in, persist) = match args.len() {
         2 => (None, false),
         3 => {
             if check_arg!(args, 2, "PERSIST") {
-                (None, Default::default())
+                (None, true)
             } else {
                 return Err(Error::Syntax);
             }
         }
-        4 => {
-            let expires_in: i64 = bytes_to_number(&args[3])?;
-            if expires_in <= 0 {
-                // Delete key right away after returning
-                return Ok(conn.db().getdel(&args[1]));
-            }
-
-            let expires_in: u64 = expires_in as u64;
-
-            match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
-                "EX" => (Some(Duration::from_secs(expires_in)), false),
-                "PX" => (Some(Duration::from_millis(expires_in)), false),
-                "EXAT" => (
-                    Some(Duration::from_secs(expires_in - now().as_secs())),
-                    false,
-                ),
-                "PXAT" => (
-                    Some(Duration::from_millis(expires_in - now().as_millis() as u64)),
-                    false,
-                ),
-                "PERSIST" => (None, Default::default()),
-                _ => return Err(Error::Syntax),
-            }
-        }
+        4 => match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
+            "EX" => (
+                Some(Expiration::new(&args[3], false, false, &args[0])?),
+                false,
+            ),
+            "PX" => (
+                Some(Expiration::new(&args[3], true, false, &args[0])?),
+                false,
+            ),
+            "EXAT" => (
+                Some(Expiration::new(&args[3], false, true, &args[0])?),
+                false,
+            ),
+            "PXAT" => (
+                Some(Expiration::new(&args[3], true, true, &args[0])?),
+                false,
+            ),
+            "PERSIST" => (None, Default::default()),
+            _ => return Err(Error::Syntax),
+        },
         _ => return Err(Error::Syntax),
     };
-    Ok(conn.db().getex(&args[1], expire_at, persist))
+    Ok(conn.db().getex(
+        &args[1],
+        expires_in.map(|t| t.try_into()).transpose()?,
+        persist,
+    ))
 }
 
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
@@ -139,7 +148,7 @@ pub async fn getrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
             } else {
                 end.try_into().expect("Positive number")
             };
-            let end = min(end, len - 1);
+            let end = min(end, len.checked_sub(1).unwrap_or_default());
 
             if end < start {
                 return Ok("".into());
@@ -181,97 +190,89 @@ pub async fn mget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// of its type. Any previous time to live associated with the key is discarded on successful SET
 /// operation.
 pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    match args.len() {
-        3 => Ok(conn.db().set(&args[1], Value::new(&args[2]), None)),
-        4 | 5 | 6 | 7 => {
-            let mut offset = 3;
-            let mut expiration = None;
-            let mut override_value = Override::Yes;
-            let mut return_previous = false;
-            let mut keep_ttl = false;
-            match String::from_utf8_lossy(&args[offset])
-                .to_uppercase()
-                .as_str()
-            {
-                "EX" => {
-                    expiration = Some(Duration::from_secs(bytes_to_number::<u64>(try_get_arg!(
-                        args, 4
-                    ))?));
-                    offset += 2;
-                }
-                "PX" => {
-                    expiration = Some(Duration::from_millis(bytes_to_number::<u64>(
-                        try_get_arg!(args, 4),
-                    )?));
-                    offset += 2;
-                }
-                "EXAT" => {
-                    expiration = Some(Duration::from_secs(
-                        bytes_to_number::<u64>(try_get_arg!(args, 4))? - now().as_secs(),
-                    ));
-                    offset += 2;
-                }
-                "PXAT" => {
-                    expiration = Some(Duration::from_millis(
-                        bytes_to_number::<u64>(try_get_arg!(args, 4))? - (now().as_millis() as u64),
-                    ));
-                    offset += 2;
-                }
-                "KEEPTTL" => {
-                    keep_ttl = true;
-                    offset += 1;
-                }
-                "NX" | "XX" | "GET" => {}
-                _ => return Err(Error::Syntax),
-            };
+    let len = args.len();
+    let mut i = 3;
+    let mut expiration = None;
+    let mut keep_ttl = false;
+    let mut override_value = Override::Yes;
+    let mut return_previous = false;
 
-            if offset < args.len() {
-                match String::from_utf8_lossy(&args[offset])
-                    .to_uppercase()
-                    .as_str()
-                {
-                    "NX" => {
-                        override_value = Override::No;
-                        offset += 1;
-                    }
-                    "XX" => {
-                        override_value = Override::Only;
-                        offset += 1;
-                    }
-                    "GET" => {}
-                    _ => return Err(Error::Syntax),
-                };
-            }
-
-            if offset < args.len() {
-                if String::from_utf8_lossy(&args[offset])
-                    .to_uppercase()
-                    .as_str()
-                    == "GET"
-                {
-                    return_previous = true;
-                } else {
+    loop {
+        if i >= len {
+            break;
+        }
+        match String::from_utf8_lossy(&args[i]).to_uppercase().as_str() {
+            "EX" => {
+                if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
+                expiration = Some(Expiration::new(
+                    try_get_arg!(args, i + 1),
+                    false,
+                    false,
+                    &args[0],
+                )?);
+                i += 1;
             }
-
-            Ok(
-                match conn.db().set_advanced(
-                    &args[1],
-                    Value::new(&args[2]),
-                    expiration,
-                    override_value,
-                    keep_ttl,
-                    return_previous,
-                ) {
-                    Value::Integer(1) => Value::Ok,
-                    Value::Integer(0) => Value::Null,
-                    any_return => any_return,
-                },
-            )
+            "PX" => {
+                if expiration.is_some() {
+                    return Err(Error::Syntax);
+                }
+                expiration = Some(Expiration::new(
+                    try_get_arg!(args, i + 1),
+                    true,
+                    false,
+                    &args[0],
+                )?);
+                i += 1;
+            }
+            "EXAT" => {
+                if expiration.is_some() {
+                    return Err(Error::Syntax);
+                }
+                expiration = Some(Expiration::new(
+                    try_get_arg!(args, i + 1),
+                    false,
+                    true,
+                    &args[0],
+                )?);
+                i += 1;
+            }
+            "PXAT" => {
+                if expiration.is_some() {
+                    return Err(Error::Syntax);
+                }
+                expiration = Some(Expiration::new(
+                    try_get_arg!(args, i + 1),
+                    true,
+                    true,
+                    &args[0],
+                )?);
+                i += 1;
+            }
+            "KEEPTTL" => keep_ttl = true,
+            "NX" => override_value = Override::No,
+            "XX" => override_value = Override::Only,
+            "GET" => return_previous = true,
+            _ => return Err(Error::Syntax),
         }
-        _ => Err(Error::Syntax),
+
+        i += 1;
     }
+    Ok(
+        match conn.db().set_advanced(
+            &args[1],
+            Value::new(&args[2]),
+            expiration.map(|t| t.try_into()).transpose()?,
+            override_value,
+            keep_ttl,
+            return_previous,
+        ) {
+            Value::Integer(1) => Value::Ok,
+            Value::Integer(0) => Value::Null,
+            any_return => any_return,
+        },
+    )
 }
 
 /// Sets the given keys to their respective values. MSET replaces existing
@@ -282,7 +283,12 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// It is not possible for clients to see that some of the keys were
 /// updated while others are unchanged.
 pub async fn mset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().multi_set(&args[1..], true))
+    conn.db().multi_set(&args[1..], true).map_err(|e| match e {
+        Error::Syntax => {
+            Error::WrongNumberArgument(String::from_utf8_lossy(&args[0]).to_uppercase())
+        }
+        e => e,
+    })
 }
 
 /// Sets the given keys to their respective values. MSETNX will not perform any
@@ -296,7 +302,12 @@ pub async fn mset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// clients to see that some of the keys were updated while others are
 /// unchanged.
 pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().multi_set(&args[1..], false))
+    conn.db().multi_set(&args[1..], false).map_err(|e| match e {
+        Error::Syntax => {
+            Error::WrongNumberArgument(String::from_utf8_lossy(&args[0]).to_uppercase())
+        }
+        e => e,
+    })
 }
 
 /// Set key to hold the string value and set key to timeout after a given number of seconds. This
@@ -305,13 +316,13 @@ pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// SET mykey value
 /// EXPIRE mykey seconds
 pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let ttl = if check_arg!(args, 0, "SETEX") {
-        Duration::from_secs(bytes_to_number(&args[2])?)
-    } else {
-        Duration::from_millis(bytes_to_number(&args[2])?)
-    };
+    let is_milliseconds = check_arg!(args, 0, "PSETEX");
 
-    Ok(conn.db().set(&args[1], Value::new(&args[3]), Some(ttl)))
+    let expires_in = Expiration::new(&args[2], is_milliseconds, false, &args[0])?;
+
+    Ok(conn
+        .db()
+        .set(&args[1], Value::new(&args[3]), Some(expires_in.try_into()?)))
 }
 
 /// Set key to hold string value if key does not exist. In that case, it is
@@ -399,13 +410,13 @@ mod test {
         assert_eq!(Ok(Value::Integer(1)), r);
 
         let r = run_command(&c, &["ttl", "foo"]).await;
-        assert_eq!(Ok(Value::Integer(59)), r);
+        assert_eq!(Ok(Value::Integer(60)), r);
 
         let r = run_command(&c, &["incr", "foo"]).await;
         assert_eq!(Ok(Value::Integer(2)), r);
 
         let r = run_command(&c, &["ttl", "foo"]).await;
-        assert_eq!(Ok(Value::Integer(59)), r);
+        assert_eq!(Ok(Value::Integer(60)), r);
     }
 
     #[tokio::test]
@@ -429,13 +440,13 @@ mod test {
         assert_eq!(Ok(Value::Integer(1)), r);
 
         let r = run_command(&c, &["ttl", "foo"]).await;
-        assert_eq!(Ok(Value::Integer(59)), r);
+        assert_eq!(Ok(Value::Integer(60)), r);
 
         let r = run_command(&c, &["decr", "foo"]).await;
         assert_eq!(Ok(Value::Integer(-2)), r);
 
         let r = run_command(&c, &["ttl", "foo"]).await;
-        assert_eq!(Ok(Value::Integer(59)), r);
+        assert_eq!(Ok(Value::Integer(60)), r);
     }
 
     #[tokio::test]
@@ -454,6 +465,18 @@ mod test {
         assert_eq!(
             Ok(Value::Array(vec!["bar".into()])),
             run_command(&c, &["mget", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn mset_incorrect_values() {
+        let c = create_connection();
+        let x = run_command(&c, &["mset", "foo", "bar", "bar"]).await;
+        assert_eq!(Err(Error::WrongNumberArgument("MSET".to_owned())), x);
+
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Null, Value::Null])),
+            run_command(&c, &["mget", "foo", "bar"]).await
         );
     }
 
@@ -510,7 +533,7 @@ mod test {
             run_command(&c, &["set", "foo", "bar1", "keepttl"]).await
         );
         assert_eq!(Ok("bar1".into()), run_command(&c, &["get", "foo"]).await);
-        assert_eq!(Ok(59.into()), run_command(&c, &["ttl", "foo"]).await);
+        assert_eq!(Ok(60.into()), run_command(&c, &["ttl", "foo"]).await);
 
         assert_eq!(
             Ok(Value::Ok),
@@ -572,7 +595,7 @@ mod test {
     async fn set_incorrect_params() {
         let c = create_connection();
         assert_eq!(
-            Err(Error::NotANumber),
+            Err(Error::NotANumberType("an integer".to_owned())),
             run_command(&c, &["set", "foo", "bar1", "ex", "xx"]).await
         );
         assert_eq!(
@@ -677,7 +700,7 @@ mod test {
             run_command(&c, &["setex", "foo", "10", "bar"]).await
         );
         assert_eq!(Ok("bar".into()), run_command(&c, &["get", "foo"]).await);
-        assert_eq!(Ok(9.into()), run_command(&c, &["ttl", "foo"]).await);
+        assert_eq!(Ok(10.into()), run_command(&c, &["ttl", "foo"]).await);
     }
 
     #[tokio::test]
@@ -720,6 +743,15 @@ mod test {
         assert_eq!(
             Ok("\0\0xxx\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xxx\0\0\0\0\0\0\0xxx".into()),
             run_command(&c, &["get", "foo"]).await,
+        );
+    }
+
+    #[tokio::test]
+    async fn test_invalid_ts() {
+        let c = create_connection();
+        assert_eq!(
+            Err(Error::InvalidExpire("set".to_owned())),
+            run_command(&c, &["set", "foo", "bar", "EX", "10000000000000000"]).await
         );
     }
 }

@@ -209,6 +209,7 @@ mod test {
         #[serde(flatten)]
         log: Log,
         databases: u8,
+        bind: Vec<String>,
     }
 
     #[derive(Deserialize, Debug, Default)]
@@ -265,5 +266,6 @@ mod test {
         assert_eq!(LogLevel::Verbose, x.log.level);
         assert_eq!("", x.log.file);
         assert_eq!(16, x.databases);
+        assert_eq!(vec!["127.0.0.1".to_owned()], x.bind);
     }
 }

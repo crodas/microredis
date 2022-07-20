@@ -1,0 +1,16 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+
+  test-ubuntu-latest:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: build
+      run: cargo build --release
+    - name: test
+      run: |
+        sudo apt-get install tcl8.6 tclx
+        make test
