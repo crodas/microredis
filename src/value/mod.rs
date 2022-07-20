@@ -196,12 +196,6 @@ pub fn bytes_to_int<T: FromStr>(bytes: &[u8]) -> Result<T, Error> {
         .map_err(|_| Error::NotANumberType("an integer".to_owned()))
 }
 
-impl From<Value> for Vec<u8> {
-    fn from(value: Value) -> Vec<u8> {
-        (&value).into()
-    }
-}
-
 impl<'a> From<&ParsedValue<'a>> for Value {
     fn from(value: &ParsedValue) -> Self {
         match value {
@@ -227,6 +221,28 @@ value_try_from!(i128, Value::BigInteger);
 impl From<usize> for Value {
     fn from(value: usize) -> Value {
         Value::Integer(value as i64)
+    }
+}
+
+impl From<Value> for Vec<u8> {
+    fn from(value: Value) -> Vec<u8> {
+        (&value).into()
+    }
+}
+
+impl From<Option<&Bytes>> for Value {
+    fn from(v: Option<&Bytes>) -> Self {
+        if let Some(v) = v {
+            v.into()
+        } else {
+            Value::Null
+        }
+    }
+}
+
+impl From<&Bytes> for Value {
+    fn from(v: &Bytes) -> Self {
+        Value::new(v)
     }
 }
 
