@@ -1,7 +1,7 @@
 //!  # Client-group command handlers
 
 use crate::{
-    connection::{Connection, UnblockReason},
+    connection::{Connection, ConnectionStatus, UnblockReason},
     error::Error,
     option,
     value::{bytes_to_int, bytes_to_number, Value},
@@ -94,7 +94,10 @@ pub async fn select(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 ///
 /// Documentation:
 ///  * <https://redis.io/commands/ping>
-pub async fn ping(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn ping(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    if conn.status() == ConnectionStatus::Pubsub {
+        return Ok(Value::Array(vec!["pong".into(), args.get(1).into()]));
+    }
     match args.len() {
         1 => Ok(Value::String("PONG".to_owned())),
         2 => Ok(Value::new(&args[1])),
