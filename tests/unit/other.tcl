@@ -54,60 +54,6 @@ start_server {tags {"other"}} {
         set _ $err
     } {*index is out of range*} {cluster:skip}
 
-    tags {consistency} {
-        proc check_consistency {dumpname code} {
-            set dump [csvdump r]
-            set sha1 [r debug digest]
-
-            uplevel 1 $code
-
-            set sha1_after [r debug digest]
-            if {$sha1 eq $sha1_after} {
-                return 1
-            }
-
-            # Failed
-            set newdump [csvdump r]
-            puts "Consistency test failed!"
-            puts "You can inspect the two dumps in /tmp/${dumpname}*.txt"
-
-            set fd [open /tmp/${dumpname}1.txt w]
-            puts $fd $dump
-            close $fd
-            set fd [open /tmp/${dumpname}2.txt w]
-            puts $fd $newdump
-            close $fd
-
-            return 0
-        }
-
-        if {$::accurate} {set numops 10000} else {set numops 1000}
-        test {Check consistency of different data types after a reload} {
-            r flushdb
-            createComplexDataset r $numops usetag
-            if {$::ignoredigest} {
-                set _ 1
-            } else {
-                check_consistency {repldump} {
-                    r debug reload
-                }
-            }
-        } {1}
-
-        test {Same dataset digest if saving/reloading as AOF?} {
-            if {$::ignoredigest} {
-                set _ 1
-            } else {
-                check_consistency {aofdump} {
-                    r config set aof-use-rdb-preamble no
-                    r bgrewriteaof
-                    waitForBgrewriteaof r
-                    r debug loadaof
-                }
-            }
-        } {1} {needs:debug}
-    }
-
     test {EXPIRES after a reload (snapshot + append only file rewrite)} {
         r flushdb
         r set x 10
@@ -254,27 +200,6 @@ start_server {tags {"other"}} {
         waitForBgsave r
         r save
     } {OK} {needs:save}
-
-    test {RESET clears client state} {
-        r client setname test-client
-        r client tracking on
-
-        assert_equal [r reset] "RESET"
-        set client [r client list]
-        assert_match {*name= *} $client
-        assert_match {*flags=N *} $client
-    } {} {needs:reset}
-
-    test {RESET clears MONITOR state} {
-        set rd [redis_deferring_client]
-        $rd monitor
-        assert_equal [$rd read] "OK"
-
-        $rd reset
-        assert_equal [$rd read] "RESET"
-
-        assert_no_match {*flags=O*} [r client list]
-    } {} {needs:reset}
 
     test {RESET clears and discards MULTI state} {
         r multi

@@ -16,7 +16,6 @@ test: build
 		--skipunit unit/type/stream \
 		--skipunit unit/type/stream-cgroups \
 		--skipunit unit/sort \
-		--skipunit unit/other \
 		--skipunit unit/aofrw \
 		--skipunit unit/acl \
 		--skipunit unit/latency-monitor \
@@ -37,5 +36,8 @@ test: build
 		--tags -needs:debug \
 		--tags -needs:save \
 		--tags -external:skip \
-		--tags -cli --tags -needs:config-maxmemory --stop 2>&1
+		--tags -needs:save \
+		--tags -consistency \
+		--tags -cli \
+		--tags -needs:config-maxmemory
 ci: fmt clippy build test
