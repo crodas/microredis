@@ -45,7 +45,7 @@ impl PubsubClient {
             .map(|channel| meta.psubscriptions.remove(channel))
             .for_each(drop);
         drop(meta);
-        conn.pubsub().punsubscribe(channels, conn);
+        conn.pubsub().punsubscribe(channels, conn, true);
 
         if self.total_subs() == 0 {
             conn.reset();
@@ -60,7 +60,7 @@ impl PubsubClient {
             .map(|channel| meta.subscriptions.remove(channel))
             .for_each(drop);
         drop(meta);
-        conn.pubsub().unsubscribe(channels, conn);
+        conn.pubsub().unsubscribe(channels, conn, true);
 
         if self.total_subs() == 0 {
             conn.reset();

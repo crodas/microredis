@@ -83,7 +83,7 @@ pub enum Error {
     #[error("GT and LT options at the same time are not compatible")]
     InvalidExpireOpts,
     /// The connection is not in a transaction
-    #[error(" without MULTI")]
+    #[error("without MULTI")]
     NotInTx,
     /// Transaction was aborted
     #[error("Transaction discarded because of previous errors.")]

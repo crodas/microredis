@@ -1,11 +1,27 @@
+fmt:
+	cargo fmt
+clippy:
+	cargo clippy --release
 build:
 	cargo build --release
+test-single: build
+	./runtest  --clients 1 \
+		--single unit/other \
+		--ignore-encoding \
+		--tags -needs:repl \
+		--tags -leaks \
+		--tags -needs:debug \
+		--tags -needs:save \
+		--tags -external:skip \
+		--tags -needs:save \
+		--tags -consistency \
+		--tags -cli \
+		--tags -needs:config-maxmemory
 test: build
 	./runtest  --clients 5 \
 		--skipunit unit/dump \
 		--skipunit unit/auth \
 		--skipunit unit/protocol \
-		--skipunit unit/keyspace \
 		--skipunit unit/scan \
 		--skipunit unit/info \
 		--skipunit unit/type/zset \
@@ -13,7 +29,6 @@ test: build
 		--skipunit unit/type/stream \
 		--skipunit unit/type/stream-cgroups \
 		--skipunit unit/sort \
-		--skipunit unit/other \
 		--skipunit unit/aofrw \
 		--skipunit unit/acl \
 		--skipunit unit/latency-monitor \
@@ -32,5 +47,10 @@ test: build
 		--tags -needs:repl \
 		--tags -leaks \
 		--tags -needs:debug \
+		--tags -needs:save \
 		--tags -external:skip \
-		--tags -cli --tags -needs:config-maxmemory --stop 2>&1
+		--tags -needs:save \
+		--tags -consistency \
+		--tags -cli \
+		--tags -needs:config-maxmemory
+ci: fmt clippy build test

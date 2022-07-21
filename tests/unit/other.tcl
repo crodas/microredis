@@ -54,60 +54,6 @@ start_server {tags {"other"}} {
         set _ $err
     } {*index is out of range*} {cluster:skip}
 
-    tags {consistency} {
-        proc check_consistency {dumpname code} {
-            set dump [csvdump r]
-            set sha1 [r debug digest]
-
-            uplevel 1 $code
-
-            set sha1_after [r debug digest]
-            if {$sha1 eq $sha1_after} {
-                return 1
-            }
-
-            # Failed
-            set newdump [csvdump r]
-            puts "Consistency test failed!"
-            puts "You can inspect the two dumps in /tmp/${dumpname}*.txt"
-
-            set fd [open /tmp/${dumpname}1.txt w]
-            puts $fd $dump
-            close $fd
-            set fd [open /tmp/${dumpname}2.txt w]
-            puts $fd $newdump
-            close $fd
-
-            return 0
-        }
-
-        if {$::accurate} {set numops 10000} else {set numops 1000}
-        test {Check consistency of different data types after a reload} {
-            r flushdb
-            createComplexDataset r $numops usetag
-            if {$::ignoredigest} {
-                set _ 1
-            } else {
-                check_consistency {repldump} {
-                    r debug reload
-                }
-            }
-        } {1}
-
-        test {Same dataset digest if saving/reloading as AOF?} {
-            if {$::ignoredigest} {
-                set _ 1
-            } else {
-                check_consistency {aofdump} {
-                    r config set aof-use-rdb-preamble no
-                    r bgrewriteaof
-                    waitForBgrewriteaof r
-                    r debug loadaof
-                }
-            }
-        } {1} {needs:debug}
-    }
-
     test {EXPIRES after a reload (snapshot + append only file rewrite)} {
         r flushdb
         r set x 10
@@ -163,41 +109,6 @@ start_server {tags {"other"}} {
         assert {$ttl > 2900 && $ttl <= 3000}
         r config set appendonly no
     } {OK} {needs:debug}
-
-    tags {protocol} {
-        test {PIPELINING stresser (also a regression for the old epoll bug)} {
-            if {$::tls} {
-                set fd2 [::tls::socket [srv host] [srv port]]
-            } else {
-                set fd2 [socket [srv host] [srv port]]
-            }
-            fconfigure $fd2 -encoding binary -translation binary
-            puts -nonewline $fd2 "SELECT 9\r\n"
-            flush $fd2
-            gets $fd2
-
-            for {set i 0} {$i < 100000} {incr i} {
-                set q {}
-                set val "0000${i}0000"
-                append q "SET key:$i $val\r\n"
-                puts -nonewline $fd2 $q
-                set q {}
-                append q "GET key:$i\r\n"
-                puts -nonewline $fd2 $q
-            }
-            flush $fd2
-
-            for {set i 0} {$i < 100000} {incr i} {
-                gets $fd2 line
-                gets $fd2 count
-                set count [string range $count 1 end]
-                set val [read $fd2 $count]
-                read $fd2 2
-            }
-            close $fd2
-            set _ 1
-        } {1}
-    }
 
     test {APPEND basics} {
         r del foo
@@ -255,27 +166,6 @@ start_server {tags {"other"}} {
         r save
     } {OK} {needs:save}
 
-    test {RESET clears client state} {
-        r client setname test-client
-        r client tracking on
-
-        assert_equal [r reset] "RESET"
-        set client [r client list]
-        assert_match {*name= *} $client
-        assert_match {*flags=N *} $client
-    } {} {needs:reset}
-
-    test {RESET clears MONITOR state} {
-        set rd [redis_deferring_client]
-        $rd monitor
-        assert_equal [$rd read] "OK"
-
-        $rd reset
-        assert_equal [$rd read] "RESET"
-
-        assert_no_match {*flags=O*} [r client list]
-    } {} {needs:reset}
-
     test {RESET clears and discards MULTI state} {
         r multi
         r set key-a a
@@ -292,16 +182,6 @@ start_server {tags {"other"}} {
         # confirm we're not subscribed by executing another command
         r set key val
     } {OK} {needs:reset}
-
-    test {RESET clears authenticated state} {
-        r acl setuser user1 on >secret +@all
-        r auth user1 secret
-        assert_equal [r acl whoami] user1
-
-        r reset
-
-        assert_equal [r acl whoami] default
-    } {} {needs:reset}
 }
 
 start_server {tags {"other external:skip"}} {

@@ -605,6 +605,15 @@ dispatcher! {
             1,
             true,
         },
+        RANDOMKEY {
+            cmd::key::randomkey,
+            [Flag::ReadOnly Flag::Random],
+            1,
+            0,
+            0,
+            0,
+            true,
+        },
         RENAME {
             cmd::key::rename,
             [Flag::Write],

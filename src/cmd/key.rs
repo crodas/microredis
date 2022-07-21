@@ -33,7 +33,7 @@ pub async fn copy(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         Some(
             conn.all_connections()
                 .get_databases()
-                .get(bytes_to_number(&args[4])?)?
+                .get(bytes_to_int(&args[4])?)?
                 .clone(),
         )
     } else {
@@ -157,7 +157,7 @@ pub async fn move_key(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
     let target_db = conn
         .all_connections()
         .get_databases()
-        .get(bytes_to_number(&args[2])?)?;
+        .get(bytes_to_int(&args[2])?)?;
 
     Ok(if conn.db().move_key(&args[1], target_db)? {
         1.into()
@@ -191,6 +191,11 @@ pub async fn object(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             String::from_utf8_lossy(&args[0]).into(),
         )),
     }
+}
+
+/// Return a random key from the currently selected database.
+pub async fn randomkey(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    conn.db().randomkey()
 }
 
 /// Renames key to newkey. It returns an error when key does not exist. If
