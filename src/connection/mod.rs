@@ -194,14 +194,15 @@ impl Connection {
         info.watch_keys = vec![];
         info.commands = None;
         info.tx_keys = HashSet::new();
+        drop(info);
 
         let pubsub = self.pubsub();
         let pubsub_client = self.pubsub_client();
         if !pubsub_client.subscriptions().is_empty() {
-            pubsub.unsubscribe(&self.pubsub_client.subscriptions(), self);
+            pubsub.unsubscribe(&self.pubsub_client.subscriptions(), self, false);
         }
         if !pubsub_client.psubscriptions().is_empty() {
-            pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), self);
+            pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), self, false);
         }
     }
 
@@ -284,8 +285,8 @@ impl Connection {
     /// all_connection lists.
     pub fn destroy(self: Arc<Connection>) {
         let pubsub = self.pubsub();
-        pubsub.unsubscribe(&self.pubsub_client.subscriptions(), &self);
-        pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), &self);
+        pubsub.unsubscribe(&self.pubsub_client.subscriptions(), &self, false);
+        pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), &self, false);
         self.all_connections.clone().remove(self);
     }
 

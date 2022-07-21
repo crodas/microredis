@@ -4,6 +4,19 @@ clippy:
 	cargo clippy --release
 build:
 	cargo build --release
+test-single: build
+	./runtest  --clients 1 \
+		--single unit/other \
+		--ignore-encoding \
+		--tags -needs:repl \
+		--tags -leaks \
+		--tags -needs:debug \
+		--tags -needs:save \
+		--tags -external:skip \
+		--tags -needs:save \
+		--tags -consistency \
+		--tags -cli \
+		--tags -needs:config-maxmemory
 test: build
 	./runtest  --clients 5 \
 		--skipunit unit/dump \

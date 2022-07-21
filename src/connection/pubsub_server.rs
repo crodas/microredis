@@ -129,7 +129,7 @@ impl Pubsub {
     }
 
     /// Unsubscribe from a pattern subscription
-    pub fn punsubscribe(&self, channels: &[Pattern], conn: &Connection) {
+    pub fn punsubscribe(&self, channels: &[Pattern], conn: &Connection, notify: bool) {
         if channels.is_empty() {
             return conn.append_response(Value::Array(vec![
                 "punsubscribe".into(),
@@ -149,11 +149,13 @@ impl Pubsub {
                     }
                 }
 
-                conn.append_response(Value::Array(vec![
-                    "punsubscribe".into(),
-                    channel.as_str().into(),
-                    conn.pubsub_client().total_subs().into(),
-                ]));
+                if notify {
+                    conn.append_response(Value::Array(vec![
+                        "punsubscribe".into(),
+                        channel.as_str().into(),
+                        conn.pubsub_client().total_subs().into(),
+                    ]));
+                }
             })
             .for_each(drop);
     }
@@ -188,7 +190,7 @@ impl Pubsub {
     }
 
     /// Removes connection subscription to channels.
-    pub fn unsubscribe(&self, channels: &[Bytes], conn: &Connection) {
+    pub fn unsubscribe(&self, channels: &[Bytes], conn: &Connection, notify: bool) {
         if channels.is_empty() {
             return conn.append_response(Value::Array(vec![
                 "unsubscribe".into(),
@@ -208,11 +210,13 @@ impl Pubsub {
                         all_subs.remove(channel);
                     }
                 }
-                conn.append_response(Value::Array(vec![
-                    "unsubscribe".into(),
-                    Value::new(&channel),
-                    (all_subs.len() + total_psubs).into(),
-                ]));
+                if notify {
+                    conn.append_response(Value::Array(vec![
+                        "unsubscribe".into(),
+                        Value::new(&channel),
+                        (all_subs.len() + total_psubs).into(),
+                    ]));
+                }
             })
             .for_each(drop);
     }

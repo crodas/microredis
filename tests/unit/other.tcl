@@ -110,41 +110,6 @@ start_server {tags {"other"}} {
         r config set appendonly no
     } {OK} {needs:debug}
 
-    tags {protocol} {
-        test {PIPELINING stresser (also a regression for the old epoll bug)} {
-            if {$::tls} {
-                set fd2 [::tls::socket [srv host] [srv port]]
-            } else {
-                set fd2 [socket [srv host] [srv port]]
-            }
-            fconfigure $fd2 -encoding binary -translation binary
-            puts -nonewline $fd2 "SELECT 9\r\n"
-            flush $fd2
-            gets $fd2
-
-            for {set i 0} {$i < 100000} {incr i} {
-                set q {}
-                set val "0000${i}0000"
-                append q "SET key:$i $val\r\n"
-                puts -nonewline $fd2 $q
-                set q {}
-                append q "GET key:$i\r\n"
-                puts -nonewline $fd2 $q
-            }
-            flush $fd2
-
-            for {set i 0} {$i < 100000} {incr i} {
-                gets $fd2 line
-                gets $fd2 count
-                set count [string range $count 1 end]
-                set val [read $fd2 $count]
-                read $fd2 2
-            }
-            close $fd2
-            set _ 1
-        } {1}
-    }
-
     test {APPEND basics} {
         r del foo
         list [r append foo bar] [r get foo] \
@@ -217,16 +182,6 @@ start_server {tags {"other"}} {
         # confirm we're not subscribed by executing another command
         r set key val
     } {OK} {needs:reset}
-
-    test {RESET clears authenticated state} {
-        r acl setuser user1 on >secret +@all
-        r auth user1 secret
-        assert_equal [r acl whoami] user1
-
-        r reset
-
-        assert_equal [r acl whoami] default
-    } {} {needs:reset}
 }
 
 start_server {tags {"other external:skip"}} {
