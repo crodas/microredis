@@ -282,37 +282,6 @@ start_server {tags {"keyspace"}} {
         assert_equal $digest [debug_digest_value newset2{t}]
     }
 
-    test {COPY basic usage for ziplist sorted set} {
-        r del zset1{t} newzset1{t}
-        r zadd zset1{t} 123 foobar
-        assert_encoding ziplist zset1{t}
-        r copy zset1{t} newzset1{t}
-        set digest [debug_digest_value zset1{t}]
-        assert_equal $digest [debug_digest_value newzset1{t}]
-        assert_equal 1 [r object refcount zset1{t}]
-        assert_equal 1 [r object refcount newzset1{t}]
-        r del zset1{t}
-        assert_equal $digest [debug_digest_value newzset1{t}]
-    }
-
-     test {COPY basic usage for skiplist sorted set} {
-        r del zset2{t} newzset2{t}
-        set original_max [lindex [r config get zset-max-ziplist-entries] 1]
-        r config set zset-max-ziplist-entries 0
-        for {set j 0} {$j < 130} {incr j} {
-            r zadd zset2{t} [randomInt 50] ele-[randomInt 10]
-        }
-        assert_encoding skiplist zset2{t}
-        r copy zset2{t} newzset2{t}
-        set digest [debug_digest_value zset2{t}]
-        assert_equal $digest [debug_digest_value newzset2{t}]
-        assert_equal 1 [r object refcount zset2{t}]
-        assert_equal 1 [r object refcount newzset2{t}]
-        r del zset2{t}
-        assert_equal $digest [debug_digest_value newzset2{t}]
-        r config set zset-max-ziplist-entries $original_max
-    }
-
     test {COPY basic usage for listpack hash} {
         r del hash1{t} newhash1{t}
         r hset hash1{t} tmp 17179869184
@@ -326,67 +295,8 @@ start_server {tags {"keyspace"}} {
         assert_equal $digest [debug_digest_value newhash1{t}]
     }
 
-    test {COPY basic usage for hashtable hash} {
-        r del hash2{t} newhash2{t}
-        set original_max [lindex [r config get hash-max-ziplist-entries] 1]
-        r config set hash-max-ziplist-entries 0
-        for {set i 0} {$i < 64} {incr i} {
-            r hset hash2{t} [randomValue] [randomValue]
-        }
-        assert_encoding hashtable hash2{t}
-        r copy hash2{t} newhash2{t}
-        set digest [debug_digest_value hash2{t}]
-        assert_equal $digest [debug_digest_value newhash2{t}]
-        assert_equal 1 [r object refcount hash2{t}]
-        assert_equal 1 [r object refcount newhash2{t}]
-        r del hash2{t}
-        assert_equal $digest [debug_digest_value newhash2{t}]
-        r config set hash-max-ziplist-entries $original_max
-    }
-
-    test {COPY basic usage for stream} {
-        r del mystream{t} mynewstream{t}
-        for {set i 0} {$i < 1000} {incr i} {
-            r XADD mystream{t} * item 2 value b
-        }
-        r copy mystream{t} mynewstream{t}
-        set digest [debug_digest_value mystream{t}]
-        assert_equal $digest [debug_digest_value mynewstream{t}]
-        assert_equal 1 [r object refcount mystream{t}]
-        assert_equal 1 [r object refcount mynewstream{t}]
-        r del mystream{t}
-        assert_equal $digest [debug_digest_value mynewstream{t}]
-    }
-
-    test {COPY basic usage for stream-cgroups} {
-        r del x{t}
-        r XADD x{t} 100 a 1
-        set id [r XADD x{t} 101 b 1]
-        r XADD x{t} 102 c 1
-        r XADD x{t} 103 e 1
-        r XADD x{t} 104 f 1
-        r XADD x{t} 105 g 1
-        r XGROUP CREATE x{t} g1 0
-        r XGROUP CREATE x{t} g2 0
-        r XREADGROUP GROUP g1 Alice COUNT 1 STREAMS x{t} >
-        r XREADGROUP GROUP g1 Bob COUNT 1 STREAMS x{t} >
-        r XREADGROUP GROUP g1 Bob NOACK COUNT 1 STREAMS x{t} >
-        r XREADGROUP GROUP g2 Charlie COUNT 4 STREAMS x{t} >
-        r XGROUP SETID x{t} g1 $id
-        r XREADGROUP GROUP g1 Dave COUNT 3 STREAMS x{t} >
-        r XDEL x{t} 103
-
-        r copy x{t} newx{t}
-        set info [r xinfo stream x{t} full]
-        assert_equal $info [r xinfo stream newx{t} full]
-        assert_equal 1 [r object refcount x{t}]
-        assert_equal 1 [r object refcount newx{t}]
-        r del x{t}
-        assert_equal $info [r xinfo stream newx{t} full]
-        r flushdb
-    }
-
     test {MOVE basic usage} {
+        r flushdb
         r set mykey foobar
         r move mykey 10
         set res {}

@@ -1,3 +1,7 @@
+fmt:
+	cargo fmt
+clippy:
+	cargo clippy --release
 build:
 	cargo build --release
 test: build
@@ -5,7 +9,6 @@ test: build
 		--skipunit unit/dump \
 		--skipunit unit/auth \
 		--skipunit unit/protocol \
-		--skipunit unit/keyspace \
 		--skipunit unit/scan \
 		--skipunit unit/info \
 		--skipunit unit/type/zset \
@@ -32,5 +35,7 @@ test: build
 		--tags -needs:repl \
 		--tags -leaks \
 		--tags -needs:debug \
+		--tags -needs:save \
 		--tags -external:skip \
 		--tags -cli --tags -needs:config-maxmemory --stop 2>&1
+ci: fmt clippy build test

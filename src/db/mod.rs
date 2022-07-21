@@ -20,6 +20,7 @@ use glob::Pattern;
 use log::trace;
 use num_traits::CheckedAdd;
 use parking_lot::{Mutex, RwLock};
+use rand::{prelude::SliceRandom, Rng};
 use seahash::hash;
 use std::{
     collections::HashMap,
@@ -553,6 +554,29 @@ impl Db {
         } else {
             Ok(false)
         }
+    }
+
+    /// Return a random key from the database
+    pub fn randomkey(&self) -> Result<Value, Error> {
+        let mut rng = rand::thread_rng();
+        let mut candidates = self
+            .slots
+            .iter()
+            .map(|slot| {
+                let slot = slot.read();
+                if slot.is_empty() {
+                    None
+                } else {
+                    slot.iter()
+                        .skip(rng.gen_range((0..slot.len())))
+                        .next()
+                        .map(|(k, v)| k.clone())
+                }
+            })
+            .filter_map(|v| v)
+            .collect::<Vec<Bytes>>();
+        candidates.shuffle(&mut rng);
+        Ok(candidates.get(0).into())
     }
 
     /// Renames a key
