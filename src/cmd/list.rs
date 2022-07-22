@@ -14,6 +14,7 @@ use std::collections::VecDeque;
 use tokio::time::{sleep, Duration, Instant};
 
 #[allow(clippy::needless_range_loop)]
+/// Removes an element from a list
 fn remove_element(
     conn: &Connection,
     key: &Bytes,
@@ -70,6 +71,53 @@ fn remove_element(
     Ok(result)
 }
 
+#[inline]
+/// Handles the timeout/sleep logic for all blocking commands.
+async fn handle_timeout(conn: &Connection, timeout: Option<Instant>) -> Result<bool, Error> {
+    if let Some(timeout) = timeout {
+        if Instant::now() >= timeout {
+            conn.unblock(UnblockReason::Timeout);
+            return Ok(true);
+        }
+    }
+    if conn.status() == ConnectionStatus::ExecutingTx {
+        conn.unblock(UnblockReason::Timeout);
+        return Ok(true);
+    }
+
+    if let Some(reason) = conn.has_been_unblocked_externally() {
+        match reason {
+            UnblockReason::Error => Err(Error::UnblockByError),
+            UnblockReason::Timeout => Ok(true),
+        }
+    } else {
+        // Check if the connection is still alive by entering the loop and check if the socket/unixsocket
+        // is still alive
+        conn.append_response(Value::Ignore);
+        sleep(Duration::from_millis(100)).await;
+        Ok(false)
+    }
+}
+
+/// Parses timeout and returns an instant or none if it should wait forever.
+#[inline]
+fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
+    let raw_timeout = bytes_to_number::<f64>(arg)?;
+    if raw_timeout < 0f64 {
+        return Err(Error::NegativeNumber("timeout".to_owned()));
+    }
+
+    if raw_timeout == 0.0 {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        Instant::now()
+            .checked_add(Duration::from_millis((raw_timeout * 1000f64).round() as u64))
+            .unwrap_or_else(far_future),
+    ))
+}
+
 /// BLPOP is a blocking list pop primitive. It is the blocking version of LPOP because it blocks
 /// the connection when there are no elements to pop from any of the given lists. An element is
 /// popped from the head of the first list that is non-empty, with the given keys being checked in
@@ -88,46 +136,61 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if let Some(timeout) = timeout {
-            if Instant::now() >= timeout {
-                conn.unblock(UnblockReason::Timeout);
-                break;
-            }
-        }
-
-        if conn.status() == ConnectionStatus::ExecutingTx {
-            conn.unblock(UnblockReason::Timeout);
+        if handle_timeout(&conn, timeout).await? {
             break;
         }
-
-        if let Some(reason) = conn.is_unblocked() {
-            return match reason {
-                UnblockReason::Error => Err(Error::UnblockByError),
-                UnblockReason::Timeout => Ok(Value::Null),
-            };
-        }
-
-        sleep(Duration::from_millis(100)).await;
     }
 
     Ok(Value::Null)
 }
 
-fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
-    let raw_timeout = bytes_to_number::<f64>(arg)?;
-    if raw_timeout < 0f64 {
-        return Err(Error::NegativeNumber("timeout".to_owned()));
+/// BLMOVE is the blocking variant of LMOVE. When source contains elements, this
+/// command behaves exactly like LMOVE. When used inside a MULTI/EXEC block,
+/// this command behaves exactly like LMOVE. When source is empty, Redis will
+/// block the connection until another client pushes to it or until timeout (a
+/// double value specifying the maximum number of seconds to block) is reached.
+/// A timeout of zero can be used to block indefinitely.
+///
+/// This command comes in place of the now deprecated BRPOPLPUSH. Doing BLMOVE
+/// RIGHT LEFT is equivalent.
+///
+/// See LMOVE for more information.
+pub async fn blmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let timeout = parse_timeout(&args[5])?;
+    conn.block();
+
+    loop {
+        match lmove(&conn, &args).await? {
+            Value::Null => (),
+            n => return Ok(n),
+        };
+        if handle_timeout(&conn, timeout).await? {
+            break;
+        }
     }
 
-    if raw_timeout == 0.0 {
-        return Ok(None);
-    }
+    Ok(Value::Null)
+}
 
-    Ok(Some(
-        Instant::now()
-            .checked_add(Duration::from_micros((raw_timeout * 1000f64).round() as u64))
-            .unwrap_or_else(far_future),
-    ))
+/// BRPOPLPUSH is the blocking variant of RPOPLPUSH. When source contains
+/// elements, this command behaves exactly like RPOPLPUSH. When used inside a
+/// MULTI/EXEC block, this command behaves exactly like RPOPLPUSH. When source
+/// is empty, Redis will block the connection until another client pushes to it
+/// or until timeout is reached. A timeout of zero can be used to block
+/// indefinitely.
+pub async fn brpoplpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    blmove(
+        conn,
+        &[
+            "blmove".into(),
+            args[1].clone(),
+            args[2].clone(),
+            "RIGHT".into(),
+            "LEFT".into(),
+            args[3].clone(),
+        ],
+    )
+    .await
 }
 
 /// BRPOP is a blocking list pop primitive. It is the blocking version of RPOP because it blocks
@@ -148,25 +211,9 @@ pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
         }
 
-        if let Some(timeout) = timeout {
-            if Instant::now() >= timeout {
-                conn.unblock(UnblockReason::Timeout);
-                break;
-            }
-        }
-        if conn.status() == ConnectionStatus::ExecutingTx {
-            conn.unblock(UnblockReason::Timeout);
+        if handle_timeout(&conn, timeout).await? {
             break;
         }
-
-        if let Some(reason) = conn.is_unblocked() {
-            return match reason {
-                UnblockReason::Error => Err(Error::UnblockByError),
-                UnblockReason::Timeout => Ok(Value::Null),
-            };
-        }
-
-        sleep(Duration::from_millis(100)).await;
     }
 
     Ok(Value::Null)

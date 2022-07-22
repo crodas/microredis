@@ -138,8 +138,13 @@ impl Connection {
     }
 
     /// If the current connection has been externally unblocked
-    pub fn is_unblocked(&self) -> Option<UnblockReason> {
+    pub fn has_been_unblocked_externally(&self) -> Option<UnblockReason> {
         self.info.read().unblock_reason
+    }
+
+    /// Is the current connection blocked?
+    pub fn is_blocked(&self) -> bool {
+        self.info.read().is_blocked
     }
 
     /// Connection ID
@@ -285,6 +290,7 @@ impl Connection {
     /// all_connection lists.
     pub fn destroy(self: Arc<Connection>) {
         let pubsub = self.pubsub();
+        self.clone().unblock(UnblockReason::Timeout);
         pubsub.unsubscribe(&self.pubsub_client.subscriptions(), &self, false);
         pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), &self, false);
         self.all_connections.clone().remove(self);
