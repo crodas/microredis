@@ -172,8 +172,10 @@ impl Db {
                 if let Some(blocker) = lock.get(key) {
                     if *blocker == self.conn_id {
                         // It is blocked by us already.
+                        i += 1;
                         continue;
                     }
+                    println!("failed to block {:?}", key);
                     // It is blocked by another tx, we need to break
                     // and retry to gain the lock over this key
                     break;
@@ -710,6 +712,7 @@ impl Db {
     }
 
     /// Returns the version of a given key
+    #[inline]
     pub fn get_version(&self, key: &Bytes) -> u128 {
         let slot = self.slots[self.get_slot(key)].read();
         slot.get(key)

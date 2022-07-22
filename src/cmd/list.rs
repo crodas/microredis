@@ -419,7 +419,12 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         return Err(Error::Syntax);
     };
 
-    let result = conn.db().get_map_or(
+    let db = conn.db();
+
+    /// Lock keys to alter exclusively
+    db.lock_keys(&args[1..=2]);
+
+    let result = db.get_map_or(
         &args[1],
         |v| match v {
             Value::List(source) => conn.db().get_map_or(
@@ -447,10 +452,11 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     _ => Err(Error::WrongType),
                 },
                 || {
+                    let mut source = source.write();
                     let element = if source_is_left {
-                        source.write().pop_front()
+                        source.pop_front()
                     } else {
-                        source.write().pop_back()
+                        source.pop_back()
                     };
 
                     if let Some(element) = element {
@@ -467,11 +473,17 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Ok(Value::Null),
-    )?;
+    );
 
-    conn.db().bump_version(&args[1]);
+    /// release the lock on keys
+    db.unlock_keys(&args[1..=2]);
 
-    Ok(result)
+    if result != Ok(Value::Null) {
+        conn.db().bump_version(&args[1]);
+        conn.db().bump_version(&args[2]);
+    }
+
+    result
 }
 
 /// Removes and returns the first elements of the list stored at key.
