@@ -6,6 +6,7 @@ use crate::{
     config::Config,
     connection::{connections::Connections, Connection, ConnectionStatus},
     db::{pool::Databases, Db},
+    dispatcher::Dispatcher,
     error::Error,
     value::Value,
 };
@@ -171,6 +172,20 @@ async fn serve_unixsocket(
     Ok(())
 }
 
+#[inline]
+async fn execute_command(
+    conn: &Connection,
+    dispatcher: &Dispatcher,
+    args: &[Bytes],
+) -> Option<Value> {
+    match dispatcher.execute(&conn, args).await {
+        Ok(result) => Some(result),
+        Err(Error::EmptyLine) => Some(Value::Ignore),
+        Err(Error::Quit) => None,
+        Err(err) => Some(err.into()),
+    }
+}
+
 /// Handles a new connection
 ///
 /// The new connection can be created from a new TCP or Unix stream.
@@ -182,37 +197,48 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
     addr: A,
 ) {
     let (mut pubsub, conn) = all_connections.new_connection(default_db, addr);
+    let dispatcher = all_connections.get_dispatcher();
+    // Commands are being buffered when the client is blocked.
+    let mut buffered_commands: Vec<Vec<Bytes>> = vec![];
     trace!("New connection {}", conn.id());
 
     loop {
         tokio::select! {
             Some(msg) = pubsub.recv() => {
+                // Pub-sub message
                 if transport.send(msg).await.is_err() {
                     break;
                 }
+                'outer: for args in buffered_commands.iter() {
+                    // Client sent commands while the connection was blocked,
+                    // now it is time to process them one by one
+                    match execute_command(&conn, &dispatcher, &args).await {
+                        Some(result) => if result != Value::Ignore && transport.send(result).await.is_err() {
+                            break 'outer;
+                        },
+                        None => {
+                            let _ = transport.send(Value::Ok).await;
+                            break 'outer;
+                        }
+                    }
+                }
+                buffered_commands.clear();
             }
             result = transport.next() => match result {
-                Some(Ok(args)) => match all_connections.get_dispatcher().execute(&conn, &args).await {
-                    Ok(result) => {
-                        if result == Value::Ignore {
+                Some(Ok(args)) => {
+                        if conn.is_blocked() {
+                            buffered_commands.push(args.clone());
                             continue;
                         }
-                        if transport.send(result).await.is_err() {
-                            break;
-                        }
-                    },
-                    Err(Error::EmptyLine) => {
-                        // do nothing
-                    },
-                    Err(Error::Quit) => {
-                        let _ = transport.send(Value::Ok).await;
-                        break;
-                    }
-                    Err(err) => {
-                        if transport.send(err.into()).await.is_err() {
-                            break;
-                        }
-                    }
+                        match execute_command(&conn, &dispatcher, &args).await {
+                            Some(result) => if result != Value::Ignore && transport.send(result).await.is_err() {
+                               break;
+                            },
+                            None => {
+                                let _ = transport.send(Value::Ok).await;
+                                break;
+                            }
+                        };
                 },
                 Some(Err(e)) => {
                     warn!("error on decoding from socket; error = {:?}", e);
@@ -227,7 +253,7 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
 
 /// Spawn redis server
 ///
-/// Spawn a redis server. This function will create Conections object, the in-memory database, the
+/// Spawn a redis server. This function will create Connections object, the in-memory database, the
 /// purge process and the TCP server.
 ///
 /// This process is also listening for any incoming message through the internal pub-sub.

@@ -15,6 +15,7 @@ use tokio::time::{sleep, Duration, Instant};
 
 #[allow(clippy::needless_range_loop)]
 /// Removes an element from a list
+#[inline]
 fn remove_element(
     conn: &Connection,
     key: &Bytes,
@@ -80,20 +81,13 @@ async fn handle_timeout(conn: &Connection, timeout: Option<Instant>) -> Result<b
             return Ok(true);
         }
     }
-    if conn.status() == ConnectionStatus::ExecutingTx {
-        conn.unblock(UnblockReason::Timeout);
-        return Ok(true);
-    }
 
     if let Some(reason) = conn.has_been_unblocked_externally() {
         match reason {
             UnblockReason::Error => Err(Error::UnblockByError),
-            UnblockReason::Timeout => Ok(true),
+            _ => Ok(true),
         }
     } else {
-        // Check if the connection is still alive by entering the loop and check if the socket/unixsocket
-        // is still alive
-        conn.append_response(Value::Ignore);
         sleep(Duration::from_millis(100)).await;
         Ok(false)
     }
@@ -113,7 +107,9 @@ fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
 
     Ok(Some(
         Instant::now()
-            .checked_add(Duration::from_millis((raw_timeout * 1000f64).round() as u64))
+            .checked_add(Duration::from_millis(
+                (raw_timeout * 1_000f64).round() as u64
+            ))
             .unwrap_or_else(far_future),
     ))
 }
@@ -123,25 +119,58 @@ fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
 /// popped from the head of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout = parse_timeout(&args[args.len() - 1])?;
-    let len = args.len() - 1;
-
-    conn.block();
-
-    loop {
-        for key in args[1..len].iter() {
-            match remove_element(conn, key, None, true)? {
+    let blpop_task = |conn: &Connection, args: &[Bytes]| -> Result<Value, Error> {
+        for key in (1..args.len() - 1) {
+            let key = &args[key];
+            match remove_element(&conn, key, None, true)? {
                 Value::Null => (),
                 n => return Ok(vec![Value::new(&key), n].into()),
             };
         }
+        Ok(Value::Null)
+    };
 
-        if handle_timeout(&conn, timeout).await? {
-            break;
-        }
+    if conn.is_executing_tx() {
+        return blpop_task(conn, args);
     }
 
-    Ok(Value::Null)
+    let timeout = parse_timeout(&args[args.len() - 1])?;
+    let conn = conn.clone();
+    let args = args.to_vec();
+
+    conn.block();
+
+    tokio::spawn(async move {
+        loop {
+            match blpop_task(&conn, &args) {
+                Ok(Value::Null) => {}
+                Ok(x) => {
+                    conn.append_response(x);
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+            }
+
+            match handle_timeout(&conn, timeout).await {
+                Ok(true) => {
+                    conn.append_response(Value::Null);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(Value::Ignore)
 }
 
 /// BLMOVE is the blocking variant of LMOVE. When source contains elements, this
@@ -156,20 +185,45 @@ pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 ///
 /// See LMOVE for more information.
 pub async fn blmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    if conn.is_executing_tx() {
+        return lmove(&conn, &args).await;
+    }
+
     let timeout = parse_timeout(&args[5])?;
     conn.block();
 
-    loop {
-        match lmove(&conn, &args).await? {
-            Value::Null => (),
-            n => return Ok(n),
-        };
-        if handle_timeout(&conn, timeout).await? {
-            break;
+    let conn = conn.clone();
+    let args = args.to_vec();
+    tokio::spawn(async move {
+        loop {
+            match lmove(&conn, &args).await {
+                Ok(Value::Null) => (),
+                Ok(n) => {
+                    conn.append_response(n);
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+            };
+            match handle_timeout(&conn, timeout).await {
+                Ok(true) => {
+                    conn.append_response(Value::Null);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    break;
+                }
+                _ => {}
+            }
         }
-    }
+    });
 
-    Ok(Value::Null)
+    Ok(Value::Ignore)
 }
 
 /// BRPOPLPUSH is the blocking variant of RPOPLPUSH. When source contains
@@ -198,25 +252,57 @@ pub async fn brpoplpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// popped from the tail of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout = parse_timeout(&args[args.len() - 1])?;
-    let len = args.len() - 1;
-
-    conn.block();
-
-    loop {
-        for key in args[1..len].iter() {
-            match remove_element(conn, key, None, false)? {
+    let brpop_task = |conn: &Connection, args: &[Bytes]| -> Result<Value, Error> {
+        for key in (1..args.len() - 1) {
+            let key = &args[key];
+            match remove_element(&conn, key, None, false)? {
                 Value::Null => (),
                 n => return Ok(vec![Value::new(&key), n].into()),
             };
         }
-
-        if handle_timeout(&conn, timeout).await? {
-            break;
-        }
+        Ok(Value::Null)
+    };
+    if conn.is_executing_tx() {
+        return brpop_task(conn, args);
     }
 
-    Ok(Value::Null)
+    let timeout = parse_timeout(&args[args.len() - 1])?;
+    let conn = conn.clone();
+    let args = args.to_vec();
+
+    conn.block();
+
+    tokio::spawn(async move {
+        loop {
+            match brpop_task(&conn, &args) {
+                Ok(Value::Null) => {}
+                Ok(x) => {
+                    conn.append_response(x);
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+            }
+
+            match handle_timeout(&conn, timeout).await {
+                Ok(true) => {
+                    conn.append_response(Value::Null);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(Value::Ignore)
 }
 
 /// Returns the element at index index in the list stored at key. The index is zero-based, so 0
