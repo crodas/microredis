@@ -16,6 +16,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use core::num;
 use entry::{new_version, Entry};
 use expiration::ExpirationDb;
+use futures::Future;
 use glob::Pattern;
 use log::trace;
 use num_traits::CheckedAdd;
@@ -30,7 +31,10 @@ use std::{
     sync::Arc,
     thread,
 };
-use tokio::time::{Duration, Instant};
+use tokio::{
+    sync::broadcast::{self, Receiver, Sender},
+    time::{Duration, Instant},
+};
 
 mod entry;
 mod expiration;
@@ -69,6 +73,11 @@ pub struct Db {
     /// Data structure to store all expiring keys
     expirations: Arc<Mutex<ExpirationDb>>,
 
+    /// Key changes subscriptions hash. This hash contains all the senders to
+    /// key subscriptions. If a key does not exists here it means that no-one
+    /// wants to be notified of the current key changes.
+    change_subscriptions: Arc<RwLock<HashMap<Bytes, Sender<()>>>>,
+
     /// Number of HashMaps that are available.
     number_of_slots: usize,
 
@@ -81,7 +90,7 @@ pub struct Db {
     /// A Database is attached to a conn_id. The slots and expiration data
     /// structures are shared between all connections, regardless of conn_id.
     ///
-    /// This particular database instace is attached to a conn_id, which is used
+    /// This particular database instance is attached to a conn_id, which is used
     /// to lock keys exclusively for transactions and other atomic operations.
     conn_id: u128,
 
@@ -101,6 +110,7 @@ impl Db {
         Self {
             slots: Arc::new(slots),
             expirations: Arc::new(Mutex::new(ExpirationDb::new())),
+            change_subscriptions: Arc::new(RwLock::new(HashMap::new())),
             conn_id: 0,
             db_id: new_version(),
             tx_key_locks: Arc::new(RwLock::new(HashMap::new())),
@@ -118,6 +128,7 @@ impl Db {
             slots: self.slots.clone(),
             tx_key_locks: self.tx_key_locks.clone(),
             expirations: self.expirations.clone(),
+            change_subscriptions: self.change_subscriptions.clone(),
             conn_id,
             db_id: self.db_id,
             number_of_slots: self.number_of_slots,
@@ -154,7 +165,7 @@ impl Db {
 
     /// Locks keys exclusively
     ///
-    /// The locked keys are only accesible (read or write) by the connection
+    /// The locked keys are only accessible (read or write) by the connection
     /// that locked them, any other connection must wait until the locking
     /// connection releases them.
     ///
@@ -590,7 +601,7 @@ impl Db {
         let slot1 = self.get_slot(source);
         let slot2 = self.get_slot(target);
 
-        if slot1 == slot2 {
+        let result = if slot1 == slot2 {
             let mut slot = self.slots[slot1].write();
 
             if override_value == Override::No && slot.get(target).is_some() {
@@ -615,7 +626,14 @@ impl Db {
             } else {
                 Err(Error::NotFound)
             }
+        };
+
+        if result.is_ok() {
+            self.bump_version(source);
+            self.bump_version(target);
         }
+
+        result
     }
 
     /// Removes keys from the database
@@ -671,7 +689,7 @@ impl Db {
 
     /// get_map_or
     ///
-    /// Instead of returning an entry of the database, to avoid clonning, this function will
+    /// Instead of returning an entry of the database, to avoid cloning, this function will
     /// execute a callback function with the entry as a parameter. If no record is found another
     /// callback function is going to be executed, dropping the lock before doing so.
     ///
@@ -680,7 +698,7 @@ impl Db {
     /// entry itself.
     ///
     /// This function is useful to read non-scalar values from the database. Non-scalar values are
-    /// forbidden to clone, attempting cloning will endup in an error (Error::WrongType)
+    /// forbidden to clone, attempting cloning will end-up in an error (Error::WrongType)
     pub fn get_map_or<F1, F2>(&self, key: &Bytes, found: F1, not_found: F2) -> Result<Value, Error>
     where
         F1: FnOnce(&Value) -> Result<Value, Error>,
@@ -702,12 +720,44 @@ impl Db {
     /// Updates the entry version of a given key
     pub fn bump_version(&self, key: &Bytes) -> bool {
         let mut slot = self.slots[self.get_slot(key)].write();
-        slot.get_mut(key)
+        let to_return = slot
+            .get_mut(key)
             .filter(|x| x.is_valid())
             .map(|entry| {
                 entry.bump_version();
             })
-            .is_some()
+            .is_some();
+        drop(slot);
+        if to_return {
+            let senders = self.change_subscriptions.read();
+            if let Some(sender) = senders.get(key) {
+                if sender.receiver_count() == 0 {
+                    // Garbage collection
+                    drop(senders);
+                    self.change_subscriptions.write().remove(key);
+                } else {
+                    // Notify
+                    let _ = sender.send(());
+                }
+            }
+        }
+        to_return
+    }
+
+    /// Subscribe to key changes.
+    pub fn subscribe_to_key_changes(&self, keys: &[Bytes]) -> Vec<Receiver<()>> {
+        let mut subscriptions = self.change_subscriptions.write();
+        keys.iter()
+            .map(|key| {
+                if let Some(sender) = subscriptions.get(key) {
+                    sender.subscribe()
+                } else {
+                    let (sender, receiver) = broadcast::channel(1);
+                    subscriptions.insert(key.clone(), sender);
+                    receiver
+                }
+            })
+            .collect()
     }
 
     /// Returns the version of a given key
