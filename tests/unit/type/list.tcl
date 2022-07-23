@@ -423,7 +423,7 @@ start_server {
 
       r rpush list1{t} foo
 
-      after 1000
+      after 50
 
       assert_equal {} [r lrange list1{t} 0 -1]
       assert_equal {} [r lrange list2{t} 0 -1]
@@ -484,7 +484,7 @@ start_server {
         $watching_client get somekey{t}
         $watching_client read
         r lpush srclist{t} element
-        after 500
+        after 50
         $watching_client exec
         $watching_client read
     } {}

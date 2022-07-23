@@ -88,7 +88,7 @@ async fn handle_timeout(conn: &Connection, timeout: Option<Instant>) -> Result<b
             _ => Ok(true),
         }
     } else {
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(5)).await;
         Ok(false)
     }
 }

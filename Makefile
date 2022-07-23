@@ -17,6 +17,9 @@ test-single: build
 		--tags -consistency \
 		--tags -cli \
 		--tags -needs:config-maxmemory
+unit-test:
+	cargo test --release
+
 test: build
 	./runtest  --clients 5 \
 		--skipunit unit/dump \
@@ -53,4 +56,4 @@ test: build
 		--tags -consistency \
 		--tags -cli \
 		--tags -needs:config-maxmemory
-ci: fmt clippy build test
+ci: fmt clippy build unit-test test

@@ -175,7 +175,6 @@ impl Db {
                         i += 1;
                         continue;
                     }
-                    println!("failed to block {:?}", key);
                     // It is blocked by another tx, we need to break
                     // and retry to gain the lock over this key
                     break;
