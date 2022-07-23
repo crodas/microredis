@@ -38,6 +38,8 @@ pub enum UnblockReason {
     Timeout,
     /// Throw an error
     Error,
+    /// Operation finished successfully
+    Finished,
 }
 
 /// Connection information
@@ -90,6 +92,13 @@ impl Connection {
         self.info.read().db.clone()
     }
 
+    /// Creates a clone connection
+    pub fn clone(&self) -> Arc<Connection> {
+        self.all_connections
+            .get_by_conn_id(self.id)
+            .expect("Connection must be registered")
+    }
+
     /// Returns the global pubsub server
     pub fn pubsub(&self) -> Arc<Pubsub> {
         self.all_connections.pubsub()
@@ -138,11 +147,19 @@ impl Connection {
     }
 
     /// If the current connection has been externally unblocked
-    pub fn is_unblocked(&self) -> Option<UnblockReason> {
+    #[inline]
+    pub fn has_been_unblocked_externally(&self) -> Option<UnblockReason> {
         self.info.read().unblock_reason
     }
 
+    /// Is the current connection blocked?
+    #[inline]
+    pub fn is_blocked(&self) -> bool {
+        self.info.read().is_blocked
+    }
+
     /// Connection ID
+    #[inline]
     pub fn id(&self) -> u128 {
         self.id
     }
@@ -207,8 +224,15 @@ impl Connection {
     }
 
     /// Returns the status of the connection
+    #[inline]
     pub fn status(&self) -> ConnectionStatus {
         self.info.read().status
+    }
+
+    /// Is connection executing transaction?
+    #[inline]
+    pub fn is_executing_tx(&self) -> bool {
+        self.info.read().status == ConnectionStatus::ExecutingTx
     }
 
     /// Watches keys. In a transaction watched keys are a mechanism to discard a transaction if
@@ -285,6 +309,7 @@ impl Connection {
     /// all_connection lists.
     pub fn destroy(self: Arc<Connection>) {
         let pubsub = self.pubsub();
+        self.clone().unblock(UnblockReason::Timeout);
         pubsub.unsubscribe(&self.pubsub_client.subscriptions(), &self, false);
         pubsub.punsubscribe(&self.pubsub_client.psubscriptions(), &self, false);
         self.all_connections.clone().remove(self);

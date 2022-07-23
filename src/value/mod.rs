@@ -1,6 +1,6 @@
 //! # Redis Value
 //!
-//! All redis internal data structures and values are absracted in this mod.
+//! All redis internal data structures and values are abstracted in this mod.
 pub mod checksum;
 pub mod cursor;
 pub mod expiration;
@@ -26,7 +26,7 @@ use std::{
 pub enum Value {
     /// Hash. This type cannot be serialized
     Hash(locked::Value<HashMap<Bytes, Bytes>>),
-    /// List. This type cannot be sreialized
+    /// List. This type cannot be serialized
     List(locked::Value<VecDeque<checksum::Value>>),
     /// Set. This type cannot be serialized
     Set(locked::Value<HashSet<Bytes>>),
@@ -126,6 +126,7 @@ impl Value {
 impl From<&Value> for Vec<u8> {
     fn from(value: &Value) -> Vec<u8> {
         match value {
+            Value::Ignore => b"".to_vec(),
             Value::Null => b"*-1\r\n".to_vec(),
             Value::Array(x) => {
                 let mut s: Vec<u8> = format!("*{}\r\n", x.len()).into();

@@ -79,12 +79,15 @@ pub async fn debug(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 /// The INFO command returns information and statistics about the server in a
 /// format that is simple to parse by computers and easy to read by humans.
-pub async fn info(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn info(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+    let connections = conn.all_connections();
     Ok(Value::Blob(
         format!(
-            "redis_version: {}\r\nredis_git_sha1:{}\r\n",
+            "redis_version: {}\r\nredis_git_sha1:{}\r\n\r\nconnected_clients:{}\r\nblocked_clients:{}\r\n",
             git_version!(),
-            git_version!()
+            git_version!(),
+            connections.total_connections(),
+            connections.total_blocked_connections(),
         )
         .as_str()
         .into(),

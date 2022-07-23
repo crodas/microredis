@@ -195,6 +195,48 @@ start_server {
             assert_equal 1 [r llen blist2{t}]
         }
 
+        test "BRPOPLPUSH - $type" {
+            r del target{t}
+            r rpush target{t} bar
+
+            set rd [redis_deferring_client]
+            create_list blist{t} "a b $large c d"
+
+            $rd brpoplpush blist{t} target{t} 1
+            assert_equal d [$rd read]
+
+            assert_equal d [r lpop target{t}]
+            assert_equal "a b $large c" [r lrange blist{t} 0 -1]
+        }
+
+        foreach wherefrom {left right} {
+            foreach whereto {left right} {
+                test "BLMOVE $wherefrom $whereto - $type" {
+                    r del target{t}
+                    r rpush target{t} bar
+
+                    set rd [redis_deferring_client]
+                    create_list blist{t} "a b $large c d"
+
+                    $rd blmove blist{t} target{t} $wherefrom $whereto 1
+                    set poppedelement [$rd read]
+
+                    if {$wherefrom eq "right"} {
+                        assert_equal d $poppedelement
+                        assert_equal "a b $large c" [r lrange blist{t} 0 -1]
+                    } else {
+                        assert_equal a $poppedelement
+                        assert_equal "b $large c d" [r lrange blist{t} 0 -1]
+                    }
+
+                    if {$whereto eq "right"} {
+                        assert_equal $poppedelement [r rpop target{t}]
+                    } else {
+                        assert_equal $poppedelement [r lpop target{t}]
+                    }
+                }
+            }
+        }
     }
 
     test "BLPOP, LPUSH + DEL should not awake blocked client" {
@@ -273,6 +315,206 @@ start_server {
         assert_equal foo [lindex [r lrange blist 0 -1] 0]
     }
 
+    test "BRPOPLPUSH with zero timeout should block indefinitely" {
+        set rd [redis_deferring_client]
+        r del blist{t} target{t}
+        r rpush target{t} bar
+        $rd brpoplpush blist{t} target{t} 0
+        wait_for_blocked_clients_count 1
+        r rpush blist{t} foo
+        assert_equal foo [$rd read]
+        assert_equal {foo bar} [r lrange target{t} 0 -1]
+    }
+
+    foreach wherefrom {left right} {
+        foreach whereto {left right} {
+            test "BLMOVE $wherefrom $whereto with zero timeout should block indefinitely" {
+                set rd [redis_deferring_client]
+                r del blist{t} target{t}
+                r rpush target{t} bar
+                $rd blmove blist{t} target{t} $wherefrom $whereto 0
+                wait_for_blocked_clients_count 1
+                r rpush blist{t} foo
+                assert_equal foo [$rd read]
+                if {$whereto eq "right"} {
+                    assert_equal {bar foo} [r lrange target{t} 0 -1]
+                } else {
+                    assert_equal {foo bar} [r lrange target{t} 0 -1]
+                }
+            }
+        }
+    }
+
+    foreach wherefrom {left right} {
+        foreach whereto {left right} {
+            test "BLMOVE ($wherefrom, $whereto) with a client BLPOPing the target list" {
+                set rd [redis_deferring_client]
+                set rd2 [redis_deferring_client]
+                r del blist{t} target{t}
+                $rd2 blpop target{t} 0
+                $rd blmove blist{t} target{t} $wherefrom $whereto 0
+                wait_for_blocked_clients_count 2
+                r rpush blist{t} foo
+                assert_equal foo [$rd read]
+                assert_equal {target{t} foo} [$rd2 read]
+                assert_equal 0 [r exists target{t}]
+            }
+        }
+    }
+
+    test "BRPOPLPUSH with wrong source type" {
+        set rd [redis_deferring_client]
+        r del blist{t} target{t}
+        r set blist{t} nolist
+        $rd brpoplpush blist{t} target{t} 1
+        assert_error "WRONGTYPE*" {$rd read}
+    }
+
+    test "BRPOPLPUSH with wrong destination type" {
+        set rd [redis_deferring_client]
+        r del blist{t} target{t}
+        r set target{t} nolist
+        r lpush blist{t} foo
+        $rd brpoplpush blist{t} target{t} 1
+        assert_error "WRONGTYPE*" {$rd read}
+
+        set rd [redis_deferring_client]
+        r del blist{t} target{t}
+        r set target{t} nolist
+        $rd brpoplpush blist{t} target{t} 0
+        wait_for_blocked_clients_count 1
+        r rpush blist{t} foo
+        assert_error "WRONGTYPE*" {$rd read}
+        assert_equal {foo} [r lrange blist{t} 0 -1]
+    }
+
+    test "BRPOPLPUSH maintains order of elements after failure" {
+        set rd [redis_deferring_client]
+        r del blist{t} target{t}
+        r set target{t} nolist
+        $rd brpoplpush blist{t} target{t} 0
+        r rpush blist{t} a b c
+        assert_error "WRONGTYPE*" {$rd read}
+        r lrange blist{t} 0 -1
+    } {a b c}
+
+    test "BRPOPLPUSH with multiple blocked clients" {
+        set rd1 [redis_deferring_client]
+        set rd2 [redis_deferring_client]
+        r del blist{t} target1{t} target2{t}
+        r set target1{t} nolist
+        $rd1 brpoplpush blist{t} target1{t} 0
+        $rd2 brpoplpush blist{t} target2{t} 0
+        r lpush blist{t} foo
+
+        assert_error "WRONGTYPE*" {$rd1 read}
+        assert_equal {foo} [$rd2 read]
+        assert_equal {foo} [r lrange target2{t} 0 -1]
+    }
+
+    test "Linked LMOVEs" {
+      set rd1 [redis_deferring_client]
+      set rd2 [redis_deferring_client]
+
+      r del list1{t} list2{t} list3{t}
+
+      $rd1 blmove list1{t} list2{t} right left 0
+      $rd2 blmove list2{t} list3{t} left right 0
+
+      r rpush list1{t} foo
+
+      after 50
+
+      assert_equal {} [r lrange list1{t} 0 -1]
+      assert_equal {} [r lrange list2{t} 0 -1]
+      assert_equal {foo} [r lrange list3{t} 0 -1]
+    }
+
+    test "Circular BRPOPLPUSH" {
+      set rd1 [redis_deferring_client]
+      set rd2 [redis_deferring_client]
+
+      r del list1{t} list2{t}
+
+      $rd1 brpoplpush list1{t} list2{t} 0
+      $rd2 brpoplpush list2{t} list1{t} 0
+
+      r rpush list1{t} foo
+
+      assert_equal {foo} [r lrange list1{t} 0 -1]
+      assert_equal {} [r lrange list2{t} 0 -1]
+    }
+
+    test "Self-referential BRPOPLPUSH" {
+      set rd [redis_deferring_client]
+
+      r del blist{t}
+
+      $rd brpoplpush blist{t} blist{t} 0
+
+      r rpush blist{t} foo
+
+      assert_equal {foo} [r lrange blist{t} 0 -1]
+    }
+
+    test "BRPOPLPUSH inside a transaction" {
+        r del xlist{t} target{t}
+        r lpush xlist{t} foo
+        r lpush xlist{t} bar
+
+        r multi
+        r brpoplpush xlist{t} target{t} 0
+        r brpoplpush xlist{t} target{t} 0
+        r brpoplpush xlist{t} target{t} 0
+        r lrange xlist{t} 0 -1
+        r lrange target{t} 0 -1
+        r exec
+    } {foo bar {} {} {bar foo}}
+
+    test "PUSH resulting from BRPOPLPUSH affect WATCH" {
+        set blocked_client [redis_deferring_client]
+        set watching_client [redis_deferring_client]
+        r del srclist{t} dstlist{t} somekey{t}
+        r set somekey{t} somevalue
+        $blocked_client brpoplpush srclist{t} dstlist{t} 0
+        $watching_client watch dstlist{t}
+        $watching_client read
+        $watching_client multi
+        $watching_client read
+        $watching_client get somekey{t}
+        $watching_client read
+        r lpush srclist{t} element
+        after 50
+        $watching_client exec
+        $watching_client read
+    } {}
+
+    test "BRPOPLPUSH does not affect WATCH while still blocked" {
+        set blocked_client [redis_deferring_client]
+        set watching_client [redis_deferring_client]
+        r del srclist{t} dstlist{t} somekey{t}
+        r set somekey{t} somevalue
+        $blocked_client brpoplpush srclist{t} dstlist{t} 0
+        $watching_client watch dstlist{t}
+        $watching_client read
+        $watching_client multi
+        $watching_client read
+        $watching_client get somekey{t}
+        $watching_client read
+        $watching_client exec
+        # Blocked BLPOPLPUSH may create problems, unblock it.
+        r lpush srclist{t} element
+        $watching_client read
+    } {somevalue}
+
+    test {BRPOPLPUSH timeout} {
+      set rd [redis_deferring_client]
+
+      $rd brpoplpush foo_list{t} bar_list{t} 1
+      wait_for_blocked_clients_count 1
+      wait_for_blocked_clients_count 0 500 10
+      $rd read
+    } {}
 
     test "BLPOP when new key is moved into place" {
         set rd [redis_deferring_client]

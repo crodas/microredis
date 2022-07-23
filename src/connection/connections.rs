@@ -79,6 +79,20 @@ impl Connections {
         self.connections.read().get(&conn_id).cloned()
     }
 
+    /// Return total number of connections
+    pub fn total_connections(&self) -> usize {
+        self.connections.read().len()
+    }
+
+    /// REturn total number of blocked connections
+    pub fn total_blocked_connections(&self) -> usize {
+        self.connections
+            .read()
+            .iter()
+            .map(|(_, conn)| if conn.is_blocked() { 1 } else { 0 })
+            .sum()
+    }
+
     /// Iterates over all connections
     pub fn iter(&self, f: &mut dyn FnMut(Arc<Connection>)) {
         for (_, value) in self.connections.read().iter() {

@@ -14,6 +14,8 @@ use std::collections::VecDeque;
 use tokio::time::{sleep, Duration, Instant};
 
 #[allow(clippy::needless_range_loop)]
+/// Removes an element from a list
+#[inline]
 fn remove_element(
     conn: &Connection,
     key: &Bytes,
@@ -70,49 +72,29 @@ fn remove_element(
     Ok(result)
 }
 
-/// BLPOP is a blocking list pop primitive. It is the blocking version of LPOP because it blocks
-/// the connection when there are no elements to pop from any of the given lists. An element is
-/// popped from the head of the first list that is non-empty, with the given keys being checked in
-/// the order that they are given.
-pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout = parse_timeout(&args[args.len() - 1])?;
-    let len = args.len() - 1;
-
-    conn.block();
-
-    loop {
-        for key in args[1..len].iter() {
-            match remove_element(conn, key, None, true)? {
-                Value::Null => (),
-                n => return Ok(vec![Value::new(&key), n].into()),
-            };
-        }
-
-        if let Some(timeout) = timeout {
-            if Instant::now() >= timeout {
-                conn.unblock(UnblockReason::Timeout);
-                break;
-            }
-        }
-
-        if conn.status() == ConnectionStatus::ExecutingTx {
+#[inline]
+/// Handles the timeout/sleep logic for all blocking commands.
+async fn handle_timeout(conn: &Connection, timeout: Option<Instant>) -> Result<bool, Error> {
+    if let Some(timeout) = timeout {
+        if Instant::now() >= timeout {
             conn.unblock(UnblockReason::Timeout);
-            break;
+            return Ok(true);
         }
-
-        if let Some(reason) = conn.is_unblocked() {
-            return match reason {
-                UnblockReason::Error => Err(Error::UnblockByError),
-                UnblockReason::Timeout => Ok(Value::Null),
-            };
-        }
-
-        sleep(Duration::from_millis(100)).await;
     }
 
-    Ok(Value::Null)
+    if let Some(reason) = conn.has_been_unblocked_externally() {
+        match reason {
+            UnblockReason::Error => Err(Error::UnblockByError),
+            _ => Ok(true),
+        }
+    } else {
+        sleep(Duration::from_millis(5)).await;
+        Ok(false)
+    }
 }
 
+/// Parses timeout and returns an instant or none if it should wait forever.
+#[inline]
 fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
     let raw_timeout = bytes_to_number::<f64>(arg)?;
     if raw_timeout < 0f64 {
@@ -125,9 +107,144 @@ fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
 
     Ok(Some(
         Instant::now()
-            .checked_add(Duration::from_micros((raw_timeout * 1000f64).round() as u64))
+            .checked_add(Duration::from_millis(
+                (raw_timeout * 1_000f64).round() as u64
+            ))
             .unwrap_or_else(far_future),
     ))
+}
+
+/// BLPOP is a blocking list pop primitive. It is the blocking version of LPOP because it blocks
+/// the connection when there are no elements to pop from any of the given lists. An element is
+/// popped from the head of the first list that is non-empty, with the given keys being checked in
+/// the order that they are given.
+pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    let blpop_task = |conn: &Connection, args: &[Bytes]| -> Result<Value, Error> {
+        for key in (1..args.len() - 1) {
+            let key = &args[key];
+            match remove_element(&conn, key, None, true)? {
+                Value::Null => (),
+                n => return Ok(vec![Value::new(&key), n].into()),
+            };
+        }
+        Ok(Value::Null)
+    };
+
+    if conn.is_executing_tx() {
+        return blpop_task(conn, args);
+    }
+
+    let timeout = parse_timeout(&args[args.len() - 1])?;
+    let conn = conn.clone();
+    let args = args.to_vec();
+
+    conn.block();
+
+    tokio::spawn(async move {
+        loop {
+            match blpop_task(&conn, &args) {
+                Ok(Value::Null) => {}
+                Ok(x) => {
+                    conn.append_response(x);
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+            }
+
+            match handle_timeout(&conn, timeout).await {
+                Ok(true) => {
+                    conn.append_response(Value::Null);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(Value::Ignore)
+}
+
+/// BLMOVE is the blocking variant of LMOVE. When source contains elements, this
+/// command behaves exactly like LMOVE. When used inside a MULTI/EXEC block,
+/// this command behaves exactly like LMOVE. When source is empty, Redis will
+/// block the connection until another client pushes to it or until timeout (a
+/// double value specifying the maximum number of seconds to block) is reached.
+/// A timeout of zero can be used to block indefinitely.
+///
+/// This command comes in place of the now deprecated BRPOPLPUSH. Doing BLMOVE
+/// RIGHT LEFT is equivalent.
+///
+/// See LMOVE for more information.
+pub async fn blmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    if conn.is_executing_tx() {
+        return lmove(&conn, &args).await;
+    }
+
+    let timeout = parse_timeout(&args[5])?;
+    conn.block();
+
+    let conn = conn.clone();
+    let args = args.to_vec();
+    tokio::spawn(async move {
+        loop {
+            match lmove(&conn, &args).await {
+                Ok(Value::Null) => (),
+                Ok(n) => {
+                    conn.append_response(n);
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+            };
+            match handle_timeout(&conn, timeout).await {
+                Ok(true) => {
+                    conn.append_response(Value::Null);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(Value::Ignore)
+}
+
+/// BRPOPLPUSH is the blocking variant of RPOPLPUSH. When source contains
+/// elements, this command behaves exactly like RPOPLPUSH. When used inside a
+/// MULTI/EXEC block, this command behaves exactly like RPOPLPUSH. When source
+/// is empty, Redis will block the connection until another client pushes to it
+/// or until timeout is reached. A timeout of zero can be used to block
+/// indefinitely.
+pub async fn brpoplpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+    blmove(
+        conn,
+        &[
+            "blmove".into(),
+            args[1].clone(),
+            args[2].clone(),
+            "RIGHT".into(),
+            "LEFT".into(),
+            args[3].clone(),
+        ],
+    )
+    .await
 }
 
 /// BRPOP is a blocking list pop primitive. It is the blocking version of RPOP because it blocks
@@ -135,41 +252,57 @@ fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
 /// popped from the tail of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let timeout = parse_timeout(&args[args.len() - 1])?;
-    let len = args.len() - 1;
-
-    conn.block();
-
-    loop {
-        for key in args[1..len].iter() {
-            match remove_element(conn, key, None, false)? {
+    let brpop_task = |conn: &Connection, args: &[Bytes]| -> Result<Value, Error> {
+        for key in (1..args.len() - 1) {
+            let key = &args[key];
+            match remove_element(&conn, key, None, false)? {
                 Value::Null => (),
                 n => return Ok(vec![Value::new(&key), n].into()),
             };
         }
-
-        if let Some(timeout) = timeout {
-            if Instant::now() >= timeout {
-                conn.unblock(UnblockReason::Timeout);
-                break;
-            }
-        }
-        if conn.status() == ConnectionStatus::ExecutingTx {
-            conn.unblock(UnblockReason::Timeout);
-            break;
-        }
-
-        if let Some(reason) = conn.is_unblocked() {
-            return match reason {
-                UnblockReason::Error => Err(Error::UnblockByError),
-                UnblockReason::Timeout => Ok(Value::Null),
-            };
-        }
-
-        sleep(Duration::from_millis(100)).await;
+        Ok(Value::Null)
+    };
+    if conn.is_executing_tx() {
+        return brpop_task(conn, args);
     }
 
-    Ok(Value::Null)
+    let timeout = parse_timeout(&args[args.len() - 1])?;
+    let conn = conn.clone();
+    let args = args.to_vec();
+
+    conn.block();
+
+    tokio::spawn(async move {
+        loop {
+            match brpop_task(&conn, &args) {
+                Ok(Value::Null) => {}
+                Ok(x) => {
+                    conn.append_response(x);
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    conn.unblock(UnblockReason::Finished);
+                    break;
+                }
+            }
+
+            match handle_timeout(&conn, timeout).await {
+                Ok(true) => {
+                    conn.append_response(Value::Null);
+                    break;
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(Value::Ignore)
 }
 
 /// Returns the element at index index in the list stored at key. The index is zero-based, so 0
@@ -286,7 +419,12 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         return Err(Error::Syntax);
     };
 
-    let result = conn.db().get_map_or(
+    let db = conn.db();
+
+    /// Lock keys to alter exclusively
+    db.lock_keys(&args[1..=2]);
+
+    let result = db.get_map_or(
         &args[1],
         |v| match v {
             Value::List(source) => conn.db().get_map_or(
@@ -314,10 +452,11 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     _ => Err(Error::WrongType),
                 },
                 || {
+                    let mut source = source.write();
                     let element = if source_is_left {
-                        source.write().pop_front()
+                        source.pop_front()
                     } else {
-                        source.write().pop_back()
+                        source.pop_back()
                     };
 
                     if let Some(element) = element {
@@ -334,11 +473,17 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || Ok(Value::Null),
-    )?;
+    );
 
-    conn.db().bump_version(&args[1]);
+    /// release the lock on keys
+    db.unlock_keys(&args[1..=2]);
 
-    Ok(result)
+    if result != Ok(Value::Null) {
+        conn.db().bump_version(&args[1]);
+        conn.db().bump_version(&args[2]);
+    }
+
+    result
 }
 
 /// Removes and returns the first elements of the list stored at key.
@@ -772,7 +917,7 @@ pub async fn rpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 #[cfg(test)]
 mod test {
     use crate::{
-        cmd::test::{create_connection, run_command},
+        cmd::test::{create_connection, create_connection_and_pubsub, run_command},
         error::Error,
         value::Value,
     };
@@ -780,7 +925,7 @@ mod test {
 
     #[tokio::test]
     async fn blpop_no_waiting() {
-        let c = create_connection();
+        let (mut recv, c) = create_connection_and_pubsub();
 
         assert_eq!(
             Ok(Value::Integer(5)),
@@ -788,30 +933,37 @@ mod test {
         );
 
         assert_eq!(
-            Ok(Value::Array(vec![
+            Ok(Value::Ignore),
+            run_command(&c, &["blpop", "foo", "1"]).await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
                 Value::Blob("foo".into()),
                 Value::Blob("5".into()),
             ])),
-            run_command(&c, &["blpop", "foo", "1"]).await
+            recv.recv().await
         );
     }
 
     #[tokio::test]
     async fn blpop_timeout() {
-        let c = create_connection();
+        let (mut recv, c) = create_connection_and_pubsub();
         let x = Instant::now();
 
         assert_eq!(
-            Ok(Value::Null),
+            Ok(Value::Ignore),
             run_command(&c, &["blpop", "foobar", "1"]).await
         );
 
-        assert!(Instant::now() - x <= Duration::from_millis(1000));
+        assert_eq!(Some(Value::Null), recv.recv().await,);
+
+        assert!(Instant::now() - x >= Duration::from_millis(1000));
     }
 
     #[tokio::test]
     async fn blpop_wait_insert() {
-        let c = create_connection();
+        let (mut recv, c) = create_connection_and_pubsub();
         let x = Instant::now();
 
         // Query command that will block connection until some data is inserted
@@ -819,7 +971,10 @@ mod test {
         //
         // We are issuing the command, sleeping a little bit then adding data to
         // foobar, before actually waiting on the result.
-        let waiting = run_command(&c, &["blpop", "foobar", "foo", "bar", "5"]);
+        assert_eq!(
+            Ok(Value::Ignore),
+            run_command(&c, &["blpop", "foobar", "foo", "bar", "5"]).await
+        );
 
         // Sleep 1 second before inserting new data
         sleep(Duration::from_millis(1000)).await;
@@ -831,11 +986,11 @@ mod test {
 
         // Read the output of the first blpop command now.
         assert_eq!(
-            Ok(Value::Array(vec![
+            Some(Value::Array(vec![
                 Value::Blob("foo".into()),
                 Value::Blob("5".into()),
             ])),
-            waiting.await
+            recv.recv().await,
         );
 
         assert!(Instant::now() - x > Duration::from_millis(1000));
@@ -960,7 +1115,7 @@ mod test {
 
     #[tokio::test]
     async fn brpop_no_waiting() {
-        let c = create_connection();
+        let (mut recv, c) = create_connection_and_pubsub();
 
         assert_eq!(
             Ok(Value::Integer(5)),
@@ -968,30 +1123,37 @@ mod test {
         );
 
         assert_eq!(
-            Ok(Value::Array(vec![
+            Ok(Value::Ignore),
+            run_command(&c, &["brpop", "foo", "1"]).await
+        );
+
+        assert_eq!(
+            Some(Value::Array(vec![
                 Value::Blob("foo".into()),
                 Value::Blob("5".into()),
             ])),
-            run_command(&c, &["brpop", "foo", "1"]).await
+            recv.recv().await,
         );
     }
 
     #[tokio::test]
     async fn brpop_timeout() {
-        let c = create_connection();
+        let (mut recv, c) = create_connection_and_pubsub();
         let x = Instant::now();
 
         assert_eq!(
-            Ok(Value::Null),
+            Ok(Value::Ignore),
             run_command(&c, &["brpop", "foobar", "1"]).await
         );
 
-        assert!(Instant::now() - x < Duration::from_millis(1000));
+        assert_eq!(Some(Value::Null), recv.recv().await,);
+
+        assert!(Instant::now() - x >= Duration::from_millis(1000));
     }
 
     #[tokio::test]
     async fn brpop_wait_insert() {
-        let c = create_connection();
+        let (mut recv, c) = create_connection_and_pubsub();
         let x = Instant::now();
 
         // Query command that will block connection until some data is inserted
@@ -999,7 +1161,10 @@ mod test {
         //
         // We are issuing the command, sleeping a little bit then adding data to
         // foobar, before actually waiting on the result.
-        let waiting = run_command(&c, &["brpop", "foobar", "foo", "bar", "5"]);
+        assert_eq!(
+            Ok(Value::Ignore),
+            run_command(&c, &["brpop", "foobar", "foo", "bar", "5"]).await
+        );
 
         // Sleep 1 second before inserting new data
         sleep(Duration::from_millis(1000)).await;
@@ -1011,11 +1176,11 @@ mod test {
 
         // Read the output of the first blpop command now.
         assert_eq!(
-            Ok(Value::Array(vec![
+            Some(Value::Array(vec![
                 Value::Blob("foo".into()),
                 Value::Blob("5".into()),
             ])),
-            waiting.await
+            recv.recv().await,
         );
 
         assert!(Instant::now() - x > Duration::from_millis(1000));
