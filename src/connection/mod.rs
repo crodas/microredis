@@ -1,10 +1,10 @@
 //! # Connection module
+use self::pubsub_server::Pubsub;
 use crate::{db::Db, error::Error, value::Value};
 use bytes::Bytes;
 use parking_lot::RwLock;
 use std::{collections::HashSet, sync::Arc};
-
-use self::pubsub_server::Pubsub;
+use tokio::sync::broadcast::{self, Receiver, Sender};
 
 pub mod connections;
 pub mod pubsub_connection;
@@ -31,7 +31,7 @@ impl Default for ConnectionStatus {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 /// Reason while a client was unblocked
 pub enum UnblockReason {
     /// Timeout
@@ -53,6 +53,8 @@ pub struct ConnectionInfo {
     status: ConnectionStatus,
     commands: Option<Vec<Vec<Bytes>>>,
     is_blocked: bool,
+    blocked_notification: Option<Sender<()>>,
+    block_id: usize,
     unblock_reason: Option<UnblockReason>,
 }
 
@@ -77,7 +79,9 @@ impl ConnectionInfo {
             tx_keys: HashSet::new(),
             commands: None,
             status: ConnectionStatus::Normal,
+            blocked_notification: None,
             is_blocked: false,
+            block_id: 0,
             unblock_reason: None,
         }
     }
@@ -129,27 +133,55 @@ impl Connection {
 
     /// Block the connection
     pub fn block(&self) {
+        let notification = broadcast::channel(1);
         let mut info = self.info.write();
         info.is_blocked = true;
+        info.blocked_notification = Some(notification.0);
+        info.block_id += 1;
         info.unblock_reason = None;
+    }
+
+    /// Returns the current block task ID number. This is an internal ID to
+    /// identify each blocking command as unique
+    #[inline]
+    pub fn get_block_id(&self) -> Option<usize> {
+        let info = self.info.read();
+        if info.is_blocked {
+            Some(info.block_id)
+        } else {
+            None
+        }
+    }
+
+    /// Returns a receiver that will be called if the client is externally unblocked
+    #[inline]
+    pub fn get_unblocked_subscription(&self) -> Option<Receiver<()>> {
+        self.info
+            .read()
+            .blocked_notification
+            .as_ref()
+            .map(|notification| notification.subscribe())
     }
 
     /// Unblock connection
     pub fn unblock(&self, reason: UnblockReason) -> bool {
         let mut info = self.info.write();
         if info.is_blocked {
+            let notification = info.blocked_notification.as_ref().map(|s| s.clone());
             info.is_blocked = false;
             info.unblock_reason = Some(reason);
+            info.blocked_notification = None;
+            drop(info); // drop write lock
+
+            if let Some(s) = notification {
+                // Notify connection about this change
+                s.send(());
+            }
+
             true
         } else {
             false
         }
-    }
-
-    /// If the current connection has been externally unblocked
-    #[inline]
-    pub fn has_been_unblocked_externally(&self) -> Option<UnblockReason> {
-        self.info.read().unblock_reason
     }
 
     /// Is the current connection blocked?

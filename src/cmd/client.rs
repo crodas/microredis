@@ -59,6 +59,11 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
 
             Ok(if other_conn.unblock(reason) {
+                other_conn.append_response(if reason == UnblockReason::Error {
+                    Error::UnblockByError.into()
+                } else {
+                    Value::Null
+                });
                 1.into()
             } else {
                 0.into()

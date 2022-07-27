@@ -10,8 +10,12 @@ use crate::{
     value::Value,
 };
 use bytes::Bytes;
-use std::collections::VecDeque;
-use tokio::time::{sleep, Duration, Instant};
+use futures::{stream::FuturesUnordered, Future, StreamExt};
+use std::{collections::VecDeque, ops::Deref, sync::Arc};
+use tokio::{
+    sync::broadcast::{self, error::RecvError, Receiver},
+    time::{sleep, Duration, Instant},
+};
 
 #[allow(clippy::needless_range_loop)]
 /// Removes an element from a list
@@ -73,24 +77,85 @@ fn remove_element(
 }
 
 #[inline]
-/// Handles the timeout/sleep logic for all blocking commands.
-async fn handle_timeout(conn: &Connection, timeout: Option<Instant>) -> Result<bool, Error> {
+async fn wait_for_event(receiver: &mut Receiver<()>) -> () {
+    let _ = receiver.recv().await;
+    ()
+}
+
+#[inline]
+async fn schedule_blocking_task<F, T>(
+    conn: Arc<Connection>,
+    keys_to_watch: Vec<Bytes>,
+    worker: F,
+    args: Vec<Bytes>,
+    timeout: Option<Instant>,
+) where
+    F: Fn(Arc<Connection>, Vec<Bytes>, usize) -> T + Send + Sync + 'static,
+    T: Future<Output = Result<Value, Error>> + Send + Sync + 'static,
+{
+    let (mut timeout_sx, mut timeout_rx) = broadcast::channel::<()>(1);
+    conn.block();
+
     if let Some(timeout) = timeout {
-        if Instant::now() >= timeout {
-            conn.unblock(UnblockReason::Timeout);
-            return Ok(true);
-        }
+        // setup timeout triggering event
+        let conn_for_timeout = conn.clone();
+        let keys_to_watch_for_timeout = keys_to_watch.clone();
+        let block_id = conn.get_block_id();
+        tokio::spawn(async move {
+            sleep(timeout - Instant::now()).await;
+            if conn_for_timeout.get_block_id() != block_id {
+                // Timeout trigger event is not longer relevant
+                return;
+            }
+            conn_for_timeout.unblock(UnblockReason::Timeout);
+            conn_for_timeout.append_response(Value::Null);
+            // Notify timeout event to the worker thread
+            timeout_sx.send(());
+        });
     }
 
-    if let Some(reason) = conn.has_been_unblocked_externally() {
-        match reason {
-            UnblockReason::Error => Err(Error::UnblockByError),
-            _ => Ok(true),
+    tokio::spawn(async move {
+        let db = conn.db();
+
+        let mut changes_watchers = db.subscribe_to_key_changes(&keys_to_watch);
+        let mut externally_unblock_watcher = conn.get_unblocked_subscription();
+
+        let mut attempt = 1;
+
+        loop {
+            // Run task
+            match worker(conn.clone(), args.to_vec(), attempt).await {
+                Ok(Value::Ignore | Value::Null) => {}
+                Ok(result) => {
+                    conn.append_response(result);
+                    conn.unblock(UnblockReason::Finished);
+                }
+                Err(x) => {
+                    conn.append_response(x.into());
+                    conn.unblock(UnblockReason::Finished);
+                }
+            }
+
+            attempt += 1;
+
+            if !conn.is_blocked() {
+                break;
+            }
+
+            let mut futures = changes_watchers
+                .iter_mut()
+                .map(|c| wait_for_event(c))
+                .collect::<FuturesUnordered<_>>();
+
+            futures.push(wait_for_event(&mut timeout_rx));
+            if let Some(ref mut externally) = &mut externally_unblock_watcher {
+                futures.push(wait_for_event(externally));
+            }
+
+            // wait until a key changes or a timeout event occurs
+            let _ = futures.next().await;
         }
-    } else {
-        sleep(Duration::from_millis(5)).await;
-        Ok(false)
-    }
+    });
 }
 
 /// Parses timeout and returns an instant or none if it should wait forever.
@@ -119,56 +184,34 @@ fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
 /// popped from the head of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn blpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let blpop_task = |conn: &Connection, args: &[Bytes]| -> Result<Value, Error> {
+    let blpop_task = |conn: Arc<Connection>, args: Vec<Bytes>, attempt| async move {
         for key in (1..args.len() - 1) {
             let key = &args[key];
-            match remove_element(&conn, key, None, true)? {
-                Value::Null => (),
-                n => return Ok(vec![Value::new(&key), n].into()),
+            match remove_element(&conn, key, None, true) {
+                Ok(Value::Null) => (),
+                Ok(n) => return Ok(vec![Value::new(&key), n].into()),
+                Err(x) => {
+                    if attempt == 1 {
+                        return Err(x);
+                    }
+                }
             };
         }
         Ok(Value::Null)
     };
 
     if conn.is_executing_tx() {
-        return blpop_task(conn, args);
+        return blpop_task(conn.clone(), args.to_vec(), 1).await;
     }
 
     let timeout = parse_timeout(&args[args.len() - 1])?;
     let conn = conn.clone();
     let args = args.to_vec();
+    let keys_to_watch = (&args[1..args.len() - 1]).to_vec();
 
     conn.block();
 
-    tokio::spawn(async move {
-        loop {
-            match blpop_task(&conn, &args) {
-                Ok(Value::Null) => {}
-                Ok(x) => {
-                    conn.append_response(x);
-                    conn.unblock(UnblockReason::Finished);
-                    break;
-                }
-                Err(x) => {
-                    conn.append_response(x.into());
-                    conn.unblock(UnblockReason::Finished);
-                    break;
-                }
-            }
-
-            match handle_timeout(&conn, timeout).await {
-                Ok(true) => {
-                    conn.append_response(Value::Null);
-                    break;
-                }
-                Err(x) => {
-                    conn.append_response(x.into());
-                    break;
-                }
-                _ => {}
-            }
-        }
-    });
+    schedule_blocking_task(conn.clone(), keys_to_watch, blpop_task, args, timeout).await;
 
     Ok(Value::Ignore)
 }
@@ -190,38 +233,16 @@ pub async fn blmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     }
 
     let timeout = parse_timeout(&args[5])?;
-    conn.block();
+    let keys_to_watch = (&args[1..=2]).to_vec();
 
-    let conn = conn.clone();
-    let args = args.to_vec();
-    tokio::spawn(async move {
-        loop {
-            match lmove(&conn, &args).await {
-                Ok(Value::Null) => (),
-                Ok(n) => {
-                    conn.append_response(n);
-                    conn.unblock(UnblockReason::Finished);
-                    break;
-                }
-                Err(x) => {
-                    conn.append_response(x.into());
-                    conn.unblock(UnblockReason::Finished);
-                    break;
-                }
-            };
-            match handle_timeout(&conn, timeout).await {
-                Ok(true) => {
-                    conn.append_response(Value::Null);
-                    break;
-                }
-                Err(x) => {
-                    conn.append_response(x.into());
-                    break;
-                }
-                _ => {}
-            }
-        }
-    });
+    schedule_blocking_task(
+        conn.clone(),
+        keys_to_watch,
+        |conn, args, _| async move { lmove(&conn, &args).await },
+        args.to_vec(),
+        timeout,
+    )
+    .await;
 
     Ok(Value::Ignore)
 }
@@ -252,55 +273,37 @@ pub async fn brpoplpush(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// popped from the tail of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
 pub async fn brpop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let brpop_task = |conn: &Connection, args: &[Bytes]| -> Result<Value, Error> {
+    let brpop_task = |conn: Arc<Connection>, args: Vec<Bytes>, attempt| async move {
         for key in (1..args.len() - 1) {
             let key = &args[key];
-            match remove_element(&conn, key, None, false)? {
-                Value::Null => (),
-                n => return Ok(vec![Value::new(&key), n].into()),
+            match remove_element(&conn, key, None, false) {
+                Ok(Value::Null) => (),
+                Ok(n) => return Ok(vec![Value::new(&key), n].into()),
+                Err(x) => {
+                    if attempt == 1 {
+                        return Err(x);
+                    }
+                }
             };
         }
         Ok(Value::Null)
     };
+
     if conn.is_executing_tx() {
-        return brpop_task(conn, args);
+        return brpop_task(conn.clone(), args.to_vec(), 1).await;
     }
 
     let timeout = parse_timeout(&args[args.len() - 1])?;
-    let conn = conn.clone();
-    let args = args.to_vec();
+    let keys_to_watch = (&args[1..args.len() - 1]).to_vec();
 
-    conn.block();
-
-    tokio::spawn(async move {
-        loop {
-            match brpop_task(&conn, &args) {
-                Ok(Value::Null) => {}
-                Ok(x) => {
-                    conn.append_response(x);
-                    conn.unblock(UnblockReason::Finished);
-                    break;
-                }
-                Err(x) => {
-                    conn.append_response(x.into());
-                    conn.unblock(UnblockReason::Finished);
-                    break;
-                }
-            }
-
-            match handle_timeout(&conn, timeout).await {
-                Ok(true) => {
-                    conn.append_response(Value::Null);
-                    break;
-                }
-                Err(x) => {
-                    conn.append_response(x.into());
-                    break;
-                }
-                _ => {}
-            }
-        }
-    });
+    schedule_blocking_task(
+        conn.clone(),
+        keys_to_watch,
+        brpop_task,
+        args.to_vec(),
+        timeout,
+    )
+    .await;
 
     Ok(Value::Ignore)
 }
