@@ -1,5 +1,5 @@
 fmt:
-	cargo fmt
+	cargo fmt --check
 clippy:
 	cargo clippy --release
 build:

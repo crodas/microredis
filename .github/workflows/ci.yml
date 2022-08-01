@@ -15,8 +15,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: test
+    - name: prepare
       run: |
         rustup component add clippy
         sudo apt-get install tcl8.6 tclx
-        make ci
+    - name: Fmt
+      run: make fmt
+    - name: Clippy
+      run: make clippy
+    - name: Unit test
+      run: make unit-test
+    - name: Test
+      run: make test
+
