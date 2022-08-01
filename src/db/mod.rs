@@ -1309,4 +1309,42 @@ mod test {
         assert_eq!(2, result.result.len());
         assert_eq!("0", result.cursor.to_string());
     }
+
+    #[tokio::test]
+    async fn lock_keys() {
+        let db1 = Arc::new(Db::new(100));
+        let db2 = db1.clone().new_db_instance(2);
+        let db3 = db1.clone().new_db_instance(3);
+        let shared = Arc::new(RwLock::new(1));
+        let shared1 = shared.clone();
+        let shared2 = shared.clone();
+        let shared3 = shared.clone();
+        tokio::join!(
+            tokio::spawn(async move {
+                db1.lock_keys(&["test".into()]);
+                let mut x = shared1.write();
+                *x = 2;
+                thread::sleep(Duration::from_secs(1));
+                db1.unlock_keys(&["test".into()]);
+            }),
+            tokio::spawn(async move {
+                db2.lock_keys(&["test".into(), "bar".into()]);
+                let mut x = shared2.write();
+                if *x == 2 {
+                    *x = 5;
+                }
+                thread::sleep(Duration::from_secs(2));
+                db2.unlock_keys(&["test".into(), "bar".into()]);
+            }),
+            tokio::spawn(async move {
+                thread::sleep(Duration::from_millis(500));
+                assert_eq!(4, db3.get_slot(&"test".into()));
+                let mut x = shared3.write();
+                if *x == 5 {
+                    *x = 6;
+                }
+            }),
+        );
+        assert_eq!(6, *shared.read());
+    }
 }

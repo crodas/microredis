@@ -134,3 +134,159 @@ pub async fn time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
 pub async fn quit(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
     Err(Error::Quit)
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        cmd::test::{create_connection, run_command},
+        error::Error,
+        value::Value,
+    };
+
+    #[tokio::test]
+    async fn digest() {
+        let c = create_connection();
+        let _ = run_command(&c, &["hset", "foo0", "f1", "1", "f2", "2", "f3", "3"]).await;
+        let _ = run_command(&c, &["set", "foo1", "f1"]).await;
+        let _ = run_command(&c, &["rpush", "foo2", "f1"]).await;
+        let _ = run_command(&c, &["sadd", "foo3", "f1"]).await;
+        assert_eq!(
+            Ok(Value::Array(vec![
+                "30c7a6a3e846cda0ec6bec93bbcead474c8b735d81d6b13043e8e7bd1287465b".into(),
+                "c9c7eecf5cc340e36731787d8844a5b166d9611718fc12f0fa6501f711aad8a5".into(),
+                "30c7a6a3e846cda0ec6bec93bbcead474c8b735d81d6b13043e8e7bd1287465b".into(),
+                "30c7a6a3e846cda0ec6bec93bbcead474c8b735d81d6b13043e8e7bd1287465b".into(),
+            ])),
+            run_command(
+                &c,
+                &["debug", "digest-value", "foo0", "foo1", "foo2", "foo3"]
+            )
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn debug() {
+        let c = create_connection();
+        let _ = run_command(&c, &["hset", "foo0", "f1", "1", "f2", "2", "f3", "3"]).await;
+        let _ = run_command(&c, &["set", "foo1", "f1"]).await;
+        let _ = run_command(&c, &["rpush", "foo2", "f1"]).await;
+        let _ = run_command(&c, &["sadd", "foo3", "f1"]).await;
+        match run_command(&c, &["debug", "object", "foo0"]).await {
+            Ok(Value::Blob(s)) => {
+                let s = String::from_utf8_lossy(&s);
+                assert!(s.contains("hashtable"))
+            }
+            _ => panic!("Unxpected response"),
+        };
+        match run_command(&c, &["debug", "object", "foo1"]).await {
+            Ok(Value::Blob(s)) => {
+                let s = String::from_utf8_lossy(&s);
+                assert!(s.contains("embstr"));
+            }
+            _ => panic!("Unxpected response"),
+        };
+        match run_command(&c, &["debug", "object", "foo2"]).await {
+            Ok(Value::Blob(s)) => {
+                let s = String::from_utf8_lossy(&s);
+                assert!(s.contains("linkedlist"));
+            }
+            _ => panic!("Unxpected response"),
+        };
+        match run_command(&c, &["debug", "object", "foo3"]).await {
+            Ok(Value::Blob(s)) => {
+                let s = String::from_utf8_lossy(&s);
+                assert!(s.contains("hashtable"));
+            }
+            _ => panic!("Unxpected response"),
+        };
+    }
+
+    #[tokio::test]
+    async fn command_info() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Array(vec![
+                "CLIENT".into(),
+                Value::Integer(-2),
+                Value::Array(vec![
+                    "admin".into(),
+                    "noscript".into(),
+                    "random".into(),
+                    "loading".into(),
+                    "stale".into(),
+                ]),
+                0.into(),
+                0.into(),
+                0.into(),
+            ])])),
+            run_command(&c, &["command", "info", "client"]).await,
+        );
+        assert_eq!(
+            Ok(Value::Array(vec![Value::Array(vec![
+                "QUIT".into(),
+                1.into(),
+                Value::Array(vec![
+                    "random".into(),
+                    "loading".into(),
+                    "stale".into(),
+                    "fast".into()
+                ]),
+                0.into(),
+                0.into(),
+                0.into(),
+            ])])),
+            run_command(&c, &["command", "info", "quit"]).await,
+        );
+    }
+
+    #[tokio::test]
+    async fn flush() {
+        let c = create_connection();
+        let _ = run_command(&c, &["hset", "foo0", "f1", "1", "f2", "2", "f3", "3"]).await;
+        let _ = run_command(&c, &["set", "foo1", "f1"]).await;
+        let _ = run_command(&c, &["rpush", "foo2", "f1"]).await;
+        let _ = run_command(&c, &["sadd", "foo3", "f1"]).await;
+        assert_eq!(Ok(Value::Integer(4)), run_command(&c, &["dbsize"]).await);
+        let _ = run_command(&c, &["flushdb"]).await;
+        assert_eq!(Ok(Value::Integer(0)), run_command(&c, &["dbsize"]).await);
+    }
+
+    #[tokio::test]
+    async fn flushall() {
+        let c = create_connection();
+        let _ = run_command(&c, &["hset", "foo0", "f1", "1", "f2", "2", "f3", "3"]).await;
+        let _ = run_command(&c, &["set", "foo1", "f1"]).await;
+        let _ = run_command(&c, &["rpush", "foo2", "f1"]).await;
+        let _ = run_command(&c, &["sadd", "foo3", "f1"]).await;
+        assert_eq!(Ok(Value::Integer(4)), run_command(&c, &["dbsize"]).await);
+        let _ = run_command(&c, &["select", "3"]).await;
+        let _ = run_command(&c, &["flushall"]).await;
+        let _ = run_command(&c, &["select", "0"]).await;
+        assert_eq!(Ok(Value::Integer(0)), run_command(&c, &["dbsize"]).await);
+    }
+
+    #[tokio::test]
+    async fn get_keys_1() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Array(vec!["foo0".into()])),
+            run_command(
+                &c,
+                &["command", "getkeys", "hset", "foo0", "f1", "1", "f2", "2", "f3", "3"]
+            )
+            .await
+        );
+    }
+    #[tokio::test]
+    async fn get_keys_2() {
+        let c = create_connection();
+        assert_eq!(
+            Err(Error::SubCommandNotFound(
+                "getkeys".to_owned(),
+                "command".to_owned()
+            )),
+            run_command(&c, &["command", "getkeys"]).await
+        );
+    }
+}

@@ -382,7 +382,7 @@ pub async fn hvals(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 #[cfg(test)]
 mod test {
     use crate::{
-        cmd::test::{create_connection, run_command},
+        cmd::test::{create_connection, invalid_type, run_command},
         value::Value,
     };
 
@@ -517,5 +517,95 @@ mod test {
 
         let r = run_command(&c, &["hvals", "foo"]).await;
         assert_eq!(Ok(Value::Array(vec![Value::Blob("1".into()),])), r);
+    }
+
+    #[tokio::test]
+    async fn hdel_remove_empty_hash() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(2)),
+            run_command(&c, &["hset", "foo", "f1", "1", "f2", "1"]).await
+        );
+
+        assert_eq!(Ok(1.into()), run_command(&c, &["hdel", "foo", "f1",]).await);
+        assert_eq!(
+            Ok(Value::Integer(-1)),
+            run_command(&c, &["ttl", "foo"]).await
+        );
+        assert_eq!(Ok(1.into()), run_command(&c, &["hdel", "foo", "f2",]).await);
+        assert_eq!(
+            Ok(Value::Integer(-2)),
+            run_command(&c, &["ttl", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn hincrby() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["hincrby", "foo", "f1", "1"]).await
+        );
+        assert_eq!(
+            Ok(Value::Integer(-9)),
+            run_command(&c, &["hincrby", "foo", "f1", "-10"]).await
+        );
+
+        assert_eq!(
+            Ok(Value::Blob("-9".into())),
+            run_command(&c, &["hget", "foo", "f1"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn hsetnx() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["hsetnx", "foo", "xxx", "1"]).await
+        );
+        assert_eq!(
+            Ok(Value::Integer(0)),
+            run_command(&c, &["hsetnx", "foo", "xxx", "1"]).await
+        );
+        assert_eq!(
+            Ok(Value::Integer(1)),
+            run_command(&c, &["hsetnx", "foo", "bar", "1"]).await
+        );
+        assert_eq!(
+            Ok(Value::Integer(2)),
+            run_command(&c, &["hlen", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn hlen_non_existing() {
+        let c = create_connection();
+
+        assert_eq!(
+            Ok(Value::Integer(0)),
+            run_command(&c, &["hlen", "foo"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_types() {
+        invalid_type(&["hdel", "key", "bar", "1"]).await;
+        invalid_type(&["hexists", "key", "bar"]).await;
+        invalid_type(&["hget", "key", "bar"]).await;
+        invalid_type(&["hgetall", "key"]).await;
+        invalid_type(&["hincrby", "key", "bar", "1"]).await;
+        invalid_type(&["hincrbyfloat", "key", "bar", "1"]).await;
+        invalid_type(&["hkeys", "key"]).await;
+        invalid_type(&["hlen", "key"]).await;
+        invalid_type(&["hstrlen", "key", "foo"]).await;
+        invalid_type(&["hmget", "key", "1", "2"]).await;
+        invalid_type(&["hrandfield", "key"]).await;
+        invalid_type(&["hset", "key", "bar", "1"]).await;
+        invalid_type(&["hsetnx", "key", "bar", "1"]).await;
+        invalid_type(&["hvals", "key"]).await;
     }
 }

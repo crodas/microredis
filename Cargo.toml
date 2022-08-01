@@ -34,6 +34,7 @@ thiserror = "1.0.30"
 strum = "0.24"
 strum_macros = "0.24"
 num-traits = "0.2.15"
+paste = "1.0.7"
 
 [workspace]
 members = ["redis-config-parser"]

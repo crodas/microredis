@@ -46,7 +46,7 @@ impl Connections {
     }
 
     /// Removes a connection from the connections
-    pub fn remove(self: Arc<Connections>, conn: Arc<Connection>) {
+    pub fn remove(self: &Arc<Connections>, conn: Arc<Connection>) {
         let id = conn.id();
         self.connections.write().remove(&id);
     }

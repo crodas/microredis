@@ -563,6 +563,48 @@ mod test {
     }
 
     #[tokio::test]
+    async fn scan_with_type_1() {
+        let c = create_connection();
+        for i in (1..100) {
+            assert_eq!(
+                Ok(1.into()),
+                run_command(&c, &["incr", &format!("foo-{}", i)]).await
+            );
+        }
+
+        let r: Vec<Value> = run_command(&c, &["scan", "0", "type", "hash"])
+            .await
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let values: Vec<Value> = r[1].clone().try_into().unwrap();
+
+        assert_eq!(2, r.len());
+        assert_eq!(0, values.len());
+    }
+
+    #[tokio::test]
+    async fn scan_with_type_2() {
+        let c = create_connection();
+        for i in (1..100) {
+            assert_eq!(
+                Ok(1.into()),
+                run_command(&c, &["incr", &format!("foo-{}", i)]).await
+            );
+        }
+
+        let r: Vec<Value> = run_command(&c, &["scan", "0", "type", "!hash"])
+            .await
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let values: Vec<Value> = r[1].clone().try_into().unwrap();
+
+        assert_eq!(2, r.len());
+        assert_eq!(10, values.len());
+    }
+
+    #[tokio::test]
     async fn scan_with_count() {
         let c = create_connection();
         for i in (1..100) {
