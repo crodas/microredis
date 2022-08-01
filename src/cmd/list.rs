@@ -427,6 +427,8 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     /// Lock keys to alter exclusively
     db.lock_keys(&args[1..=2]);
 
+    let mut to_create = None;
+
     let result = db.get_map_or(
         &args[1],
         |v| match v {
@@ -466,7 +468,7 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                         let ret = element.clone_value();
                         let mut h = VecDeque::new();
                         h.push_front(element);
-                        conn.db().set(&args[2], h.into(), None);
+                        to_create = Some(h);
                         Ok(ret)
                     } else {
                         Ok(Value::Null)
@@ -477,6 +479,10 @@ pub async fn lmove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         },
         || Ok(Value::Null),
     );
+
+    if let Some(to_create) = to_create {
+        conn.db().set(&args[2], to_create.into(), None);
+    }
 
     /// release the lock on keys
     db.unlock_keys(&args[1..=2]);
@@ -1370,17 +1376,17 @@ mod test {
 
         assert_eq!(
             Ok(Value::Blob("1".into())),
-            run_command(&c, &["lmove", "foo", "bar", "left", "left"]).await
+            run_command(&c, &["lmove", "foo", "foo-668", "left", "left"]).await
         );
 
         assert_eq!(
             Ok(Value::Array(vec![Value::Blob("1".into()),])),
-            run_command(&c, &["lrange", "bar", "0", "-1"]).await
+            run_command(&c, &["lrange", "foo-668", "0", "-1"]).await
         );
 
         assert_eq!(
             Ok(Value::Blob("5".into())),
-            run_command(&c, &["lmove", "foo", "bar", "right", "left"]).await
+            run_command(&c, &["lmove", "foo", "foo-668", "right", "left"]).await
         );
 
         assert_eq!(
@@ -1388,7 +1394,7 @@ mod test {
                 Value::Blob("5".into()),
                 Value::Blob("1".into()),
             ])),
-            run_command(&c, &["lrange", "bar", "0", "-1"]).await
+            run_command(&c, &["lrange", "foo-668", "0", "-1"]).await
         );
     }
 
