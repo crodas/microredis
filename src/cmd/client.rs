@@ -125,6 +125,7 @@ mod test {
         error::Error,
         value::Value,
     };
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     #[tokio::test]
     async fn select() {
@@ -165,5 +166,132 @@ mod test {
             Err(Error::NotSuchDatabase),
             run_command(&c, &["select", "10000000"]).await
         );
+    }
+
+    #[tokio::test]
+    async fn client_wrong_args() {
+        let c = create_connection();
+        assert_eq!(
+            Err(Error::WrongArgument("client".to_owned(), "ID".to_owned())),
+            run_command(&c, &["client", "id", "xxx"]).await
+        );
+        assert_eq!(
+            Err(Error::WrongArgument("client".to_owned(), "XXX".to_owned())),
+            run_command(&c, &["client", "xxx"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn client_id() {
+        let c = create_connection();
+        assert_eq!(Ok(1.into()), run_command(&c, &["client", "id"]).await);
+        assert_eq!(
+            Ok("id=1 addr=127.0.0.1:8080 name=None db=0\r\n".into()),
+            run_command(&c, &["client", "info"]).await
+        );
+    }
+
+    #[tokio::test]
+    async fn client_set_name() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Null),
+            run_command(&c, &["client", "getname"]).await
+        );
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["client", "setname", "test"]).await
+        );
+        assert_eq!(
+            Ok("test".into()),
+            run_command(&c, &["client", "getname"]).await
+        );
+        assert_eq!(Ok(1.into()), run_command(&c, &["client", "id"]).await);
+    }
+
+    #[tokio::test]
+    async fn client_unblock_1() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let c1 = create_connection();
+        let (mut c2_recv, c2) = c1.all_connections().new_connection(c1.db(), addr);
+
+        // unblock, will fail because c2 is not blocked
+        assert_eq!(
+            Ok(0.into()),
+            run_command(&c1, &["client", "unblock", "2", "error"]).await,
+        );
+
+        // block c2
+        c2.block();
+
+        // unblock c2 and return an error
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c1, &["client", "unblock", "2", "error"]).await,
+        );
+        assert!(!c2.is_blocked());
+
+        // read from c2 the error
+        assert_eq!(
+            Some(Value::Err(
+                "UNBLOCKED".into(),
+                "client unblocked via CLIENT UNBLOCK".into()
+            )),
+            c2_recv.recv().await
+        );
+    }
+
+    #[tokio::test]
+    async fn client_unblock_2() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let c1 = create_connection();
+        let (mut c2_recv, c2) = c1.all_connections().new_connection(c1.db(), addr);
+        // block c2
+        c2.block();
+
+        // unblock c2 and return an null
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c1, &["client", "unblock", "2", "timeout"]).await,
+        );
+        assert!(!c2.is_blocked());
+
+        // read from c2 the error
+        assert_eq!(Some(Value::Null), c2_recv.recv().await);
+    }
+
+    #[tokio::test]
+    async fn client_unblock_3() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let c1 = create_connection();
+        let (mut c2_recv, c2) = c1.all_connections().new_connection(c1.db(), addr);
+        // block c2
+        c2.block();
+
+        // unblock c2 and return an null
+        assert_eq!(
+            Ok(1.into()),
+            run_command(&c1, &["client", "unblock", "2"]).await,
+        );
+        assert!(!c2.is_blocked());
+
+        // read from c2 the error
+        assert_eq!(Some(Value::Null), c2_recv.recv().await);
+    }
+
+    #[tokio::test]
+    async fn client_unblock_4() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let c1 = create_connection();
+        let (mut c2_recv, c2) = c1.all_connections().new_connection(c1.db(), addr);
+        // block c2
+        c2.block();
+
+        // unblock c2 and return an null
+        assert_eq!(
+            Err(Error::Syntax),
+            run_command(&c1, &["client", "unblock", "2", "wrong-arg"]).await,
+        );
+        assert!(c2.is_blocked());
     }
 }
