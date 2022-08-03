@@ -3,7 +3,6 @@
 use crate::{
     connection::{Connection, ConnectionStatus, UnblockReason},
     error::Error,
-    option,
     value::{bytes_to_int, bytes_to_number, Value},
 };
 use bytes::Bytes;
@@ -34,7 +33,7 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     match sub.to_lowercase().as_str() {
         "id" => Ok((conn.id() as i64).into()),
         "info" => Ok(conn.to_string().into()),
-        "getname" => Ok(option!(conn.name())),
+        "getname" => Ok(conn.name().into()),
         "list" => {
             let mut list_client = "".to_owned();
             conn.all_connections()

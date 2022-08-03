@@ -240,9 +240,9 @@ impl From<Value> for Vec<u8> {
     }
 }
 
-impl From<Option<&Bytes>> for Value {
-    fn from(v: Option<&Bytes>) -> Self {
-        if let Some(v) = v {
+impl<T: Into<Value>> From<Option<T>> for Value {
+    fn from(value: Option<T>) -> Self {
+        if let Some(v) = value {
             v.into()
         } else {
             Value::Null
