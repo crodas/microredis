@@ -10,6 +10,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  rust-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: prepare
+      run: rustup component add clippy
+    - name: fmt
+      run: make fmt
+    - name: clippy
+      run: make clippy
+    - name: unit test
+      run: make unit-test
 
   test-ubuntu-latest:
     runs-on: ubuntu-latest
@@ -19,12 +31,31 @@ jobs:
       run: |
         rustup component add clippy
         sudo apt-get install tcl8.6 tclx
-    - name: Fmt
-      run: make fmt
-    - name: Clippy
-      run: make clippy
-    - name: Unit test
-      run: make unit-test
-    - name: Test
+    - name: test
       run: make test
 
+  check-code-coverage:
+    name: Code coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Run cargo-tarpaulin
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.15.0'
+          args: '--all -v'
+          out-type: 'Html'
+
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v1
+        with:
+          name: code-coverage-report
+          path: tarpaulin-report.html

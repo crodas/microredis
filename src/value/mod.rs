@@ -148,6 +148,13 @@ impl From<&Value> for Vec<u8> {
             }
             Value::Err(x, y) => format!("-{} {}\r\n", x, y).into(),
             Value::String(x) => format!("+{}\r\n", x).into(),
+            Value::Boolean(x) => {
+                if *x {
+                    "#t\r\n".into()
+                } else {
+                    "#f\r\n".into()
+                }
+            }
             Value::Queued => "+QUEUED\r\n".into(),
             Value::Ok => "+OK\r\n".into(),
             _ => b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".to_vec(),
@@ -233,9 +240,9 @@ impl From<Value> for Vec<u8> {
     }
 }
 
-impl From<Option<&Bytes>> for Value {
-    fn from(v: Option<&Bytes>) -> Self {
-        if let Some(v) = v {
+impl<T: Into<Value>> From<Option<T>> for Value {
+    fn from(value: Option<T>) -> Self {
+        if let Some(v) = value {
             v.into()
         } else {
             Value::Null
@@ -295,5 +302,110 @@ impl TryInto<Vec<Value>> for Value {
             Self::Array(x) => Ok(x),
             _ => Err(Error::Internal),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use paste::paste;
+
+    macro_rules! serialize_deserialize {
+        ($name:ty, $x:expr, $str:expr) => {
+            paste! {
+                #[test]
+                fn [<serialize_and_deserialize_ $name>]() {
+                    let raw_bytes: Vec<u8> = $x.into();
+                    let parsed: ParsedValue = redis_zero_protocol_parser::parse(&raw_bytes).unwrap().1;
+                    assert_eq!(Value::String($str.to_owned()), (&parsed).into());
+                }
+            }
+        };
+        ($name:ty, $x:expr) => {
+            paste! {
+                #[test]
+                fn [<serialize_and_deserialize_ $name>]() {
+                    let raw_bytes: Vec<u8> = $x.into();
+                    let parsed: ParsedValue = redis_zero_protocol_parser::parse(&raw_bytes).unwrap().1;
+                    assert_eq!($x, (&parsed).into());
+                }
+            }
+        };
+    }
+
+    macro_rules! try_into {
+        ($name:ty, $x:expr, $ty:ty, $expected:expr) => {
+            paste! {
+                #[test]
+                fn [<try_into_ $ty _ $name>]() {
+                    let val: Result<$ty, _> = (&$x).try_into();
+                    assert_eq!(val, $expected);
+                }
+            }
+        };
+    }
+
+    serialize_deserialize!(null, Value::Null);
+    serialize_deserialize!(blob, Value::Blob("test".into()));
+    serialize_deserialize!(int, Value::Integer(1.into()));
+    serialize_deserialize!(bigint, Value::BigInteger(1.into()));
+    serialize_deserialize!(_true, Value::Boolean(true));
+    serialize_deserialize!(_false, Value::Boolean(false));
+    serialize_deserialize!(float, Value::Float(1.2));
+    serialize_deserialize!(string, Value::String("test".into()));
+    serialize_deserialize!(array, Value::Array(vec!["test".into(), Value::Float(1.2)]));
+    serialize_deserialize!(err, Value::Err("foo".to_owned(), "bar".to_owned()));
+    serialize_deserialize!(queued, Value::Queued, "QUEUED");
+    serialize_deserialize!(ok, Value::Ok, "OK");
+    try_into!(biginteger, Value::BigInteger(1), i64, Ok(1));
+    try_into!(integer, Value::Integer(2), i64, Ok(2));
+    try_into!(blob, Value::Blob("3".into()), i64, Ok(3));
+    try_into!(string, Value::String("4".into()), i64, Ok(4));
+    try_into!(ok, Value::Ok, i64, Err(Error::NotANumber));
+    try_into!(
+        string_1,
+        Value::String("foo".into()),
+        i64,
+        Err(Error::NotANumber)
+    );
+    try_into!(float, Value::Float(2.1), f64, Ok(2.1));
+    try_into!(blob, Value::Blob("3.1".into()), f64, Ok(3.1));
+    try_into!(string, Value::String("4.1".into()), f64, Ok(4.1));
+    try_into!(ok, Value::Ok, f64, Err(Error::NotANumber));
+    try_into!(
+        string_1,
+        Value::String("foo".into()),
+        f64,
+        Err(Error::NotANumber)
+    );
+
+    #[test]
+    fn debug() {
+        let x = Value::Null;
+        assert_eq!(Value::Blob("Value at:0x6000004a8840 refcount:1 encoding:embstr serializedlength:5 lru:13421257 lru_seconds_idle:367".into()), x.debug().into());
+    }
+
+    #[test]
+    fn test_try_into_array() {
+        let x: Result<Vec<Value>, _> = Value::Null.try_into();
+        assert_eq!(Err(Error::Internal), x);
+    }
+
+    #[test]
+    fn serialize_none() {
+        let x: Option<Bytes> = None;
+        assert_eq!(Value::Null, x.as_ref().into());
+    }
+
+    #[test]
+    fn serialize_bytes() {
+        let x: Option<Bytes> = Some("test".into());
+        assert_eq!(Value::Blob("test".into()), x.as_ref().into());
+    }
+
+    #[test]
+    fn test_is_err() {
+        assert!(Value::Err("foo".to_owned(), "bar".to_owned()).is_err());
+        assert!(!Value::Null.is_err());
     }
 }

@@ -65,6 +65,7 @@ start_server {tags {"pubsub network"}} {
         set rd1 [redis_deferring_client]
         assert_equal {1 2 3} [subscribe $rd1 {chan1 chan2 chan3}]
         unsubscribe $rd1
+        after 10
         assert_equal 0 [r publish chan1 hello]
         assert_equal 0 [r publish chan2 hello]
         assert_equal 0 [r publish chan3 hello]

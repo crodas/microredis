@@ -1,4 +1,5 @@
 use crate::error::Error;
+use bytes::Bytes;
 use std::convert::TryFrom;
 use tokio::time::{Duration, Instant};
 
@@ -46,10 +47,10 @@ pub struct ExpirationOpts {
     pub LT: bool,
 }
 
-impl TryFrom<&[bytes::Bytes]> for ExpirationOpts {
+impl TryFrom<&[Bytes]> for ExpirationOpts {
     type Error = Error;
 
-    fn try_from(args: &[bytes::Bytes]) -> Result<Self, Self::Error> {
+    fn try_from(args: &[Bytes]) -> Result<Self, Self::Error> {
         let mut expiration_opts = Self::default();
         for arg in args.iter() {
             match String::from_utf8_lossy(arg).to_uppercase().as_str() {
@@ -61,5 +62,45 @@ impl TryFrom<&[bytes::Bytes]> for ExpirationOpts {
             }
         }
         Ok(expiration_opts)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::convert::TryInto;
+
+    #[test]
+    fn parsing_expiration_1() {
+        let opts = vec![
+            Bytes::copy_from_slice(b"nx"),
+            Bytes::copy_from_slice(b"Xx"),
+            Bytes::copy_from_slice(b"GT"),
+            Bytes::copy_from_slice(b"lT"),
+        ];
+        let x: ExpirationOpts = opts.as_slice().try_into().unwrap();
+        assert!(x.NX);
+        assert!(x.XX);
+        assert!(x.GT);
+        assert!(x.LT);
+    }
+
+    #[test]
+    fn parsing_expiration_2() {
+        let opts = vec![Bytes::copy_from_slice(b"nx")];
+        let x: ExpirationOpts = opts.as_slice().try_into().unwrap();
+
+        assert!(x.NX);
+        assert!(!x.XX);
+        assert!(!x.GT);
+        assert!(!x.LT);
+    }
+
+    #[test]
+    fn parsing_expiration_3() {
+        let opts = vec![Bytes::copy_from_slice(b"xxx")];
+        let x: Result<ExpirationOpts, _> = opts.as_slice().try_into();
+
+        assert!(x.is_err());
     }
 }

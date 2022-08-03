@@ -78,7 +78,7 @@ impl ConnectionInfo {
             current_db: 0,
             tx_keys: HashSet::new(),
             commands: None,
-            status: ConnectionStatus::Normal,
+            status: ConnectionStatus::default(),
             blocked_notification: None,
             is_blocked: false,
             block_id: 0,
@@ -208,7 +208,7 @@ impl Connection {
                 info.commands = None;
                 info.watch_keys.clear();
                 info.tx_keys.clear();
-                info.status = ConnectionStatus::Normal;
+                info.status = ConnectionStatus::default();
 
                 Ok(Value::Ok)
             }
@@ -238,7 +238,7 @@ impl Connection {
     /// Resets the current connection.
     pub fn reset(&self) {
         let mut info = self.info.write();
-        info.status = ConnectionStatus::Normal;
+        info.status = ConnectionStatus::default();
         info.name = None;
         info.watch_keys = vec![];
         info.commands = None;

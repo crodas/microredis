@@ -89,3 +89,63 @@ pub async fn parse(path: String) -> Result<Config, Error> {
     let content = tokio::fs::read(path).await?;
     Ok(from_slice(&content)?)
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use redis_config_parser::de::from_str;
+
+    #[test]
+    fn parse() {
+        let config = "always-show-logo yes
+notify-keyspace-events KEA
+daemonize no
+pidfile /var/run/redis.pid
+port 21111
+timeout 0
+bind 127.0.0.1
+loglevel verbose
+logfile ''
+databases 16
+latency-monitor-threshold 1
+save 60 10000
+rdbcompression yes
+dbfilename dump.rdb
+dir ./tests/tmp/server.43948.1
+slave-serve-stale-data yes
+appendonly no
+appendfsync everysec
+no-appendfsync-on-rewrite no
+activerehashing yes
+unixsocket /Users/crodas/projects/rust/microredis/tests/tmp/server.43948.1/socket
+";
+
+        let config: Config = from_str(&config).unwrap();
+        assert!(!config.daemonize);
+        assert_eq!(21111, config.port);
+        assert_eq!(vec!["127.0.0.1"], config.bind);
+        assert_eq!(vec!["127.0.0.1:21111"], config.get_tcp_hostnames());
+        assert_eq!(LogLevel::Debug, config.log.level);
+        assert_eq!(Some("".to_owned()), config.log.file);
+        assert_eq!(16, config.databases);
+        assert_eq!(
+            Some(
+                "/Users/crodas/projects/rust/microredis/tests/tmp/server.43948.1/socket".to_owned()
+            ),
+            config.unixsocket
+        );
+    }
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert!(!config.daemonize);
+        assert_eq!(6379, config.port);
+        assert_eq!(vec!["127.0.0.1"], config.bind);
+        assert_eq!(vec!["127.0.0.1:6379"], config.get_tcp_hostnames());
+        assert_eq!(LogLevel::Debug, config.log.level);
+        assert_eq!(None, config.log.file);
+        assert_eq!(16, config.databases);
+        assert_eq!(None, config.unixsocket);
+    }
+}

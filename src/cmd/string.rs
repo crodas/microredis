@@ -747,6 +747,15 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_set_px() {
+        let c = create_connection();
+        assert_eq!(
+            Ok(Value::Ok),
+            run_command(&c, &["set", "foo", "20", "px", "1234"]).await,
+        );
+    }
+
+    #[tokio::test]
     async fn test_invalid_ts() {
         let c = create_connection();
         assert_eq!(

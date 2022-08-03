@@ -203,18 +203,6 @@ macro_rules! value_vec_try_from {
     }
 }
 
-/// Converts an Option<T> to Value. If the option is None Value::Null is returned.
-#[macro_export]
-macro_rules! option {
-    {$type: expr} => {
-        if let Some(val) = $type {
-            val.into()
-        } else {
-            Value::Null
-        }
-    }
-}
-
 /// Check if a given command argument in a position $pos is eq to a $command
 #[macro_export]
 macro_rules! check_arg {

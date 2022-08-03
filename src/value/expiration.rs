@@ -53,15 +53,6 @@ impl Expiration {
             command: command.to_string(),
         })
     }
-
-    /// Fails if the timestamp is negative
-    pub fn must_be_positive(&self) -> Result<(), Error> {
-        if self.is_negative {
-            Err(Error::InvalidExpire(self.command.to_string()))
-        } else {
-            Ok(())
-        }
-    }
 }
 
 impl TryInto<Duration> for Expiration {
