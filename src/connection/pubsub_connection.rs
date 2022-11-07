@@ -102,6 +102,7 @@ impl PubsubClient {
     /// Creates a new pattern subscription
     pub fn new_psubscription(&self, channel: &Pattern) {
         let mut meta = self.meta.write();
+        meta.is_psubcribed = true;
         meta.psubscriptions.insert(channel.clone(), true);
     }
 
