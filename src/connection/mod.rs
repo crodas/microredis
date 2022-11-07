@@ -371,7 +371,7 @@ impl Connection {
             .all_connections
             .get_databases()
             .get(db)?
-            .new_db_instance(self.id);
+            .set_conn_id(self.id);
         info.current_db = db;
         Ok(Value::Ok)
     }
