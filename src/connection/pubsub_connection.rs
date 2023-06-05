@@ -111,11 +111,6 @@ impl PubsubClient {
         self.meta.read().is_psubcribed
     }
 
-    /// Keeps a record about this connection using pattern suscription
-    pub fn make_psubcribed(&self) {
-        self.meta.write().is_psubcribed = true;
-    }
-
     /// Returns a copy of the pubsub sender. This sender object can be used to send messages (from
     /// other connections) to this connection.
     pub fn sender(&self) -> mpsc::Sender<Value> {
