@@ -101,7 +101,7 @@ macro_rules! dispatcher {
             /// required arguments are provided. This pre-validation ensures each command handler
             /// has fewer logic when reading the provided arguments.
             #[inline(always)]
-            pub fn get_handler(&self, args: &[Bytes]) -> Result<&command::Command, Error> {
+            pub fn get_handler(&self, args: &::std::collections::VecDeque<Bytes>) -> Result<&command::Command, Error> {
                 let command = String::from_utf8_lossy(&args[0]).to_uppercase();
                 let command = self.get_handler_for_command(&command)?;
                 if ! command.check_number_args(args.len()) {
@@ -117,19 +117,18 @@ macro_rules! dispatcher {
             /// required arguments are provided. This pre-validation ensures each command handler
             /// has fewer logic when reading the provided arguments.
             #[inline(always)]
-            pub fn execute<'a>(&'a self, conn: &'a Connection, args: &'a [Bytes]) -> futures::future::BoxFuture<'a, Result<Value, Error>> {
+            pub fn execute<'a>(&'a self, conn: &'a Connection, mut args: std::collections::VecDeque<Bytes>) -> futures::future::BoxFuture<'a, Result<Value, Error>> {
                 async move {
-                    let command = match args.get(0) {
-                        Some(s) => Ok(String::from_utf8_lossy(s).to_uppercase()),
-                        None => Err(Error::EmptyLine),
-                    }?;
+                    let command = args.pop_front()
+                        .map(|s| String::from_utf8_lossy(&s).to_uppercase())
+                        .ok_or(Error::EmptyLine)?;
                     match command.as_str() {
                         $($(
                             stringify!($command) => {
                                 //log::info!("Command: {} -> {:?}", stringify!($command), args);
                                 let command = &self.$command;
                                     let status = conn.status();
-                                if ! command.check_number_args(args.len()) {
+                                if ! command.check_number_args(args.len()+1) {
                                     if status == ConnectionStatus::Multi {
                                         conn.fail_transaction();
                                     }
@@ -143,8 +142,9 @@ macro_rules! dispatcher {
                                     let throughput = &metrics.throughput;
 
                                     if status == ConnectionStatus::Multi && command.is_queueable() {
+                                        args.push_front(command.name().into());
+                                        conn.tx_keys(command.get_keys(&args, true));
                                         conn.queue_command(args);
-                                        conn.tx_keys(command.get_keys(args));
                                         return Ok(Value::Queued);
                                     } else if status == ConnectionStatus::FailedTx && command.is_queueable() {
                                         return Ok(Value::Queued);

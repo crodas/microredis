@@ -2,16 +2,19 @@
 use crate::{connection::Connection, error::Error, value::bytes_to_number, value::Value};
 use bytes::Bytes;
 use rand::Rng;
-use std::{cmp::min, collections::HashSet};
+use std::{
+    cmp::min,
+    collections::{HashSet, VecDeque},
+};
 
-fn store(conn: &Connection, key: &Bytes, values: &[Value]) -> i64 {
+fn store_key_values(conn: &Connection, key: Bytes, values: Vec<Value>) -> i64 {
     #[allow(clippy::mutable_key_type)]
     let mut x = HashSet::new();
     let mut len = 0;
 
-    for val in values.iter() {
+    for val in values.into_iter() {
         if let Value::Blob(blob) = val {
-            if x.insert(blob.clone().freeze()) {
+            if x.insert(blob) {
                 len += 1;
             }
         }
@@ -20,17 +23,22 @@ fn store(conn: &Connection, key: &Bytes, values: &[Value]) -> i64 {
     len
 }
 
-async fn compare_sets<F1>(conn: &Connection, keys: &[Bytes], op: F1) -> Result<Value, Error>
+async fn compare_sets<F1>(
+    conn: &Connection,
+    mut keys: VecDeque<Bytes>,
+    op: F1,
+) -> Result<Value, Error>
 where
     F1: Fn(&mut HashSet<Bytes>, &HashSet<Bytes>) -> bool,
 {
+    let top_key = keys.pop_front().ok_or(Error::Syntax)?;
     conn.db().get_map_or(
-        &keys[0],
+        &top_key,
         |v| match v {
             Value::Set(x) => {
                 #[allow(clippy::mutable_key_type)]
                 let mut all_entries = x.read().clone();
-                for key in keys[1..].iter() {
+                for key in keys.iter() {
                     let mut do_break = false;
                     let mut found = false;
                     let _ = conn.db().get_map_or(
@@ -66,7 +74,7 @@ where
         || {
             #[allow(clippy::mutable_key_type)]
             let mut all_entries: HashSet<Bytes> = HashSet::new();
-            for key in keys[1..].iter() {
+            for key in keys.iter() {
                 let mut do_break = false;
                 let _ = conn.db().get_map_or(
                     key,
@@ -98,17 +106,19 @@ where
 /// Add the specified members to the set stored at key. Specified members that are already a member
 /// of this set are ignored. If key does not exist, a new set is created before adding the
 /// specified members.
-pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn sadd(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let key_for_not_found = key.clone();
     let result = conn.db().get_map_or(
-        &args[1],
+        &key,
         |v| match v {
             Value::Set(x) => {
                 let mut x = x.write();
 
                 let mut len = 0;
 
-                for val in (&args[2..]).iter() {
-                    if x.insert(val.clone()) {
+                for val in args.clone().into_iter() {
+                    if x.insert(val) {
                         len += 1;
                     }
                 }
@@ -122,27 +132,26 @@ pub async fn sadd(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             let mut x = HashSet::new();
             let mut len = 0;
 
-            for val in (&args[2..]).iter() {
-                if x.insert(val.clone()) {
+            for val in args.clone().into_iter() {
+                if x.insert(val) {
                     len += 1;
                 }
             }
 
-            conn.db().set(&args[1], x.into(), None);
-
+            conn.db().set(key_for_not_found, x.into(), None);
             Ok(len.into())
         },
     )?;
 
-    conn.db().bump_version(&args[1]);
+    conn.db().bump_version(&key);
 
     Ok(result)
 }
 
 /// Returns the set cardinality (number of elements) of the set stored at key.
-pub async fn scard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn scard(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Set(x) => Ok(x.read().len().into()),
             _ => Err(Error::WrongType),
@@ -155,8 +164,8 @@ pub async fn scard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// successive sets.
 ///
 /// Keys that do not exist are considered to be empty sets.
-pub async fn sdiff(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    compare_sets(conn, &args[1..], |all_entries, elements| {
+pub async fn sdiff(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    compare_sets(conn, args, |all_entries, elements| {
         for element in elements.iter() {
             if all_entries.contains(element) {
                 all_entries.remove(element);
@@ -171,12 +180,13 @@ pub async fn sdiff(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// destination.
 ///
 /// If destination already exists, it is overwritten.
-pub async fn sdiffstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    if let Value::Array(values) = sdiff(conn, &args[1..]).await? {
+pub async fn sdiffstore(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key_name = args.pop_front().ok_or(Error::Syntax)?;
+    if let Value::Array(values) = sdiff(conn, args).await? {
         if values.len() > 0 {
-            Ok(store(conn, &args[1], &values).into())
+            Ok(store_key_values(conn, key_name, values).into())
         } else {
-            let _ = conn.db().del(&[args[1].clone()]);
+            let _ = conn.db().del(&[key_name]);
             Ok(0.into())
         }
     } else {
@@ -189,8 +199,8 @@ pub async fn sdiffstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// Keys that do not exist are considered to be empty sets. With one of the keys being an empty
 /// set, the resulting set is also empty (since set intersection with an empty set always results
 /// in an empty set).
-pub async fn sinter(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    compare_sets(conn, &args[1..], |all_entries, elements| {
+pub async fn sinter(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    compare_sets(conn, args, |all_entries, elements| {
         all_entries.retain(|element| elements.contains(element));
 
         for element in elements.iter() {
@@ -211,7 +221,7 @@ pub async fn sinter(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// Keys that do not exist are considered to be empty sets. With one of the keys being an empty
 /// set, the resulting set is also empty (since set intersection with an empty set always results
 /// in an empty set).
-pub async fn sintercard(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn sintercard(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     if let Ok(Value::Array(x)) = sinter(conn, args).await {
         Ok(x.len().into())
     } else {
@@ -223,12 +233,13 @@ pub async fn sintercard(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// destination.
 ///
 /// If destination already exists, it is overwritten.
-pub async fn sinterstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    if let Value::Array(values) = sinter(conn, &args[1..]).await? {
+pub async fn sinterstore(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key_name = args.pop_front().ok_or(Error::Syntax)?;
+    if let Value::Array(values) = sinter(conn, args).await? {
         if values.len() > 0 {
-            Ok(store(conn, &args[1], &values).into())
+            Ok(store_key_values(conn, key_name, values).into())
         } else {
-            let _ = conn.db().del(&[args[1].clone()]);
+            let _ = conn.db().del(&[key_name]);
             Ok(0.into())
         }
     } else {
@@ -237,12 +248,12 @@ pub async fn sinterstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 }
 
 /// Returns if member is a member of the set stored at key.
-pub async fn sismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn sismember(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Set(x) => {
-                if x.read().contains(&args[2]) {
+                if x.read().contains(&args[1]) {
                     Ok(1.into())
                 } else {
                     Ok(0.into())
@@ -257,9 +268,9 @@ pub async fn sismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error
 /// Returns all the members of the set value stored at key.
 ///
 /// This has the same effect as running SINTER with one argument key.
-pub async fn smembers(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn smembers(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Set(x) => Ok(x
                 .read()
@@ -277,13 +288,14 @@ pub async fn smembers(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
 ///
 /// For every member, 1 is returned if the value is a member of the set, or 0 if the element is not
 /// a member of the set or if key does not exist.
-pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn smismember(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
     conn.db().get_map_or(
-        &args[1],
+        &key,
         |v| match v {
             Value::Set(x) => {
                 let x = x.read();
-                Ok((&args[2..])
+                Ok(args
                     .iter()
                     .map(|member| if x.contains(member) { 1 } else { 0 })
                     .collect::<Vec<i32>>()
@@ -291,13 +303,7 @@ pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
             }
             _ => Err(Error::WrongType),
         },
-        || {
-            Ok((&args[2..])
-                .iter()
-                .map(|_| 0.into())
-                .collect::<Vec<Value>>()
-                .into())
-        },
+        || Ok(args.iter().map(|_| 0.into()).collect::<Vec<Value>>().into()),
     )
 }
 
@@ -309,26 +315,33 @@ pub async fn smismember(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 /// performed and 0 is returned. Otherwise, the element is removed from the source set and added to
 /// the destination set. When the specified element already exists in the destination set, it is
 /// only removed from the source set.
-pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+///
+/// TODO: FIXME: This implementation is flaky. It should be rewritten to use a new db
+/// method that allows to return multiple keys, even if they are stored in the
+/// same bucked. Right now, this can block a connection
+pub async fn smove(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let source = args.pop_front().ok_or(Error::Syntax)?;
+    let destination = args.pop_front().ok_or(Error::Syntax)?;
+    let member = args.pop_front().ok_or(Error::Syntax)?;
     let result = conn.db().get_map_or(
-        &args[1],
+        &source,
         |v| match v {
             Value::Set(set1) => conn.db().get_map_or(
-                &args[2],
+                &destination,
                 |v| match v {
                     Value::Set(set2) => {
                         let mut set1 = set1.write();
-                        if !set1.contains(&args[3]) {
+                        if !set1.contains(&member) {
                             return Ok(0.into());
                         }
 
-                        if args[1] == args[2] {
+                        if source == destination {
                             return Ok(1.into());
                         }
 
                         let mut set2 = set2.write();
-                        set1.remove(&args[3]);
-                        if set2.insert(args[3].clone()) {
+                        set1.remove(&member);
+                        if set2.insert(member.clone()) {
                             Ok(1.into())
                         } else {
                             Ok(0.into())
@@ -337,11 +350,11 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
                     _ => Err(Error::WrongType),
                 },
                 || {
-                    set1.write().remove(&args[3]);
+                    set1.write().remove(&member);
                     #[allow(clippy::mutable_key_type)]
                     let mut x = HashSet::new();
-                    x.insert(args[3].clone());
-                    conn.db().set(&args[2], x.into(), None);
+                    x.insert(member.clone());
+                    conn.db().set(destination.clone(), x.into(), None);
                     Ok(1.into())
                 },
             ),
@@ -350,8 +363,8 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         || Ok(0.into()),
     )?;
 
-    conn.db().bump_version(&args[1]);
-    conn.db().bump_version(&args[3]);
+    conn.db().bump_version(&source);
+    conn.db().bump_version(&destination);
 
     Ok(result)
 }
@@ -364,11 +377,12 @@ pub async fn smove(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// By default, the command pops a single member from the set. When provided with the optional
 /// count argument, the reply will consist of up to count members, depending on the set's
 /// cardinality.
-pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let rand = srandmember(conn, args).await?;
+pub async fn spop(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let rand = srandmember(conn, args.clone()).await?;
+    let key = args.pop_front().ok_or(Error::Syntax)?;
     let mut should_remove = false;
     let result = conn.db().get_map_or(
-        &args[1],
+        &key,
         |v| match v {
             Value::Set(x) => {
                 let mut x = x.write();
@@ -395,9 +409,9 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )?;
 
     if should_remove {
-        let _ = conn.db().del(&[args[1].clone()]);
+        let _ = conn.db().del(&[key]);
     } else {
-        conn.db().bump_version(&args[1]);
+        conn.db().bump_version(&key);
     }
 
     Ok(result)
@@ -412,9 +426,9 @@ pub async fn spop(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// If called with a negative count, the behavior changes and the command is allowed to return the
 /// same element multiple times. In this case, the number of returned elements is the absolute
 /// value of the specified count.
-pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn srandmember(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Set(x) => {
                 let mut rng = rand::thread_rng();
@@ -427,7 +441,7 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 
                 items.sort_by(|a, b| a.1.cmp(&b.1));
 
-                if args.len() == 2 {
+                if args.len() == 1 {
                     // Two arguments provided, return the first element or null if the array is null
                     if items.is_empty() {
                         Ok(Value::Null)
@@ -439,7 +453,7 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
                     if items.is_empty() {
                         return Ok(Value::Array(vec![]));
                     }
-                    let len = bytes_to_number::<i64>(&args[2])?;
+                    let len = bytes_to_number::<i64>(&args[1])?;
 
                     if len > 0 {
                         // required length is positive, return *up* to the requested number and no duplicated allowed
@@ -472,7 +486,7 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
             _ => Err(Error::WrongType),
         },
         || {
-            Ok(if args.len() == 2 {
+            Ok(if args.len() == 1 {
                 Value::Null
             } else {
                 Value::Array(vec![])
@@ -484,19 +498,20 @@ pub async fn srandmember(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 /// Remove the specified members from the set stored at key. Specified members that are not a
 /// member of this set are ignored. If key does not exist, it is treated as an empty set and this
 /// command returns 0.
-pub async fn srem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn srem(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
     let result = conn.db().get_map_or(
-        &args[1],
+        &key,
         |v| match v {
             Value::Set(x) => {
                 let mut set = x.write();
                 let mut i = 0;
 
-                for value in (&args[2..]).iter() {
-                    if set.remove(value) {
+                args.into_iter().for_each(|value| {
+                    if set.remove(&value) {
                         i += 1;
                     }
-                }
+                });
 
                 Ok(i.into())
             }
@@ -505,14 +520,14 @@ pub async fn srem(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         || Ok(0.into()),
     )?;
 
-    conn.db().bump_version(&args[1]);
+    conn.db().bump_version(&key);
 
     Ok(result)
 }
 
 /// Returns the members of the set resulting from the union of all the given sets.
-pub async fn sunion(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    compare_sets(conn, &args[1..], |all_entries, elements| {
+pub async fn sunion(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    compare_sets(conn, args, |all_entries, elements| {
         for element in elements.iter() {
             all_entries.insert(element.clone());
         }
@@ -526,12 +541,13 @@ pub async fn sunion(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// destination.
 ///
 /// If destination already exists, it is overwritten.
-pub async fn sunionstore(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    if let Value::Array(values) = sunion(conn, &args[1..]).await? {
+pub async fn sunionstore(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key_name = args.pop_front().ok_or(Error::Syntax)?;
+    if let Value::Array(values) = sunion(conn, args).await? {
         if values.len() > 0 {
-            Ok(store(conn, &args[1], &values).into())
+            Ok(store_key_values(conn, key_name, values).into())
         } else {
-            let _ = conn.db().del(&[args[1].clone()]);
+            let _ = conn.db().del(&[key_name]);
             Ok(0.into())
         }
     } else {

@@ -1,24 +1,24 @@
 //!  # Client-group command handlers
-
 use crate::{
     connection::{Connection, ConnectionStatus, UnblockReason},
     error::Error,
     value::{bytes_to_int, bytes_to_number, Value},
 };
 use bytes::Bytes;
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 /// "client" command handler
 ///
 /// Documentation:
 ///  * <https://redis.io/commands/client-id>
-pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let sub = String::from_utf8_lossy(&args[1]);
+pub async fn client(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let sub = args.pop_front().ok_or(Error::Syntax)?;
+    let sub = String::from_utf8_lossy(&sub);
 
     let expected = match sub.to_lowercase().as_str() {
-        "setname" => Some(3),
+        "setname" => Some(1),
         "unblock" => None,
-        _ => Some(2),
+        _ => Some(0),
     };
 
     if let Some(expected) = expected {
@@ -41,7 +41,7 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             Ok(list_client.into())
         }
         "unblock" => {
-            let reason = match args.get(3) {
+            let reason = match args.get(1) {
                 Some(x) => match String::from_utf8_lossy(&x).to_uppercase().as_str() {
                     "TIMEOUT" => UnblockReason::Timeout,
                     "ERROR" => UnblockReason::Error,
@@ -51,7 +51,7 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             };
             let other_conn = match conn
                 .all_connections()
-                .get_by_conn_id(bytes_to_int(&args[2])?)
+                .get_by_conn_id(bytes_to_int(&args[0])?)
             {
                 Some(conn) => conn,
                 None => return Ok(0.into()),
@@ -69,7 +69,7 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             })
         }
         "setname" => {
-            let name = String::from_utf8_lossy(&args[2]).to_string();
+            let name = String::from_utf8_lossy(&args[0]).to_string();
             conn.set_name(name);
             Ok(Value::Ok)
         }
@@ -84,27 +84,30 @@ pub async fn client(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 ///
 /// Documentation:
 ///  * <https://redis.io/commands/echo>
-pub async fn echo(_conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(Value::new(&args[1]))
+pub async fn echo(_conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    Ok(Value::Blob(args.pop_front().ok_or(Error::Syntax)?))
 }
 
 /// Select the Redis logical database having the specified zero-based numeric
 /// index. New connections always use the database 0.
-pub async fn select(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.selectdb(bytes_to_number(&args[1])?)
+pub async fn select(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    conn.selectdb(bytes_to_number(&args[0])?)
 }
 
 /// "ping" command handler
 ///
 /// Documentation:
 ///  * <https://redis.io/commands/ping>
-pub async fn ping(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn ping(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     if conn.status() == ConnectionStatus::Pubsub {
-        return Ok(Value::Array(vec!["pong".into(), args.get(1).into()]));
+        return Ok(Value::Array(vec![
+            "pong".into(),
+            Value::Blob(args.pop_front().ok_or(Error::Syntax)?),
+        ]));
     }
     match args.len() {
-        1 => Ok(Value::String("PONG".to_owned())),
-        2 => Ok(Value::new(&args[1])),
+        0 => Ok(Value::String("PONG".to_owned())),
+        1 => Ok(Value::Blob(args.pop_front().ok_or(Error::Syntax)?)),
         _ => Err(Error::InvalidArgsCount("ping".to_owned())),
     }
 }
@@ -113,7 +116,7 @@ pub async fn ping(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 ///
 /// Documentation:
 ///  * <https://redis.io/commands/reset>
-pub async fn reset(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn reset(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.reset();
     Ok(Value::String("RESET".to_owned()))
 }

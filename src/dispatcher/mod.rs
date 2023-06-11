@@ -278,7 +278,7 @@ dispatcher! {
             true,
         },
         LPUSHX {
-            cmd::list::lpush,
+            cmd::list::lpushx,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
             1,
@@ -350,7 +350,7 @@ dispatcher! {
             true,
         },
         RPUSHX {
-            cmd::list::rpush,
+            cmd::list::rpushx,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
             1,
@@ -442,7 +442,7 @@ dispatcher! {
             true,
         },
         HMSET {
-            cmd::hash::hset,
+            cmd::hash::hmset,
             [Flag::Write Flag::DenyOom Flag::Fast],
             -3,
             1,
@@ -588,7 +588,7 @@ dispatcher! {
             true,
         },
         PEXPIRE {
-            cmd::key::expire,
+            cmd::key::pexpire,
             [Flag::Write Flag::Fast],
             3,
             1,
@@ -597,7 +597,7 @@ dispatcher! {
             true,
         },
         PEXPIREAT {
-            cmd::key::expire_at,
+            cmd::key::pexpire_at,
             [Flag::Write Flag::Fast],
             3,
             1,
@@ -615,7 +615,7 @@ dispatcher! {
             true,
         },
         PTTL {
-            cmd::key::ttl,
+            cmd::key::pttl,
             [Flag::ReadOnly Flag::Random Flag::Fast],
             2,
             1,
@@ -642,7 +642,7 @@ dispatcher! {
             true,
         },
         RENAMENX {
-            cmd::key::rename,
+            cmd::key::renamenx,
             [Flag::Write Flag::Write],
             3,
             1,
@@ -842,7 +842,7 @@ dispatcher! {
             true,
         },
         PSETEX {
-            cmd::string::setex,
+            cmd::string::psetex,
             [Flag::Write Flag::DenyOom],
             4,
             1,
@@ -992,7 +992,7 @@ dispatcher! {
             true,
         },
         PSUBSCRIBE {
-            cmd::pubsub::subscribe,
+            cmd::pubsub::psubscribe,
             [Flag::PubSub Flag::Random Flag::Loading Flag::Stale],
             -2,
             0,

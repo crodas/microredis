@@ -6,6 +6,7 @@ use crate::{
 use bytes::Bytes;
 use git_version::git_version;
 use std::{
+    collections::VecDeque,
     convert::TryInto,
     ops::Neg,
     time::{SystemTime, UNIX_EPOCH},
@@ -13,9 +14,9 @@ use std::{
 use tokio::time::Duration;
 
 /// Returns Array reply of details about all Redis commands.
-pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn command(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let dispatcher = conn.all_connections().get_dispatcher();
-    if args.len() == 1 {
+    if args.len() == 0 {
         return Ok(Value::Array(
             dispatcher
                 .get_all_commands()
@@ -25,15 +26,19 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
         ));
     }
 
-    match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
+    let sub_command = args.pop_front().ok_or(Error::Syntax)?;
+    match String::from_utf8_lossy(&sub_command)
+        .to_lowercase()
+        .as_str()
+    {
         "count" => Ok(dispatcher.get_all_commands().len().into()),
         "info" => {
             let mut result = vec![];
-            for command in &args[2..] {
+            for command in args.into_iter() {
                 result.push(
                     dispatcher
                         .get_handler_for_command(
-                            String::from_utf8_lossy(command).to_string().as_str(),
+                            String::from_utf8_lossy(&command).to_string().as_str(),
                         )
                         .map(|command| command.get_command_info())
                         .unwrap_or_else(|_| Value::Null),
@@ -42,44 +47,50 @@ pub async fn command(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
             Ok(Value::Array(result))
         }
         "getkeys" => {
-            if args.len() == 2 {
+            if args.len() == 0 {
                 return Err(Error::SubCommandNotFound(
-                    String::from_utf8_lossy(&args[1]).into(),
-                    String::from_utf8_lossy(&args[0]).into(),
+                    String::from_utf8_lossy(&sub_command).into(),
+                    "command".into(),
                 ));
             }
-            let args = &args[2..];
-            let command = dispatcher.get_handler(args)?;
+            let command = dispatcher.get_handler(&args)?;
+            let _ = args.pop_front(); // drop the function name from the list of arguments.
             Ok(Value::Array(
                 command
-                    .get_keys(args)
-                    .iter()
-                    .map(|key| Value::new(*key))
+                    .get_keys(&args, false)
+                    .into_iter()
+                    .map(|p| Value::Blob(p))
                     .collect(),
             ))
         }
         "help" => super::help::command(),
-        cmd => Err(Error::SubCommandNotFound(
-            cmd.into(),
-            String::from_utf8_lossy(&args[0]).into(),
-        )),
+        cmd => Err(Error::SubCommandNotFound(cmd.into(), "command".into())),
     }
 }
 
 /// The DEBUG command is an internal command. It is meant to be used for
 /// developing and testing Redis.
-pub async fn debug(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
-        "object" => Ok(conn.db().debug(try_get_arg!(args, 2))?.into()),
+pub async fn debug(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let sub_command = args.pop_front().ok_or(Error::Syntax)?;
+    match String::from_utf8_lossy(&sub_command)
+        .to_lowercase()
+        .as_str()
+    {
+        "object" => Ok(conn
+            .db()
+            .debug(&(args.pop_front().ok_or(Error::Syntax)?))?
+            .into()),
         "set-active-expire" => Ok(Value::Ok),
-        "digest-value" => Ok(Value::Array(conn.db().digest(&args[2..])?)),
+        "digest-value" => Ok(Value::Array(
+            conn.db().digest(&(args.into_iter().collect::<Vec<_>>()))?,
+        )),
         _ => Err(Error::Syntax),
     }
 }
 
 /// The INFO command returns information and statistics about the server in a
 /// format that is simple to parse by computers and easy to read by humans.
-pub async fn info(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn info(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     let connections = conn.all_connections();
     Ok(Value::Blob(
         format!(
@@ -89,19 +100,18 @@ pub async fn info(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
             connections.total_connections(),
             connections.total_blocked_connections(),
         )
-        .as_str()
         .into(),
     ))
 }
 
 /// Delete all the keys of the currently selected DB. This command never fails.
-pub async fn flushdb(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn flushdb(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().flushdb()
 }
 
 /// Delete all the keys of all the existing databases, not just the currently
 /// selected one. This command never fails.
-pub async fn flushall(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn flushall(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.all_connections()
         .get_databases()
         .into_iter()
@@ -112,7 +122,7 @@ pub async fn flushall(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 }
 
 /// Return the number of keys in the currently-selected database.
-pub async fn dbsize(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn dbsize(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().len().map(|s| s.into())
 }
 
@@ -120,7 +130,7 @@ pub async fn dbsize(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 /// Unix timestamp and the amount of microseconds already elapsed in the current
 /// second. Basically the interface is very similar to the one of the
 /// gettimeofday system call.
-pub async fn time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
+pub async fn time(_conn: &Connection, _args: VecDeque<Bytes>) -> Result<Value, Error> {
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
     let seconds = format!("{}", since_the_epoch.as_secs());
@@ -131,7 +141,7 @@ pub async fn time(_conn: &Connection, _args: &[Bytes]) -> Result<Value, Error> {
 
 /// Ask the server to close the connection. The connection is closed as soon as
 /// all pending replies have been written to the client.
-pub async fn quit(_: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn quit(_: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     Err(Error::Quit)
 }
 

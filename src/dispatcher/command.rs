@@ -13,7 +13,7 @@ use crate::{
 };
 use bytes::Bytes;
 use metered::{ErrorCount, HitCount, InFlight, ResponseTime, Throughput};
-use std::convert::TryInto;
+use std::{collections::VecDeque, convert::TryInto};
 
 /// Command Flags
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -140,7 +140,7 @@ impl Command {
     }
 
     /// Returns all database keys from the command arguments
-    pub fn get_keys<'a>(&self, args: &'a [Bytes]) -> Vec<&'a Bytes> {
+    pub fn get_keys(&self, args: &VecDeque<Bytes>, includes_command: bool) -> Vec<Bytes> {
         let start = self.key_start;
         let stop = if self.key_stop > 0 {
             self.key_stop
@@ -149,13 +149,20 @@ impl Command {
         };
 
         if start == 0 {
-            return vec![];
+            return Vec::new();
         }
 
-        let mut result = vec![];
+        let mut result = Vec::new();
 
         for i in (start..stop + 1).step_by(self.key_step) {
-            result.push(&args[i as usize]);
+            result.push(
+                args[if includes_command {
+                    i as usize
+                } else {
+                    i as usize - 1
+                }]
+                .clone(),
+            );
         }
 
         result

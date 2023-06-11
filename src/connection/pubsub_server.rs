@@ -2,10 +2,10 @@
 //!
 //! There is one instance of this mod active per server instance.
 use crate::{connection::Connection, error::Error, value::Value};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use glob::Pattern;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use tokio::sync::mpsc;
 
 type Sender = mpsc::Sender<Value>;
@@ -38,7 +38,7 @@ impl Pubsub {
     }
 
     /// Returns numbers of subscribed for given channels
-    pub fn get_number_of_subscribers(&self, channels: &[Bytes]) -> Vec<(Bytes, usize)> {
+    pub fn get_number_of_subscribers(&self, channels: &VecDeque<Bytes>) -> Vec<(Bytes, usize)> {
         let subscribers = self.subscriptions.read();
         let mut ret = vec![];
         for channel in channels.iter() {
@@ -53,11 +53,11 @@ impl Pubsub {
     }
 
     /// Subscribe to patterns
-    pub fn psubscribe(&self, channels: &[Bytes], conn: &Connection) -> Result<(), Error> {
+    pub fn psubscribe(&self, channels: VecDeque<Bytes>, conn: &Connection) -> Result<(), Error> {
         let mut subscriptions = self.psubscriptions.write();
 
-        for bytes_channel in channels.iter() {
-            let channel = String::from_utf8_lossy(bytes_channel);
+        for bytes_channel in channels.into_iter() {
+            let channel = String::from_utf8_lossy(&bytes_channel);
             let channel =
                 Pattern::new(&channel).map_err(|_| Error::InvalidPattern(channel.to_string()))?;
 
@@ -77,7 +77,7 @@ impl Pubsub {
             conn.append_response(
                 vec![
                     "psubscribe".into(),
-                    Value::new(&bytes_channel),
+                    Value::Blob(bytes_channel),
                     conn.pubsub_client().total_subs().into(),
                 ]
                 .into(),
@@ -161,14 +161,14 @@ impl Pubsub {
     }
 
     /// Subscribe connection to channels
-    pub fn subscribe(&self, channels: &[Bytes], conn: &Connection) {
+    pub fn subscribe(&self, channels: VecDeque<Bytes>, conn: &Connection) {
         let mut subscriptions = self.subscriptions.write();
         let total_psubs = self.psubscriptions.read().len();
 
         channels
-            .iter()
+            .into_iter()
             .map(|channel| {
-                if let Some(subs) = subscriptions.get_mut(channel) {
+                if let Some(subs) = subscriptions.get_mut(&channel) {
                     subs.insert(conn.id(), conn.pubsub_client().sender());
                 } else {
                     let mut h = HashMap::new();
@@ -176,11 +176,11 @@ impl Pubsub {
                     subscriptions.insert(channel.clone(), h);
                 }
 
-                conn.pubsub_client().new_subscription(channel);
+                conn.pubsub_client().new_subscription(&channel);
                 conn.append_response(
                     vec![
                         "subscribe".into(),
-                        Value::new(&channel),
+                        Value::Blob(channel),
                         conn.pubsub_client().total_subs().into(),
                     ]
                     .into(),

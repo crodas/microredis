@@ -33,7 +33,12 @@ pub enum Value {
     /// Vector/Array of values
     Array(Vec<Value>),
     /// Bytes/Strings/Binary data
-    Blob(BytesMut),
+    Blob(Bytes),
+    /// bytes/String/Binary but that has been modified by bit operations, this
+    /// is not the default state, Blob and BlowRw are the same in practice, but
+    /// in order to a Value to be BlowRw it should have been modified by a bit
+    /// update operation
+    BlobRw(BytesMut),
     /// String. This type does not allow new lines
     String(String),
     /// An error
@@ -76,7 +81,7 @@ impl From<VDebug> for Value {
         Value::Blob(format!(
             "Value at:0x6000004a8840 refcount:1 encoding:{} serializedlength:{} lru:13421257 lru_seconds_idle:367",
             v.encoding, v.serialize_len
-            ).as_str().into()
+            ).into()
         )
     }
 }
@@ -84,7 +89,7 @@ impl From<VDebug> for Value {
 impl Value {
     /// Creates a new Redis value from a stream of bytes
     pub fn new(value: &[u8]) -> Self {
-        Self::Blob(value.into())
+        Self::Blob(Bytes::copy_from_slice(value))
     }
 
     /// Returns the internal encoding of the redis
@@ -139,6 +144,13 @@ impl From<&Value> for Vec<u8> {
             Value::Integer(x) => format!(":{}\r\n", x).into(),
             Value::BigInteger(x) => format!("({}\r\n", x).into(),
             Value::Float(x) => format!(",{}\r\n", x).into(),
+            Value::BlobRw(x) => {
+                let s = format!("${}\r\n", x.len());
+                let mut s: BytesMut = s.as_str().as_bytes().into();
+                s.extend_from_slice(x);
+                s.extend_from_slice(b"\r\n");
+                s.to_vec()
+            }
             Value::Blob(x) => {
                 let s = format!("${}\r\n", x.len());
                 let mut s: BytesMut = s.as_str().as_bytes().into();
@@ -257,8 +269,8 @@ impl From<&Bytes> for Value {
 }
 
 impl From<&str> for Value {
-    fn from(value: &str) -> Value {
-        Value::Blob(value.as_bytes().into())
+    fn from(value: &str) -> Self {
+        Value::Blob(Bytes::copy_from_slice(value.as_bytes()))
     }
 }
 

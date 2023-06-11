@@ -11,6 +11,7 @@ use crate::{
 };
 use bytes::Bytes;
 use std::{
+    collections::VecDeque,
     convert::TryInto,
     str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
@@ -26,22 +27,24 @@ use tokio::time::{Duration, Instant};
 ///
 /// The command returns an error when the destination key already exists. The
 /// REPLACE option removes the destination key before copying the value to it.
-pub async fn copy(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let mut skip = 3;
-    let target_db = if args.len() > 4 && check_arg!(args, 3, "DB") {
-        skip += 2;
+pub async fn copy(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let source = args.pop_front().ok_or(Error::Syntax)?;
+    let destination = args.pop_front().ok_or(Error::Syntax)?;
+    let target_db = if !args.is_empty() && check_arg!(args, 0, "DB") {
+        let _ = args.pop_front();
+        let db = args.pop_front().ok_or(Error::Syntax)?;
         Some(
             conn.all_connections()
                 .get_databases()
-                .get(bytes_to_int(&args[4])?)?
+                .get(bytes_to_int(&db)?)?
                 .clone(),
         )
     } else {
         None
     };
     let replace = match args
-        .get(skip)
-        .map(|m| String::from_utf8_lossy(m).to_uppercase())
+        .pop_front()
+        .map(|m| String::from_utf8_lossy(&m).to_uppercase())
     {
         Some(value) => {
             if value == "REPLACE" {
@@ -54,7 +57,7 @@ pub async fn copy(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     };
     let result = if conn
         .db()
-        .copy(&args[1], &args[2], replace.into(), target_db)?
+        .copy(source, destination, replace.into(), target_db)?
     {
         1
     } else {
@@ -65,67 +68,124 @@ pub async fn copy(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 /// Removes the specified keys. A key is ignored if it does not exist.
-pub async fn del(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().del(&args[1..]))
+pub async fn del(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let keys = args.into_iter().collect::<Vec<_>>();
+    Ok(conn.db().del(&keys))
 }
 
 /// Returns if key exists.
-pub async fn exists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().exists(&args[1..]).into())
+pub async fn exists(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let keys = args.into_iter().collect::<Vec<_>>();
+    Ok(conn.db().exists(&keys).into())
 }
 
-/// Set a timeout on key. After the timeout has expired, the key will automatically be deleted. A
-/// key with an associated timeout is often said to be volatile in Redis terminology.
-///
-/// The timeout will only be cleared by commands that delete or overwrite the contents of the key,
-/// including DEL, SET, GETSET and all the *STORE commands. This means that all the operations that
-/// conceptually alter the value stored at the key without replacing it with a new one will leave
-/// the timeout untouched. For instance, incrementing the value of a key with INCR, pushing a new
-/// value into a list with LPUSH, or altering the field value of a hash with HSET are all
-/// operations that will leave the timeout untouched.
-///
-/// The timeout can also be cleared, turning the key back into a persistent key, using the PERSIST
-/// command.
-pub async fn expire(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let is_milliseconds = check_arg!(args, 0, "PEXPIRE");
+async fn expire_ex(
+    command: &[u8],
+    is_milliseconds: bool,
+    conn: &Connection,
+    mut args: VecDeque<Bytes>,
+) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let expiration = args.pop_front().ok_or(Error::Syntax)?;
 
-    let expires_at = Expiration::new(&args[2], is_milliseconds, false, &args[0])?;
+    let expires_at = Expiration::new(&expiration, is_milliseconds, false, command)?;
 
     if expires_at.is_negative {
         // Delete key right away
-        return Ok(conn.db().del(&args[1..2]));
+        return Ok(conn.db().del(&[key]));
     }
 
+    let opts = args.into_iter().collect::<Vec<_>>();
+
     conn.db()
-        .set_ttl(&args[1], expires_at.try_into()?, (&args[3..]).try_into()?)
+        .set_ttl(&key, expires_at.try_into()?, opts.try_into()?)
+}
+
+/// Set a timeout on key. After the timeout has expired, the key will
+/// automatically be deleted. A key with an associated timeout is often said to
+/// be volatile in Redis terminology.
+///
+/// The timeout will only be cleared by commands that delete or overwrite the
+/// contents of the key, including DEL, SET, GETSET and all the *STORE commands.
+/// This means that all the operations that conceptually alter the value stored
+/// at the key without replacing it with a new one will leave the timeout
+/// untouched. For instance, incrementing the value of a key with INCR, pushing
+/// a new value into a list with LPUSH, or altering the field value of a hash
+/// with HSET are all operations that will leave the timeout untouched.
+///
+/// The timeout can also be cleared, turning the key back into a persistent key,
+/// using the PERSIST command.
+///
+/// If a key is renamed with RENAME, the associated time to live is transferred
+/// to the new key name.
+///
+/// If a key is overwritten by RENAME, like in the case of an existing key Key_A
+/// that is overwritten by a call like RENAME Key_B Key_A, it does not matter if
+/// the original Key_A had a timeout associated or not, the new key Key_A will
+/// inherit all the characteristics of Key_B.
+///
+/// Note that calling EXPIRE/PEXPIRE with a non-positive timeout or
+/// EXPIREAT/PEXPIREAT with a time in the past will result in the key being
+/// deleted rather than expired
+pub async fn expire(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    expire_ex(b"EXPIRE", false, conn, args).await
+}
+
+/// This command works exactly like EXPIRE but the time to live of the key is
+/// specified in milliseconds instead of seconds.
+pub async fn pexpire(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    expire_ex(b"PEXPIRE", true, conn, args).await
 }
 
 /// Returns the string representation of the type of the value stored at key.
 /// The different types that can be returned are: string, list, set, zset, hash
 /// and stream.
-pub async fn data_type(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().get_data_type(&args[1]).into())
+pub async fn data_type(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    Ok(conn.db().get_data_type(&args[0]).into())
 }
 
 /// EXPIREAT has the same effect and semantic as EXPIRE, but instead of specifying the number of
 /// seconds representing the TTL (time to live), it takes an absolute Unix timestamp (seconds since
 /// January 1, 1970). A timestamp in the past will delete the key immediately.
-pub async fn expire_at(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let is_milliseconds = check_arg!(args, 0, "PEXPIREAT");
-    let expires_at = Expiration::new(&args[2], is_milliseconds, true, &args[0])?;
+pub async fn expire_at(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let expiration = args.pop_front().ok_or(Error::Syntax)?;
+    let expires_at = Expiration::new(&expiration, false, true, &args[0])?;
 
     if expires_at.is_negative {
         // Delete key right away
-        return Ok(conn.db().del(&args[1..2]));
+        return Ok(conn.db().del(&[key]));
     }
 
-    conn.db()
-        .set_ttl(&args[1], expires_at.try_into()?, (&args[3..]).try_into()?)
+    conn.db().set_ttl(
+        &key,
+        expires_at.try_into()?,
+        args.into_iter().collect::<Vec<_>>().try_into()?,
+    )
+}
+
+/// PEXPIREAT has the same effect and semantic as EXPIREAT, but the Unix time at
+/// which the key will expire is specified in milliseconds instead of seconds.
+pub async fn pexpire_at(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let expiration = args.pop_front().ok_or(Error::Syntax)?;
+    let expires_at = Expiration::new(&expiration, true, true, &args[0])?;
+
+    if expires_at.is_negative {
+        // Delete key right away
+        return Ok(conn.db().del(&[key]));
+    }
+
+    conn.db().set_ttl(
+        &key,
+        expires_at.try_into()?,
+        args.into_iter().collect::<Vec<_>>().try_into()?,
+    )
 }
 
 /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key
 /// will expire.
-pub async fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn expire_time(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let ttl = match conn.db().ttl(&args[1]) {
         Some(Some(ttl)) => {
             // Is there a better way? There should be!
@@ -145,7 +205,7 @@ pub async fn expire_time(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 }
 
 /// Returns all keys that matches a given pattern
-pub async fn keys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn keys(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     Ok(conn.db().get_all_keys(&args[1])?.into())
 }
 
@@ -153,13 +213,15 @@ pub async fn keys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// destination database. When key already exists in the destination database,
 /// or it does not exist in the source database, it does nothing. It is possible
 /// to use MOVE as a locking primitive because of this.
-pub async fn move_key(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn move_key(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let target_db = args.pop_front().ok_or(Error::Syntax)?;
     let target_db = conn
         .all_connections()
         .get_databases()
-        .get(bytes_to_int(&args[2])?)?;
+        .get(bytes_to_int(&target_db)?)?;
 
-    Ok(if conn.db().move_key(&args[1], target_db)? {
+    Ok(if conn.db().move_key(key, target_db)? {
         1.into()
     } else {
         0.into()
@@ -167,7 +229,7 @@ pub async fn move_key(conn: &Connection, args: &[Bytes]) -> Result<Value, Error>
 }
 
 /// Return information about the object/value stored in the database
-pub async fn object(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn object(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let subcommand = String::from_utf8_lossy(&args[1]).to_lowercase();
 
     let expected_args = if subcommand == "help" { 2 } else { 3 };
@@ -194,7 +256,7 @@ pub async fn object(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 /// Return a random key from the currently selected database.
-pub async fn randomkey(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn randomkey(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().randomkey()
 }
 
@@ -203,10 +265,19 @@ pub async fn randomkey(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 /// an implicit DEL operation, so if the deleted key contains a very big value
 /// it may cause high latency even if RENAME itself is usually a constant-time
 /// operation.
-pub async fn rename(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let is_rename = check_arg!(args, 0, "RENAME");
-    if conn.db().rename(&args[1], &args[2], is_rename.into())? {
-        Ok(if is_rename { Value::Ok } else { 1.into() })
+pub async fn rename(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    if conn.db().rename(&args[0], &args[1], true.into())? {
+        Ok(Value::Ok)
+    } else {
+        Ok(0.into())
+    }
+}
+
+/// Renames key to newkey if newkey does not yet exist. It returns an error when
+/// key does not exist.
+pub async fn renamenx(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    if conn.db().rename(&args[0], &args[1], false.into())? {
+        Ok(1.into())
     } else {
         Ok(0.into())
     }
@@ -215,22 +286,25 @@ pub async fn rename(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// SCAN is a cursor based iterator. This means that at every call of the
 /// command, the server returns an updated cursor that the user needs to use as
 /// the cursor argument in the next call.
-pub async fn scan(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let cursor: Cursor = (&args[1]).try_into()?;
-    let mut current = 2;
+pub async fn scan(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let cursor = args.pop_front().ok_or(Error::Syntax)?;
+    let cursor: Cursor = (&cursor).try_into()?;
     let mut pattern = None;
     let mut count = None;
     let mut typ = None;
 
-    for i in (2..args.len()).step_by(2) {
-        let value = args
-            .get(i + 1)
-            .ok_or(Error::InvalidArgsCount("SCAN".to_owned()))?;
-        match String::from_utf8_lossy(&args[i]).to_uppercase().as_str() {
+    loop {
+        let key = if let Some(key) = args.pop_front() {
+            key
+        } else {
+            break;
+        };
+        let value = args.pop_front().ok_or(Error::Syntax)?;
+        match String::from_utf8_lossy(&key).to_uppercase().as_str() {
             "MATCH" => pattern = Some(value),
             "COUNT" => {
                 count = Some(
-                    bytes_to_number(value)
+                    bytes_to_number(&value)
                         .map_err(|_| Error::InvalidArgsCount("SCAN".to_owned()))?,
                 )
             }
@@ -249,15 +323,27 @@ pub async fn scan(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// Returns the remaining time to live of a key that has a timeout. This introspection capability
 /// allows a Redis client to check how many seconds a given key will continue to be part of the
 /// dataset.
-pub async fn ttl(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let ttl = match conn.db().ttl(&args[1]) {
+pub async fn ttl(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let ttl = match conn.db().ttl(&args[0]) {
         Some(Some(ttl)) => {
             let ttl = ttl - Instant::now();
-            if check_arg!(args, 0, "TTL") {
-                ttl.as_secs() as i64 + 1
-            } else {
-                ttl.as_millis() as i64
-            }
+            ttl.as_secs() as i64 + 1
+        }
+        Some(None) => -1,
+        None => -2,
+    };
+
+    Ok(ttl.into())
+}
+
+/// Like TTL this command returns the remaining time to live of a key that has
+/// an expire set, with the sole difference that TTL returns the amount of
+/// remaining time in seconds while PTTL returns it in milliseconds.
+pub async fn pttl(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let ttl = match conn.db().ttl(&args[0]) {
+        Some(Some(ttl)) => {
+            let ttl = ttl - Instant::now();
+            ttl.as_millis() as i64
         }
         Some(None) => -1,
         None => -2,
@@ -268,8 +354,8 @@ pub async fn ttl(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 /// Remove the existing timeout on key, turning the key from volatile (a key with an expire set) to
 /// persistent (a key that will never expire as no timeout is associated).
-pub async fn persist(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().persist(&args[1]))
+pub async fn persist(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    Ok(conn.db().persist(&args[0]))
 }
 
 #[cfg(test)]

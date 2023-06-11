@@ -24,7 +24,7 @@ use parking_lot::{Mutex, RwLock};
 use rand::{prelude::SliceRandom, Rng};
 use seahash::hash;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     convert::{TryFrom, TryInto},
     ops::{AddAssign, Deref},
     str::FromStr,
@@ -231,13 +231,12 @@ impl Db {
             .iter()
             .map(|key| {
                 let slot = self.slots[self.get_slot(key)].read();
-                Value::Blob(
+                Value::new(
                     slot.get(key)
                         .filter(|v| v.is_valid())
                         .map(|v| hex::encode(&v.value.digest()))
                         .unwrap_or("00000".into())
-                        .as_str()
-                        .into(),
+                        .as_bytes(),
                 )
             })
             .collect::<Vec<Value>>())
@@ -263,26 +262,25 @@ impl Db {
     }
 
     /// Round numbers to store efficiently, specially float numbers. For instance `1.00` will be converted to `1`.
-    fn round_numbers<T>(number: T) -> BytesMut
+    fn round_numbers<T>(number: T) -> Bytes
     where
         T: ToString,
     {
         let number_to_str = number.to_string();
 
         if number_to_str.find('.').is_none() {
-            return number_to_str.as_bytes().into();
+            return Bytes::copy_from_slice(number_to_str.as_bytes());
         }
 
         let number_to_str = number_to_str
             .trim_end_matches(|c| c == '0' || c == '.')
             .to_string();
 
-        if number_to_str.is_empty() {
-            "0"
+        Bytes::copy_from_slice(if number_to_str.is_empty() {
+            b"0"
         } else {
-            number_to_str.as_str()
-        }
-        .into()
+            number_to_str.as_bytes()
+        })
     }
 
     // Converts a given number to a correct Value, it should be used with Self::round_numbers()
@@ -326,7 +324,7 @@ impl Db {
                         )
                         .ok_or(Error::Overflow)?;
                 }
-                let incr_by_bytes = Self::round_numbers(incr_by).freeze();
+                let incr_by_bytes = Self::round_numbers(incr_by);
                 h.insert(sub_key.clone(), incr_by_bytes.clone());
 
                 Self::number_to_value(&incr_by_bytes)
@@ -334,7 +332,7 @@ impl Db {
             None => {
                 #[allow(clippy::mutable_key_type)]
                 let mut h = HashMap::new();
-                let incr_by_bytes = Self::round_numbers(incr_by).freeze();
+                let incr_by_bytes = Self::round_numbers(incr_by);
                 h.insert(sub_key.clone(), incr_by_bytes.clone());
                 let _ = slot.insert(key.clone(), Entry::new(h.into(), None));
                 Self::number_to_value(&incr_by_bytes)
@@ -455,6 +453,14 @@ impl Db {
     /// value at offset.
     pub fn set_range(&self, key: &Bytes, offset: i128, data: &[u8]) -> Result<Value, Error> {
         let mut slot = self.slots[self.get_slot(key)].write();
+
+        if let Some(entry) = slot.get_mut(key).filter(|x| x.is_valid()) {
+            if let Value::Blob(data) = entry.get() {
+                let rw_data = BytesMut::from(&data[..]);
+                entry.change_value(Value::BlobRw(rw_data));
+            }
+        }
+
         let value = slot.get_mut(key).map(|value| {
             if !value.is_valid() {
                 self.expirations.lock().remove(key);
@@ -473,7 +479,7 @@ impl Db {
 
         let length = offset as usize + data.len();
         match value {
-            Some(Value::Blob(bytes)) => {
+            Some(Value::BlobRw(bytes)) => {
                 if bytes.capacity() < length {
                     bytes.resize(length, 0);
                 }
@@ -499,13 +505,13 @@ impl Db {
     /// Copies a key
     pub fn copy(
         &self,
-        source: &Bytes,
-        target: &Bytes,
+        source: Bytes,
+        target: Bytes,
         replace: Override,
         target_db: Option<Arc<Db>>,
     ) -> Result<bool, Error> {
-        let slot = self.slots[self.get_slot(source)].read();
-        let value = if let Some(value) = slot.get(source).filter(|x| x.is_valid()) {
+        let slot = self.slots[self.get_slot(&source)].read();
+        let value = if let Some(value) = slot.get(&source).filter(|x| x.is_valid()) {
             value.clone()
         } else {
             return Ok(false);
@@ -536,20 +542,20 @@ impl Db {
             if replace == Override::No && self.exists(&[target.clone()]) > 0 {
                 return Ok(false);
             }
-            let mut slot = self.slots[self.get_slot(target)].write();
-            slot.insert(target.clone(), value);
+            let mut slot = self.slots[self.get_slot(&target)].write();
+            slot.insert(target, value);
 
             Ok(true)
         }
     }
 
     /// Moves a given key between databases
-    pub fn move_key(&self, source: &Bytes, target_db: Arc<Db>) -> Result<bool, Error> {
+    pub fn move_key(&self, source: Bytes, target_db: Arc<Db>) -> Result<bool, Error> {
         if self.db_id == target_db.db_id {
             return Err(Error::SameEntry);
         }
-        let mut slot = self.slots[self.get_slot(source)].write();
-        let (expires_in, value) = if let Some(value) = slot.get(source).filter(|v| v.is_valid()) {
+        let mut slot = self.slots[self.get_slot(&source)].write();
+        let (expires_in, value) = if let Some(value) = slot.get(&source).filter(|v| v.is_valid()) {
             (
                 value.get_ttl().map(|t| t - Instant::now()),
                 value.value.clone(),
@@ -559,9 +565,16 @@ impl Db {
         };
 
         if Value::Integer(1)
-            == target_db.set_advanced(&source, value, expires_in, Override::No, false, false)
+            == target_db.set_advanced(
+                source.clone(),
+                value,
+                expires_in,
+                Override::No,
+                false,
+                false,
+            )
         {
-            slot.remove(source);
+            slot.remove(&source);
             Ok(true)
         } else {
             Ok(false)
@@ -810,7 +823,7 @@ impl Db {
     }
 
     /// Get multiple copies of entries
-    pub fn get_multi(&self, keys: &[Bytes]) -> Value {
+    pub fn get_multi(&self, keys: VecDeque<Bytes>) -> Value {
         keys.iter()
             .map(|key| {
                 let slot = self.slots[self.get_slot(key)].read();
@@ -846,8 +859,12 @@ impl Db {
         let mut entry = slot.get_mut(key).filter(|x| x.is_valid());
 
         if let Some(entry) = slot.get_mut(key).filter(|x| x.is_valid()) {
+            if let Value::Blob(data) = entry.get() {
+                let rw_data = BytesMut::from(&data[..]);
+                entry.change_value(Value::BlobRw(rw_data));
+            }
             match entry.get_mut() {
-                Value::Blob(value) => {
+                Value::BlobRw(value) => {
                     value.put(value_to_append.as_ref());
                     Ok(value.len().into())
                 }
@@ -865,18 +882,29 @@ impl Db {
     /// If override_all is set to false, all entries must be new entries or the
     /// entire operation fails, in this case 1 or is returned. Otherwise `Ok` is
     /// returned.
-    pub fn multi_set(&self, key_values: &[Bytes], override_all: bool) -> Result<Value, Error> {
+    pub fn multi_set(
+        &self,
+        key_values: VecDeque<Bytes>,
+        override_all: bool,
+    ) -> Result<Value, Error> {
         if key_values.len() % 2 == 1 {
             return Err(Error::Syntax);
         }
 
-        let keys = key_values
-            .iter()
-            .step_by(2)
-            .cloned()
-            .collect::<Vec<Bytes>>();
+        let mut keys = vec![];
+        let mut values = vec![];
 
-        self.lock_keys(&keys);
+        key_values.into_iter().enumerate().for_each(|(key, val)| {
+            if key % 2 == 0 {
+                keys.push(val);
+            } else {
+                values.push(val);
+            }
+        });
+
+        let to_lock = keys.clone();
+
+        self.lock_keys(&to_lock);
 
         if !override_all {
             for key in keys.iter() {
@@ -888,15 +916,16 @@ impl Db {
             }
         }
 
-        for (i, _) in key_values.iter().enumerate().step_by(2) {
-            let mut slot = self.slots[self.get_slot(&key_values[i])].write();
-            slot.insert(
-                key_values[i].clone(),
-                Entry::new(Value::new(&key_values[i + 1]), None),
-            );
+        let mut values = values.into_iter();
+
+        for key in keys.into_iter() {
+            let mut slot = self.slots[self.get_slot(&key)].write();
+            if let Some(value) = values.next() {
+                slot.insert(key, Entry::new(Value::Blob(value), None));
+            }
         }
 
-        self.unlock_keys(&keys);
+        self.unlock_keys(&to_lock);
 
         if override_all {
             Ok(Value::Ok)
@@ -906,27 +935,27 @@ impl Db {
     }
 
     /// Set a key, value with an optional expiration time
-    pub fn set(&self, key: &Bytes, value: Value, expires_in: Option<Duration>) -> Value {
+    pub fn set(&self, key: Bytes, value: Value, expires_in: Option<Duration>) -> Value {
         self.set_advanced(key, value, expires_in, Default::default(), false, false)
     }
 
     /// Set a value in the database with various settings
     pub fn set_advanced(
         &self,
-        key: &Bytes,
+        key: Bytes,
         value: Value,
         expires_in: Option<Duration>,
         override_value: Override,
         keep_ttl: bool,
         return_previous: bool,
     ) -> Value {
-        let mut slot = self.slots[self.get_slot(key)].write();
+        let mut slot = self.slots[self.get_slot(&key)].write();
         let expires_at = expires_in.map(|duration| {
             Instant::now()
                 .checked_add(duration)
                 .unwrap_or_else(far_future)
         });
-        let previous = slot.get(key).filter(|x| x.is_valid());
+        let previous = slot.get(&key).filter(|x| x.is_valid());
 
         let expires_at = if keep_ttl {
             if let Some(previous) = previous {
@@ -973,14 +1002,14 @@ impl Db {
         };
 
         if let Some(expires_at) = expires_at {
-            self.expirations.lock().add(key, expires_at);
+            self.expirations.lock().add(&key, expires_at);
         } else {
             /// Make sure to remove the new key (or replaced) from the
             /// expiration table (from any possible past value).
-            self.expirations.lock().remove(key);
+            self.expirations.lock().remove(&key);
         }
 
-        slot.insert(key.clone(), Entry::new(value, expires_at));
+        slot.insert(key, Entry::new(value, expires_at));
 
         if let Some(to_return) = to_return {
             to_return
@@ -1037,7 +1066,7 @@ impl scan::Scan for Db {
     fn scan(
         &self,
         cursor: Cursor,
-        pattern: Option<&Bytes>,
+        pattern: Option<Bytes>,
         count: Option<usize>,
         typ: Option<Typ>,
     ) -> Result<scan::Result, Error> {
@@ -1046,7 +1075,7 @@ impl scan::Scan for Db {
         let mut last_pos = cursor.last_position as usize;
         let pattern = pattern
             .map(|pattern| {
-                let pattern = String::from_utf8_lossy(pattern);
+                let pattern = String::from_utf8_lossy(&pattern);
                 Pattern::new(&pattern).map_err(|_| Error::InvalidPattern(pattern.to_string()))
             })
             .transpose()?;
@@ -1113,7 +1142,7 @@ mod test {
     #[test]
     fn incr_wrong_type() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), Value::Blob(bytes!("some string")), None);
+        db.set(bytes!(b"num"), Value::Blob(bytes!("some string")), None);
 
         let r = db.incr(&bytes!("num"), 1);
 
@@ -1125,7 +1154,7 @@ mod test {
     #[test]
     fn incr_blob_float() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), Value::Blob(bytes!("1.1")), None);
+        db.set(bytes!(b"num"), Value::Blob(bytes!("1.1")), None);
 
         assert_eq!(Ok(2.2.into()), db.incr::<Float>(&bytes!("num"), 1.1.into()));
         assert_eq!(Value::Blob(bytes!("2.2")), db.get(&bytes!("num")));
@@ -1134,7 +1163,7 @@ mod test {
     #[test]
     fn incr_blob_int_float() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
+        db.set(bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
         assert_eq!(Ok(2.1.into()), db.incr::<Float>(&bytes!("num"), 1.1.into()));
         assert_eq!(Value::Blob(bytes!("2.1")), db.get(&bytes!("num")));
@@ -1143,7 +1172,7 @@ mod test {
     #[test]
     fn incr_blob_int() {
         let db = Db::new(100);
-        db.set(&bytes!(b"num"), Value::Blob(bytes!("1")), None);
+        db.set(bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
         assert_eq!(Ok(2), db.incr(&bytes!("num"), 1));
         assert_eq!(Value::Blob(bytes!("2")), db.get(&bytes!("num")));
@@ -1166,13 +1195,9 @@ mod test {
     #[test]
     fn del() {
         let db = Db::new(100);
-        db.set(&bytes!(b"expired"), Value::Ok, Some(Duration::from_secs(0)));
-        db.set(&bytes!(b"valid"), Value::Ok, None);
-        db.set(
-            &bytes!(b"expiring"),
-            Value::Ok,
-            Some(Duration::from_secs(5)),
-        );
+        db.set(bytes!(b"expired"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(bytes!(b"valid"), Value::Ok, None);
+        db.set(bytes!(b"expiring"), Value::Ok, Some(Duration::from_secs(5)));
 
         assert_eq!(
             Value::Integer(2),
@@ -1188,13 +1213,9 @@ mod test {
     #[test]
     fn ttl() {
         let db = Db::new(100);
-        db.set(&bytes!(b"expired"), Value::Ok, Some(Duration::from_secs(0)));
-        db.set(&bytes!(b"valid"), Value::Ok, None);
-        db.set(
-            &bytes!(b"expiring"),
-            Value::Ok,
-            Some(Duration::from_secs(5)),
-        );
+        db.set(bytes!(b"expired"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(bytes!(b"valid"), Value::Ok, None);
+        db.set(bytes!(b"expiring"), Value::Ok, Some(Duration::from_secs(5)));
 
         assert_eq!(None, db.ttl(&bytes!(b"expired")));
         assert_eq!(None, db.ttl(&bytes!(b"not_existing_key")));
@@ -1208,7 +1229,7 @@ mod test {
     #[test]
     fn persist_bug() {
         let db = Db::new(100);
-        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(1)));
+        db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(1)));
         assert_eq!(Value::Ok, db.get(&bytes!(b"one")));
         assert!(db.is_key_in_expiration_list(&bytes!(b"one")));
         db.persist(&bytes!(b"one"));
@@ -1218,7 +1239,7 @@ mod test {
     #[test]
     fn purge_keys() {
         let db = Db::new(100);
-        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
         assert_eq!(Value::Null, db.get(&bytes!(b"one")));
@@ -1233,12 +1254,12 @@ mod test {
     #[test]
     fn replace_purge_keys() {
         let db = Db::new(100);
-        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
         assert_eq!(Value::Null, db.get(&bytes!(b"one")));
 
-        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(5)));
+        db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(5)));
         assert_eq!(Value::Ok, db.get(&bytes!(b"one")));
 
         // Purge should return 0 as the expired key has been removed already
@@ -1248,11 +1269,11 @@ mod test {
     #[test]
     fn scan_skip_expired() {
         let db = Db::new(100);
-        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
-        db.set(&bytes!(b"two"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(bytes!(b"two"), Value::Ok, Some(Duration::from_secs(0)));
         for i in 0u64..20u64 {
             let key: Bytes = i.to_string().into();
-            db.set(&key, Value::Ok, None);
+            db.set(key, Value::Ok, None);
         }
         let result = db
             .scan(Cursor::from_str("0").unwrap(), None, None, None)
@@ -1276,11 +1297,11 @@ mod test {
     #[test]
     fn scan_limit() {
         let db = Db::new(10);
-        db.set(&bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
-        db.set(&bytes!(b"two"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
+        db.set(bytes!(b"two"), Value::Ok, Some(Duration::from_secs(0)));
         for i in 0u64..2000u64 {
             let key: Bytes = i.to_string().into();
-            db.set(&key, Value::Ok, None);
+            db.set(key, Value::Ok, None);
         }
         let result = db
             .scan(Cursor::from_str("0").unwrap(), None, Some(2), None)
@@ -1292,16 +1313,16 @@ mod test {
     #[test]
     fn scan_filter() {
         let db = Db::new(100);
-        db.set(&bytes!(b"fone"), Value::Ok, None);
-        db.set(&bytes!(b"ftwo"), Value::Ok, None);
+        db.set(bytes!(b"fone"), Value::Ok, None);
+        db.set(bytes!(b"ftwo"), Value::Ok, None);
         for i in 0u64..20u64 {
             let key: Bytes = i.to_string().into();
-            db.set(&key, Value::Ok, None);
+            db.set(key, Value::Ok, None);
         }
         let result = db
             .scan(
                 Cursor::from_str("0").unwrap(),
-                Some(&bytes!(b"f*")),
+                Some(bytes!(b"f*")),
                 None,
                 None,
             )

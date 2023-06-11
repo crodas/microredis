@@ -1,16 +1,21 @@
 //! # Pubsub command handlers
+use std::collections::VecDeque;
+
 use crate::{check_arg, connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
 use glob::Pattern;
 
 /// Posts a message to the given channel.
-pub async fn publish(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.pubsub().publish(&args[1], &args[2]).await.into())
+pub async fn publish(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    Ok(conn.pubsub().publish(&args[0], &args[1]).await.into())
 }
 
 /// All pubsub commands
-pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    match String::from_utf8_lossy(&args[1]).to_lowercase().as_str() {
+pub async fn pubsub(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    match String::from_utf8_lossy(&(args.pop_front().ok_or(Error::Syntax)?))
+        .to_lowercase()
+        .as_str()
+    {
         "channels" => Ok(Value::Array(
             conn.pubsub()
                 .channels()
@@ -22,43 +27,38 @@ pub async fn pubsub(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         "numpat" => Ok(conn.pubsub().get_number_of_psubscribers().into()),
         "numsub" => Ok(conn
             .pubsub()
-            .get_number_of_subscribers(&args[2..])
+            .get_number_of_subscribers(&args)
             .iter()
-            .map(|(channel, subs)| vec![Value::new(&channel), (*subs).into()])
+            .map(|(channel, subs)| vec![Value::new(channel), (*subs).into()])
             .flatten()
             .collect::<Vec<Value>>()
             .into()),
-        cmd => Err(Error::SubCommandNotFound(
-            cmd.into(),
-            String::from_utf8_lossy(&args[0]).into(),
-        )),
+        cmd => Err(Error::SubCommandNotFound(cmd.into(), "pubsub".into())),
     }
 }
 
 /// Subscribes the client to the specified channels.
-pub async fn subscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn subscribe(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let pubsub = conn.pubsub();
+    pubsub.subscribe(args, conn);
+    conn.start_pubsub()
+}
 
-    let channels = &args[1..];
-
-    if check_arg!(args, 0, "PSUBSCRIBE") {
-        pubsub.psubscribe(channels, conn)?;
-    } else {
-        pubsub.subscribe(channels, conn);
-    }
-
+/// Subscribes with a pattern the client to the specified channels.
+pub async fn psubscribe(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let pubsub = conn.pubsub();
+    pubsub.psubscribe(args, conn)?;
     conn.start_pubsub()
 }
 
 /// Unsubscribes the client from the given patterns, or from all of them if none is given.
-pub async fn punsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let channels = if args.len() == 1 {
+pub async fn punsubscribe(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let channels = if args.len() == 0 {
         conn.pubsub_client().psubscriptions()
     } else {
-        (&args[1..])
-            .iter()
+        args.into_iter()
             .map(|channel| {
-                let channel = String::from_utf8_lossy(channel);
+                let channel = String::from_utf8_lossy(&channel);
                 Pattern::new(&channel).map_err(|_| Error::InvalidPattern(channel.to_string()))
             })
             .collect::<Result<Vec<Pattern>, Error>>()?
@@ -70,11 +70,11 @@ pub async fn punsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Er
 }
 
 /// Unsubscribes the client from the given channels, or from all of them if none is given.
-pub async fn unsubscribe(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let channels = if args.len() == 1 {
+pub async fn unsubscribe(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let channels = if args.len() == 0 {
         conn.pubsub_client().subscriptions()
     } else {
-        (&args[1..]).to_vec()
+        args.into_iter().collect()
     };
 
     let _ = conn.pubsub_client().unsubscribe(&channels, conn);

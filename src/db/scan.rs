@@ -29,7 +29,7 @@ pub trait Scan {
     fn scan(
         &self,
         cursor: Cursor,
-        pattern: Option<&Bytes>,
+        pattern: Option<Bytes>,
         count: Option<usize>,
         typ: Option<Typ>,
     ) -> std::result::Result<Result, Error>;

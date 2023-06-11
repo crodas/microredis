@@ -1,4 +1,6 @@
 //! # Transaction command handlers
+use std::collections::VecDeque;
+
 use crate::{
     connection::{Connection, ConnectionStatus},
     error::Error,
@@ -10,13 +12,13 @@ use bytes::Bytes;
 /// normal.
 ///
 /// If WATCH was used, DISCARD unwatches all keys watched by the connection
-pub async fn discard(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn discard(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.stop_transaction()
 }
 
 /// Marks the start of a transaction block. Subsequent commands will be queued for atomic execution
 /// using EXEC.
-pub async fn multi(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn multi(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.start_transaction()
 }
 
@@ -25,7 +27,7 @@ pub async fn multi(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 ///
 /// When using WATCH, EXEC will execute commands only if the watched keys were not modified,
 /// allowing for a check-and-set mechanism.
-pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn exec(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     match conn.status() {
         ConnectionStatus::Multi => Ok(()),
         ConnectionStatus::FailedTx => {
@@ -49,7 +51,7 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 
     if let Some(commands) = conn.get_queue_commands() {
         let dispatcher = conn.all_connections().get_dispatcher();
-        for args in commands.iter() {
+        for args in commands.into_iter() {
             let result = dispatcher
                 .execute(conn, args)
                 .await
@@ -65,15 +67,17 @@ pub async fn exec(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
 }
 
 /// Marks the given keys to be watched for conditional execution of a transaction.
-pub async fn watch(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn watch(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     if conn.status() == ConnectionStatus::Multi {
         return Err(Error::WatchInsideTx);
     }
     conn.watch_key(
-        &(&args[1..])
-            .iter()
-            .map(|key| (key, conn.db().get_version(key)))
-            .collect::<Vec<(&Bytes, u128)>>(),
+        args.into_iter()
+            .map(|key| {
+                let v = conn.db().get_version(&key);
+                (key, v)
+            })
+            .collect::<Vec<(Bytes, u128)>>(),
     );
     Ok(Value::Ok)
 }
@@ -81,13 +85,15 @@ pub async fn watch(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// Flushes all the previously watched keys for a transaction.
 ///
 /// If you call EXEC or DISCARD, there's no need to manually call UNWATCH.
-pub async fn unwatch(conn: &Connection, _: &[Bytes]) -> Result<Value, Error> {
+pub async fn unwatch(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.discard_watched_keys();
     Ok(Value::Ok)
 }
 
 #[cfg(test)]
 mod test {
+    use std::collections::VecDeque;
+
     use crate::dispatcher::Dispatcher;
     use crate::{
         cmd::test::{create_connection, run_command},
@@ -287,12 +293,10 @@ mod test {
     }
 
     fn get_keys(args: &[&str]) -> Vec<Bytes> {
-        let args: Vec<Bytes> = args.iter().map(|s| Bytes::from(s.to_string())).collect();
+        let args: VecDeque<Bytes> = args.iter().map(|s| Bytes::from(s.to_string())).collect();
         let d = Dispatcher::new();
-        if let Ok(cmd) = d.get_handler(&args) {
-            cmd.get_keys(&args).iter().map(|k| (*k).clone()).collect()
-        } else {
-            vec![]
-        }
+        d.get_handler(&args)
+            .map(|cmd| cmd.get_keys(&args, true))
+            .unwrap_or_default()
     }
 }

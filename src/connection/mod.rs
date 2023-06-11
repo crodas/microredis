@@ -3,7 +3,10 @@ use self::pubsub_server::Pubsub;
 use crate::{db::Db, error::Error, value::Value};
 use bytes::Bytes;
 use parking_lot::RwLock;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashSet, VecDeque},
+    sync::Arc,
+};
 use tokio::sync::broadcast::{self, Receiver, Sender};
 
 pub mod connections;
@@ -51,7 +54,7 @@ pub struct ConnectionInfo {
     watch_keys: Vec<(Bytes, u128)>,
     tx_keys: HashSet<Bytes>,
     status: ConnectionStatus,
-    commands: Option<Vec<Vec<Bytes>>>,
+    commands: Option<Vec<VecDeque<Bytes>>>,
     is_blocked: bool,
     blocked_notification: Option<Sender<()>>,
     block_id: usize,
@@ -269,11 +272,11 @@ impl Connection {
 
     /// Watches keys. In a transaction watched keys are a mechanism to discard a transaction if
     /// some value changed since the moment the command was queued until the execution time.
-    pub fn watch_key(&self, keys: &[(&Bytes, u128)]) {
+    pub fn watch_key(&self, keys: Vec<(Bytes, u128)>) {
         let watch_keys = &mut self.info.write().watch_keys;
-        keys.iter()
-            .map(|(bytes, version)| {
-                watch_keys.push(((*bytes).clone(), *version));
+        keys.into_iter()
+            .map(|value| {
+                watch_keys.push(value);
             })
             .for_each(drop);
     }
@@ -312,27 +315,30 @@ impl Connection {
     }
 
     /// Queues a command for later execution
-    pub fn queue_command(&self, args: &[Bytes]) {
+    pub fn queue_command(&self, args: VecDeque<Bytes>) {
         let mut info = self.info.write();
         let commands = info.commands.get_or_insert(vec![]);
-        commands.push(args.iter().map(|m| (*m).clone()).collect());
+        commands.push(args);
     }
 
     /// Returns a list of queued commands.
-    pub fn get_queue_commands(&self) -> Option<Vec<Vec<Bytes>>> {
+    pub fn get_queue_commands(&self) -> Option<Vec<VecDeque<Bytes>>> {
         let mut info = self.info.write();
         info.watch_keys = vec![];
         info.status = ConnectionStatus::ExecutingTx;
         info.commands.take()
     }
 
-    /// Returns a lsit of transaction keys
-    pub fn tx_keys(&self, keys: Vec<&Bytes>) {
+    /// Returns a list of transaction keys
+    pub fn tx_keys<T>(&self, keys: T)
+    where
+        T: IntoIterator<Item = Bytes>,
+    {
         #[allow(clippy::mutable_key_type)]
         let tx_keys = &mut self.info.write().tx_keys;
-        keys.iter()
+        keys.into_iter()
             .map(|k| {
-                tx_keys.insert((*k).clone());
+                tx_keys.insert(k);
             })
             .for_each(drop);
     }

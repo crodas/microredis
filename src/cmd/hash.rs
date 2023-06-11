@@ -4,12 +4,12 @@ use crate::{
     connection::Connection,
     error::Error,
     value::Value,
-    value::{bytes_to_number, float::Float},
+    value::{self, bytes_to_number, float::Float},
 };
 use bytes::Bytes;
 use rand::Rng;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, VecDeque},
     convert::TryFrom,
     ops::AddAssign,
     str::FromStr,
@@ -18,17 +18,18 @@ use std::{
 /// Removes the specified fields from the hash stored at key. Specified fields that do not exist
 /// within this hash are ignored. If key does not exist, it is treated as an empty hash and this
 /// command returns 0.
-pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hdel(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let mut is_empty = false;
+    let key = args.pop_front().ok_or(Error::Syntax)?;
     let result = conn.db().get_map_or(
-        &args[1],
+        &key,
         |v| match v {
             Value::Hash(h) => {
                 let mut h = h.write();
                 let mut total: i64 = 0;
 
-                for key in (&args[2..]).iter() {
-                    if h.remove(key).is_some() {
+                for key in args.into_iter() {
+                    if h.remove(&key).is_some() {
                         total += 1;
                     }
                 }
@@ -43,20 +44,20 @@ pub async fn hdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
     )?;
 
     if is_empty {
-        let _ = conn.db().del(&[args[1].clone()]);
+        let _ = conn.db().del(&[key]);
     } else {
-        conn.db().bump_version(&args[1]);
+        conn.db().bump_version(&key);
     }
 
     Ok(result)
 }
 
 /// Returns if field is an existing field in the hash stored at key.
-pub async fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hexists(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
-            Value::Hash(h) => Ok(if h.read().get(&args[2]).is_some() {
+            Value::Hash(h) => Ok(if h.read().get(&args[1]).is_some() {
                 1.into()
             } else {
                 0.into()
@@ -68,13 +69,13 @@ pub async fn hexists(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 }
 
 /// Returns the value associated with field in the hash stored at key.
-pub async fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hget(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Hash(h) => Ok(h
                 .read()
-                .get(&args[2])
+                .get(&args[1])
                 .map(|v| Value::new(v))
                 .unwrap_or_default()),
             _ => Err(Error::WrongType),
@@ -85,16 +86,16 @@ pub async fn hget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 /// Returns all fields and values of the hash stored at key. In the returned value, every field
 /// name is followed by its value, so the length of the reply is twice the size of the hash.
-pub async fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hgetall(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Hash(h) => {
                 let mut ret = vec![];
 
                 for (key, value) in h.read().iter() {
-                    ret.push(Value::new(&key));
-                    ret.push(Value::new(&value));
+                    ret.push(Value::new(key));
+                    ret.push(Value::new(value));
                 }
 
                 Ok(ret.into())
@@ -109,12 +110,12 @@ pub async fn hgetall(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 /// specified increment. If the increment value is negative, the result is to have the hash field
 /// value decremented instead of incremented. If the field does not exist, it is set to 0 before
 /// performing the operation.
-pub async fn hincrby_int(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hincrby_int(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let result = conn
         .db()
-        .hincrby::<i64>(&args[1], &args[2], &args[3], "an integer")?;
+        .hincrby::<i64>(&args[0], &args[1], &args[2], "an integer")?;
 
-    conn.db().bump_version(&args[1]);
+    conn.db().bump_version(&args[0]);
 
     Ok(result)
 }
@@ -123,26 +124,26 @@ pub async fn hincrby_int(conn: &Connection, args: &[Bytes]) -> Result<Value, Err
 /// specified increment. If the increment value is negative, the result is to have the hash field
 /// value decremented instead of incremented. If the field does not exist, it is set to 0 before
 /// performing the operation.
-pub async fn hincrby_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hincrby_float(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let result = conn
         .db()
-        .hincrby::<Float>(&args[1], &args[2], &args[3], "a float")?;
+        .hincrby::<Float>(&args[0], &args[1], &args[2], "a float")?;
 
-    conn.db().bump_version(&args[1]);
+    conn.db().bump_version(&args[0]);
 
     Ok(result)
 }
 
 /// Returns all field names in the hash stored at key.
-pub async fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hkeys(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Hash(h) => {
                 let mut ret = vec![];
 
                 for key in h.read().keys() {
-                    ret.push(Value::new(&key));
+                    ret.push(Value::new(key));
                 }
 
                 Ok(ret.into())
@@ -154,9 +155,9 @@ pub async fn hkeys(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 /// Returns the number of fields contained in the hash stored at key.
-pub async fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hlen(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Hash(h) => Ok(h.read().len().into()),
             _ => Err(Error::WrongType),
@@ -166,14 +167,15 @@ pub async fn hlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 /// Returns the values associated with the specified fields in the hash stored at key.
-pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hmget(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
     conn.db().get_map_or(
-        &args[1],
+        &key,
         |v| match v {
             Value::Hash(h) => {
                 let h = h.read();
 
-                Ok((&args[2..])
+                Ok(args
                     .iter()
                     .map(|key| h.get(key).map(|v| Value::new(v)).unwrap_or_default())
                     .collect::<Vec<Value>>()
@@ -182,7 +184,7 @@ pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             _ => Err(Error::WrongType),
         },
         || {
-            Ok((&args[2..])
+            Ok(args
                 .iter()
                 .map(|_| Value::Null)
                 .collect::<Vec<Value>>()
@@ -192,15 +194,15 @@ pub async fn hmget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 }
 
 /// Returns random keys (or values) from a hash
-pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hrandfield(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let (count, with_values) = match args.len() {
-        2 => (None, false),
-        3 => (Some(bytes_to_number::<i64>(&args[2])?), false),
-        4 => {
-            if !(check_arg!(args, 3, "WITHVALUES")) {
+        1 => (None, false),
+        2 => (Some(bytes_to_number::<i64>(&args[1])?), false),
+        3 => {
+            if !(check_arg!(args, 2, "WITHVALUES")) {
                 return Err(Error::Syntax);
             }
-            (Some(bytes_to_number::<i64>(&args[2])?), true)
+            (Some(bytes_to_number::<i64>(&args[1])?), true)
         }
         _ => return Err(Error::InvalidArgsCount("hrandfield".to_owned())),
     };
@@ -212,7 +214,7 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
     };
 
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Hash(h) => {
                 let mut ret = vec![];
@@ -232,17 +234,17 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
                 i = 0;
                 for val in rand_sorted.values() {
                     if single {
-                        return Ok(Value::new(&val.0));
+                        return Ok(Value::new(val.0));
                     }
 
                     if i == count {
                         break;
                     }
 
-                    ret.push(Value::new(&val.0));
+                    ret.push(Value::new(val.0));
 
                     if with_values {
-                        ret.push(Value::new(&val.1));
+                        ret.push(Value::new(val.1));
                     }
 
                     i += 1;
@@ -258,47 +260,99 @@ pub async fn hrandfield(conn: &Connection, args: &[Bytes]) -> Result<Value, Erro
 
 /// Sets field in the hash stored at key to value. If key does not exist, a new key holding a hash
 /// is created. If field already exists in the hash, it is overwritten.
-pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let is_hmset = check_arg!(args, 0, "HMSET");
+pub async fn hmset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
     if args.len() % 2 == 1 {
         return Err(Error::InvalidArgsCount("hset".to_owned()));
     }
     let result = conn.db().get_map_or(
-        &args[1],
+        &key,
         |v| match v {
             Value::Hash(h) => {
                 let mut h = h.write();
-                let mut e: i64 = 0;
-                for i in (2..args.len()).step_by(2) {
-                    if h.insert(args[i].clone(), args[i + 1].clone()).is_none() {
-                        e += 1;
+                let mut args = args.clone();
+                loop {
+                    if args.is_empty() {
+                        break;
                     }
+                    let key = args.pop_front().ok_or(Error::Syntax)?;
+                    let value = args.pop_front().ok_or(Error::Syntax)?;
+                    h.insert(key, value);
                 }
-                if is_hmset {
-                    Ok(Value::Ok)
-                } else {
-                    Ok(e.into())
-                }
+                Ok(Value::Ok)
             }
             _ => Err(Error::WrongType),
         },
         || {
             #[allow(clippy::mutable_key_type)]
             let mut h = HashMap::new();
-            for i in (2..args.len()).step_by(2) {
-                h.insert(args[i].clone(), args[i + 1].clone());
+            let mut args = args.clone();
+            loop {
+                if args.is_empty() {
+                    break;
+                }
+                let key = args.pop_front().ok_or(Error::Syntax)?;
+                let value = args.pop_front().ok_or(Error::Syntax)?;
+                h.insert(key, value);
             }
             let len = h.len();
-            conn.db().set(&args[1], h.into(), None);
-            if is_hmset {
-                Ok(Value::Ok)
-            } else {
-                Ok(len.into())
-            }
+            conn.db().set(key.clone(), h.into(), None);
+            Ok(Value::Ok)
         },
     )?;
 
-    conn.db().bump_version(&args[1]);
+    conn.db().bump_version(&key);
+
+    Ok(result)
+}
+
+/// Sets field in the hash stored at key to value. If key does not exist, a new key holding a hash
+/// is created. If field already exists in the hash, it is overwritten.
+pub async fn hset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    if args.len() % 2 == 1 {
+        return Err(Error::InvalidArgsCount("hset".to_owned()));
+    }
+    let result = conn.db().get_map_or(
+        &key,
+        |v| match v {
+            Value::Hash(h) => {
+                let mut h = h.write();
+                let mut e: i64 = 0;
+                let mut args = args.clone();
+                loop {
+                    if args.is_empty() {
+                        break;
+                    }
+                    let key = args.pop_front().ok_or(Error::Syntax)?;
+                    let value = args.pop_front().ok_or(Error::Syntax)?;
+                    if h.insert(key, value).is_none() {
+                        e += 1;
+                    }
+                }
+                Ok(e.into())
+            }
+            _ => Err(Error::WrongType),
+        },
+        || {
+            #[allow(clippy::mutable_key_type)]
+            let mut h = HashMap::new();
+            let mut args = args.clone();
+            loop {
+                if args.is_empty() {
+                    break;
+                }
+                let key = args.pop_front().ok_or(Error::Syntax)?;
+                let value = args.pop_front().ok_or(Error::Syntax)?;
+                h.insert(key, value);
+            }
+            let len = h.len();
+            conn.db().set(key.clone(), h.into(), None);
+            Ok(len.into())
+        },
+    )?;
+
+    conn.db().bump_version(&key);
 
     Ok(result)
 }
@@ -306,17 +360,20 @@ pub async fn hset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// Sets field in the hash stored at key to value, only if field does not yet exist. If key does
 /// not exist, a new key holding a hash is created. If field already exists, this operation has no
 /// effect.
-pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hsetnx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let sub_key = args.pop_front().ok_or(Error::Syntax)?;
+    let value = args.pop_front().ok_or(Error::Syntax)?;
     let result = conn.db().get_map_or(
-        &args[1],
+        &key,
         |v| match v {
             Value::Hash(h) => {
                 let mut h = h.write();
 
-                if h.get(&args[2]).is_some() {
+                if h.get(&sub_key).is_some() {
                     Ok(0.into())
                 } else {
-                    h.insert(args[2].clone(), args[3].clone());
+                    h.insert(sub_key.clone(), value.clone());
                     Ok(1.into())
                 }
             }
@@ -325,17 +382,15 @@ pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         || {
             #[allow(clippy::mutable_key_type)]
             let mut h = HashMap::new();
-            for i in (2..args.len()).step_by(2) {
-                h.insert(args[i].clone(), args[i + 1].clone());
-            }
+            h.insert(sub_key.clone(), value.clone());
             let len = h.len();
-            conn.db().set(&args[1], h.into(), None);
+            conn.db().set(key.clone(), h.into(), None);
             Ok(len.into())
         },
     )?;
 
     if result == Value::Integer(1) {
-        conn.db().bump_version(&args[1]);
+        conn.db().bump_version(&key);
     }
 
     Ok(result)
@@ -343,13 +398,13 @@ pub async fn hsetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 /// Returns the string length of the value associated with field in the hash stored at key. If the
 /// key or the field do not exist, 0 is returned.
-pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hstrlen(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Hash(h) => Ok(h
                 .read()
-                .get(&args[2])
+                .get(&args[1])
                 .map(|v| v.len())
                 .unwrap_or_default()
                 .into()),
@@ -360,15 +415,15 @@ pub async fn hstrlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> 
 }
 
 /// Returns all values in the hash stored at key.
-pub async fn hvals(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn hvals(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map_or(
-        &args[1],
+        &args[0],
         |v| match v {
             Value::Hash(h) => {
                 let mut ret = vec![];
 
                 for value in h.read().values() {
-                    ret.push(Value::new(&value));
+                    ret.push(Value::new(value));
                 }
 
                 Ok(ret.into())

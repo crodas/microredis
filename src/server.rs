@@ -14,7 +14,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use futures::{channel::mpsc::Receiver, future, SinkExt};
 use log::{info, trace, warn};
 use redis_zero_protocol_parser::{parse_server, Error as RedisError};
-use std::{io, net::SocketAddr, sync::Arc};
+use std::{collections::VecDeque, io, net::SocketAddr, sync::Arc};
 #[cfg(unix)]
 use tokio::net::UnixListener;
 use tokio::{
@@ -39,7 +39,7 @@ impl Encoder<Value> for RedisParser {
 }
 
 impl Decoder for RedisParser {
-    type Item = Vec<Bytes>;
+    type Item = VecDeque<Bytes>;
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> io::Result<Option<Self::Item>> {
@@ -176,7 +176,7 @@ async fn serve_unixsocket(
 async fn execute_command(
     conn: &Connection,
     dispatcher: &Dispatcher,
-    args: &[Bytes],
+    args: VecDeque<Bytes>,
 ) -> Option<Value> {
     match dispatcher.execute(&conn, args).await {
         Ok(result) => Some(result),
@@ -199,7 +199,7 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
     let (mut pubsub, conn) = all_connections.new_connection(default_db, addr);
     let dispatcher = all_connections.get_dispatcher();
     // Commands are being buffered when the client is blocked.
-    let mut buffered_commands: Vec<Vec<Bytes>> = vec![];
+    let mut buffered_commands: Vec<VecDeque<Bytes>> = vec![];
     trace!("New connection {}", conn.id());
 
     loop {
@@ -212,7 +212,7 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
                 'outer: for args in buffered_commands.iter() {
                     // Client sent commands while the connection was blocked,
                     // now it is time to process them one by one
-                    match execute_command(&conn, &dispatcher, &args).await {
+                    match execute_command(&conn, &dispatcher, args.clone()).await {
                         Some(result) => if result != Value::Ignore && transport.send(result).await.is_err() {
                             break 'outer;
                         },
@@ -227,10 +227,10 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
             result = transport.next() => match result {
                 Some(Ok(args)) => {
                         if conn.is_blocked() {
-                            buffered_commands.push(args.clone());
+                            buffered_commands.push(args);
                             continue;
                         }
-                        match execute_command(&conn, &dispatcher, &args).await {
+                        match execute_command(&conn, &dispatcher, args).await {
                             Some(result) => if result != Value::Ignore && transport.send(result).await.is_err() {
                                break;
                             },
