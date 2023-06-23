@@ -606,7 +606,7 @@ dispatcher! {
             true,
         },
         PEXPIRETIME {
-            cmd::key::expire_time,
+            cmd::key::p_expire_time,
             [Flag::Write Flag::Fast],
             2,
             1,

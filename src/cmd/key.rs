@@ -183,19 +183,30 @@ pub async fn pexpire_at(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<
     )
 }
 
+/// PEXPIRETIME has the same semantic as EXPIRETIME, but returns the absolute
+/// Unix expiration timestamp in milliseconds instead of seconds.
+pub async fn p_expire_time(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let ttl = match conn.db().ttl(&args[0]) {
+        Some(Some(ttl)) => {
+            // Is there a better way? There should be!
+            let secs: i64 = (ttl - Instant::now()).as_millis() as i64;
+            secs + 1 + (now().as_millis() as i64)
+        }
+        Some(None) => -1,
+        None => -2,
+    };
+
+    Ok(ttl.into())
+}
+
 /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key
 /// will expire.
 pub async fn expire_time(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    let ttl = match conn.db().ttl(&args[1]) {
+    let ttl = match conn.db().ttl(&args[0]) {
         Some(Some(ttl)) => {
             // Is there a better way? There should be!
-            if check_arg!(args, 0, "EXPIRETIME") {
-                let secs: i64 = (ttl - Instant::now()).as_secs() as i64;
-                secs + 1 + (now().as_secs() as i64)
-            } else {
-                let secs: i64 = (ttl - Instant::now()).as_millis() as i64;
-                secs + 1 + (now().as_millis() as i64)
-            }
+            let secs: i64 = (ttl - Instant::now()).as_secs() as i64;
+            secs + 1 + (now().as_secs() as i64)
         }
         Some(None) => -1,
         None => -2,
@@ -206,7 +217,7 @@ pub async fn expire_time(conn: &Connection, args: VecDeque<Bytes>) -> Result<Val
 
 /// Returns all keys that matches a given pattern
 pub async fn keys(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    Ok(conn.db().get_all_keys(&args[1])?.into())
+    Ok(conn.db().get_all_keys(&args[0])?.into())
 }
 
 /// Move key from the currently selected database (see SELECT) to the specified
