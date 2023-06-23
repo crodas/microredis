@@ -102,7 +102,7 @@ pub async fn ping(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
     if conn.status() == ConnectionStatus::Pubsub {
         return Ok(Value::Array(vec![
             "pong".into(),
-            Value::Blob(args.pop_front().ok_or(Error::Syntax)?),
+            args.pop_front().map(|p| Value::Blob(p)).unwrap_or_default(),
         ]));
     }
     match args.len() {

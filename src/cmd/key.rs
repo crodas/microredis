@@ -150,7 +150,7 @@ pub async fn data_type(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value
 pub async fn expire_at(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
     let expiration = args.pop_front().ok_or(Error::Syntax)?;
-    let expires_at = Expiration::new(&expiration, false, true, &args[0])?;
+    let expires_at = Expiration::new(&expiration, false, true, b"EXPIREAT")?;
 
     if expires_at.is_negative {
         // Delete key right away
@@ -169,7 +169,7 @@ pub async fn expire_at(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<V
 pub async fn pexpire_at(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
     let expiration = args.pop_front().ok_or(Error::Syntax)?;
-    let expires_at = Expiration::new(&expiration, true, true, &args[0])?;
+    let expires_at = Expiration::new(&expiration, true, true, b"PEXPIREAT")?;
 
     if expires_at.is_negative {
         // Delete key right away
@@ -241,9 +241,9 @@ pub async fn move_key(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Va
 
 /// Return information about the object/value stored in the database
 pub async fn object(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    let subcommand = String::from_utf8_lossy(&args[1]).to_lowercase();
+    let subcommand = String::from_utf8_lossy(&args[0]).to_lowercase();
 
-    let expected_args = if subcommand == "help" { 2 } else { 3 };
+    let expected_args = if subcommand == "help" { 1 } else { 2 };
 
     if expected_args != args.len() {
         return Err(Error::SubCommandNotFound(
@@ -254,7 +254,7 @@ pub async fn object(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, E
 
     match subcommand.as_str() {
         "help" => super::help::object(),
-        "refcount" => Ok(if conn.db().exists(&[args[2].clone()]) == 1 {
+        "refcount" => Ok(if conn.db().exists(&[args[1].clone()]) == 1 {
             1.into()
         } else {
             Value::Null

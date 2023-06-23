@@ -47,11 +47,11 @@ pub async fn incr_by(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, 
 /// is decremented (by the obvious properties of addition). If the key does not exist, it is set to
 /// 0 before performing the operation.
 pub async fn incr_by_float(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    let by = bytes_to_number::<Float>(&args[2])?;
+    let by = bytes_to_number::<Float>(&args[1])?;
     if by.is_infinite() || by.is_nan() {
         return Err(Error::IncrByInfOrNan);
     }
-    conn.db().incr(&args[1], by).map(|f| {
+    conn.db().incr(&args[0], by).map(|f| {
         if f.fract() == 0.0 {
             (*f as i64).into()
         } else {
@@ -87,29 +87,29 @@ pub async fn get(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Erro
 /// GET, but is a write command with additional options.
 pub async fn getex(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let (expires_in, persist) = match args.len() {
-        2 => (None, false),
-        3 => {
-            if check_arg!(args, 2, "PERSIST") {
+        1 => (None, false),
+        2 => {
+            if check_arg!(args, 1, "PERSIST") {
                 (None, true)
             } else {
                 return Err(Error::Syntax);
             }
         }
-        4 => match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
+        3 => match String::from_utf8_lossy(&args[1]).to_uppercase().as_str() {
             "EX" => (
-                Some(Expiration::new(&args[3], false, false, &args[0])?),
+                Some(Expiration::new(&args[2], false, false, b"GETEX")?),
                 false,
             ),
             "PX" => (
-                Some(Expiration::new(&args[3], true, false, &args[0])?),
+                Some(Expiration::new(&args[2], true, false, b"GETEX")?),
                 false,
             ),
             "EXAT" => (
-                Some(Expiration::new(&args[3], false, true, &args[0])?),
+                Some(Expiration::new(&args[2], false, true, b"GETEX")?),
                 false,
             ),
             "PXAT" => (
-                Some(Expiration::new(&args[3], true, true, &args[0])?),
+                Some(Expiration::new(&args[2], true, true, b"GETEX")?),
                 false,
             ),
             "PERSIST" => (None, Default::default()),
@@ -118,7 +118,7 @@ pub async fn getex(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Er
         _ => return Err(Error::Syntax),
     };
     Ok(conn.db().getex(
-        &args[1],
+        &args[0],
         expires_in.map(|t| t.try_into()).transpose()?,
         persist,
     ))

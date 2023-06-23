@@ -363,8 +363,10 @@ pub async fn smove(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
         || Ok(0.into()),
     )?;
 
-    conn.db().bump_version(&source);
-    conn.db().bump_version(&destination);
+    if result == Value::Integer(1) {
+        conn.db().bump_version(&source);
+        conn.db().bump_version(&destination);
+    }
 
     Ok(result)
 }
