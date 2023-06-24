@@ -93,10 +93,10 @@ async fn schedule_blocking_task<F, T>(
     F: Fn(Arc<Connection>, VecDeque<Bytes>, usize) -> T + Send + Sync + 'static,
     T: Future<Output = Result<Value, Error>> + Send + Sync + 'static,
 {
-    let (mut timeout_sx, mut timeout_rx) = broadcast::channel::<()>(1);
     conn.block();
 
-    if let Some(timeout) = timeout {
+    let mut timeout_rx = if let Some(timeout) = timeout {
+        let (mut timeout_sx, timeout_rx) = broadcast::channel::<()>(1);
         // setup timeout triggering event
         let conn_for_timeout = conn.clone();
         let keys_to_watch_for_timeout = keys_to_watch.clone();
@@ -112,7 +112,10 @@ async fn schedule_blocking_task<F, T>(
             // Notify timeout event to the worker thread
             timeout_sx.send(());
         });
-    }
+        Some(timeout_rx)
+    } else {
+        None
+    };
 
     tokio::spawn(async move {
         let db = conn.db();
@@ -147,7 +150,9 @@ async fn schedule_blocking_task<F, T>(
                 .map(|c| wait_for_event(c))
                 .collect::<FuturesUnordered<_>>();
 
-            futures.push(wait_for_event(&mut timeout_rx));
+            if let Some(ref mut timeout_rx) = &mut timeout_rx {
+                futures.push(wait_for_event(timeout_rx));
+            }
             if let Some(ref mut externally) = &mut externally_unblock_watcher {
                 futures.push(wait_for_event(externally));
             }
@@ -183,7 +188,7 @@ fn parse_timeout(arg: &Bytes) -> Result<Option<Instant>, Error> {
 /// the connection when there are no elements to pop from any of the given lists. An element is
 /// popped from the head of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
-pub async fn blpop(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+pub async fn blpop(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let blpop_task = |conn: Arc<Connection>, args: VecDeque<Bytes>, attempt| async move {
         for key in args.iter() {
             match remove_element(&conn, key, None, true) {
@@ -203,7 +208,7 @@ pub async fn blpop(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Er
         return blpop_task(conn.clone(), args, 1).await;
     }
 
-    let timeout = parse_timeout(&args[args.len() - 1])?;
+    let timeout = parse_timeout(&args.pop_back().ok_or(Error::Syntax)?)?;
     let conn = conn.clone();
     let keys_to_watch = args.iter().map(|c| c.clone()).collect::<Vec<_>>();
 
@@ -230,7 +235,7 @@ pub async fn blmove(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Valu
         return lmove(&conn, args).await;
     }
 
-    let timeout = parse_timeout(&args[4])?;
+    let timeout = parse_timeout(&args.pop_back().ok_or(Error::Syntax)?)?;
     let keys_to_watch = vec![args[0].clone(), args[1].clone()];
 
     schedule_blocking_task(
@@ -269,7 +274,7 @@ pub async fn brpoplpush(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<
 /// the connection when there are no elements to pop from any of the given lists. An element is
 /// popped from the tail of the first list that is non-empty, with the given keys being checked in
 /// the order that they are given.
-pub async fn brpop(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+pub async fn brpop(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let brpop_task = |conn: Arc<Connection>, args: VecDeque<Bytes>, attempt| async move {
         for key in args.iter() {
             match remove_element(&conn, key, None, false) {
@@ -289,7 +294,7 @@ pub async fn brpop(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Er
         return brpop_task(conn.clone(), args, 1).await;
     }
 
-    let timeout = parse_timeout(&args[args.len() - 1])?;
+    let timeout = parse_timeout(&args.pop_back().ok_or(Error::Syntax)?)?;
     let keys_to_watch = args.iter().cloned().collect();
 
     schedule_blocking_task(conn.clone(), keys_to_watch, brpop_task, args, timeout).await;
