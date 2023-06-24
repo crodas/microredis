@@ -33,6 +33,7 @@ mod test {
     };
     use bytes::Bytes;
     use std::{
+        collections::VecDeque,
         net::{IpAddr, Ipv4Addr, SocketAddr},
         sync::Arc,
     };
@@ -76,10 +77,10 @@ mod test {
     }
 
     pub async fn run_command(conn: &Connection, cmd: &[&str]) -> Result<Value, Error> {
-        let args: Vec<Bytes> = cmd.iter().map(|s| Bytes::from(s.to_string())).collect();
+        let args: VecDeque<Bytes> = cmd.iter().map(|s| Bytes::from(s.to_string())).collect();
 
         let dispatcher = Dispatcher::new();
-        dispatcher.execute(conn, &args).await
+        dispatcher.execute(conn, args).await
     }
 
     #[tokio::test]

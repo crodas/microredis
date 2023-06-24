@@ -11,7 +11,9 @@ use crate::{
 use bytes::Bytes;
 use std::{
     cmp::min,
+    collections::VecDeque,
     convert::TryInto,
+    f32::consts::E,
     ops::{Bound, Neg},
 };
 use tokio::time::Duration;
@@ -19,37 +21,37 @@ use tokio::time::Duration;
 /// If key already exists and is a string, this command appends the value at the
 /// end of the string. If key does not exist it is created and set as an empty
 /// string, so APPEND will be similar to SET in this special case.
-pub async fn append(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().append(&args[1], &args[2])
+pub async fn append(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    conn.db().append(&args[0], &args[1])
 }
 
 /// Increments the number stored at key by one. If the key does not exist, it is set to 0 before
 /// performing the operation. An error is returned if the key contains a value of the wrong type or
 /// contains a string that can not be represented as integer. This operation is limited to 64 bit
 /// signed integers.
-pub async fn incr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().incr(&args[1], 1_i64).map(|n| n.into())
+pub async fn incr(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    conn.db().incr(&args[0], 1_i64).map(|n| n.into())
 }
 
 /// Increments the number stored at key by increment. If the key does not exist, it is set to 0
 /// before performing the operation. An error is returned if the key contains a value of the wrong
 /// type or contains a string that can not be represented as integer. This operation is limited to
 /// 64 bit signed integers.
-pub async fn incr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let by: i64 = bytes_to_number(&args[2])?;
-    conn.db().incr(&args[1], by).map(|n| n.into())
+pub async fn incr_by(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let by: i64 = bytes_to_number(&args[1])?;
+    conn.db().incr(&args[0], by).map(|n| n.into())
 }
 
 /// Increment the string representing a floating point number stored at key by the specified
 /// increment. By using a negative increment value, the result is that the value stored at the key
 /// is decremented (by the obvious properties of addition). If the key does not exist, it is set to
 /// 0 before performing the operation.
-pub async fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let by = bytes_to_number::<Float>(&args[2])?;
+pub async fn incr_by_float(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let by = bytes_to_number::<Float>(&args[1])?;
     if by.is_infinite() || by.is_nan() {
         return Err(Error::IncrByInfOrNan);
     }
-    conn.db().incr(&args[1], by).map(|f| {
+    conn.db().incr(&args[0], by).map(|f| {
         if f.fract() == 0.0 {
             (*f as i64).into()
         } else {
@@ -62,52 +64,52 @@ pub async fn incr_by_float(conn: &Connection, args: &[Bytes]) -> Result<Value, E
 /// performing the operation. An error is returned if the key contains a value of the wrong type or
 /// contains a string that can not be represented as integer. This operation is limited to 64 bit
 /// signed integers.
-pub async fn decr(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().incr(&args[1], -1_i64).map(|n| n.into())
+pub async fn decr(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    conn.db().incr(&args[0], -1_i64).map(|n| n.into())
 }
 
 /// Decrements the number stored at key by decrement. If the key does not exist, it is set to 0
 /// before performing the operation. An error is returned if the key contains a value of the wrong
 /// type or contains a string that can not be represented as integer. This operation is limited to
 /// 64 bit signed integers.
-pub async fn decr_by(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let by: i64 = (&Value::new(&args[2])).try_into()?;
-    conn.db().incr(&args[1], by.neg()).map(|n| n.into())
+pub async fn decr_by(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let by: i64 = (&Value::new(&args[1])).try_into()?;
+    conn.db().incr(&args[0], by.neg()).map(|n| n.into())
 }
 
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
 /// returned if the value stored at key is not a string, because GET only handles string values.
-pub async fn get(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().get(&args[1]))
+pub async fn get(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    Ok(conn.db().get(&args[0]))
 }
 
 /// Get the value of key and optionally set its expiration. GETEX is similar to
 /// GET, but is a write command with additional options.
-pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn getex(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let (expires_in, persist) = match args.len() {
-        2 => (None, false),
-        3 => {
-            if check_arg!(args, 2, "PERSIST") {
+        1 => (None, false),
+        2 => {
+            if check_arg!(args, 1, "PERSIST") {
                 (None, true)
             } else {
                 return Err(Error::Syntax);
             }
         }
-        4 => match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
+        3 => match String::from_utf8_lossy(&args[1]).to_uppercase().as_str() {
             "EX" => (
-                Some(Expiration::new(&args[3], false, false, &args[0])?),
+                Some(Expiration::new(&args[2], false, false, b"GETEX")?),
                 false,
             ),
             "PX" => (
-                Some(Expiration::new(&args[3], true, false, &args[0])?),
+                Some(Expiration::new(&args[2], true, false, b"GETEX")?),
                 false,
             ),
             "EXAT" => (
-                Some(Expiration::new(&args[3], false, true, &args[0])?),
+                Some(Expiration::new(&args[2], false, true, b"GETEX")?),
                 false,
             ),
             "PXAT" => (
-                Some(Expiration::new(&args[3], true, true, &args[0])?),
+                Some(Expiration::new(&args[2], true, true, b"GETEX")?),
                 false,
             ),
             "PERSIST" => (None, Default::default()),
@@ -116,7 +118,7 @@ pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
         _ => return Err(Error::Syntax),
     };
     Ok(conn.db().getex(
-        &args[1],
+        &args[0],
         expires_in.map(|t| t.try_into()).transpose()?,
         persist,
     ))
@@ -124,131 +126,129 @@ pub async fn getex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
 /// returned if the value stored at key is not a string, because GET only handles string values.
-pub async fn getrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    match conn.db().get(&args[1]) {
-        Value::Blob(binary) => {
-            let start = bytes_to_number::<i64>(&args[2])?;
-            let end = bytes_to_number::<i64>(&args[3])?;
-            let len = binary.len();
+pub async fn getrange(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let bytes = match conn.db().get(&args[0]) {
+        Value::Blob(binary) => binary,
+        Value::BlobRw(binary) => binary.freeze(),
+        Value::Null => return Ok("".into()),
+        _ => return Err(Error::WrongType),
+    };
 
-            // resolve negative positions
-            let start: usize = if start < 0 {
-                (start + len as i64).try_into().unwrap_or(0)
-            } else {
-                start.try_into().expect("Positive number")
-            };
+    let start = bytes_to_number::<i64>(&args[1])?;
+    let end = bytes_to_number::<i64>(&args[2])?;
+    let len = bytes.len();
 
-            // resolve negative positions
-            let end: usize = if end < 0 {
-                if let Ok(val) = (end + len as i64).try_into() {
-                    val
-                } else {
-                    return Ok("".into());
-                }
-            } else {
-                end.try_into().expect("Positive number")
-            };
-            let end = min(end, len.checked_sub(1).unwrap_or_default());
+    // resolve negative positions
+    let start: usize = if start < 0 {
+        (start + len as i64).try_into().unwrap_or(0)
+    } else {
+        start.try_into().expect("Positive number")
+    };
 
-            if end < start {
-                return Ok("".into());
-            }
-
-            Ok(Value::Blob(
-                binary
-                    .freeze()
-                    .slice((Bound::Included(start), Bound::Included(end)))
-                    .as_ref()
-                    .into(),
-            ))
+    // resolve negative positions
+    let end: usize = if end < 0 {
+        if let Ok(val) = (end + len as i64).try_into() {
+            val
+        } else {
+            return Ok("".into());
         }
-        Value::Null => Ok("".into()),
-        _ => Err(Error::WrongType),
+    } else {
+        end.try_into().expect("Positive number")
+    };
+    let end = min(end, len.checked_sub(1).unwrap_or_default());
+
+    if end < start {
+        return Ok("".into());
     }
+
+    Ok(Value::Blob(
+        bytes.slice((Bound::Included(start), Bound::Included(end))),
+    ))
 }
 
 /// Get the value of key and delete the key. This command is similar to GET, except for the fact
 /// that it also deletes the key on success (if and only if the key's value type is a string).
-pub async fn getdel(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().getdel(&args[1]))
+pub async fn getdel(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    Ok(conn.db().getdel(&args[0]))
 }
 
 /// Atomically sets key to value and returns the old value stored at key. Returns an error when key
 /// exists but does not hold a string value. Any previous time to live associated with the key is
 /// discarded on successful SET operation.
-pub async fn getset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().getset(&args[1], Value::new(&args[2])))
+pub async fn getset(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    Ok(conn.db().getset(&args[0], Value::new(&args[1])))
 }
 
 /// Returns the values of all specified keys. For every key that does not hold a string value or
 /// does not exist, the special value nil is returned. Because of this, the operation never fails.
-pub async fn mget(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().get_multi(&args[1..]))
+pub async fn mget(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    Ok(conn.db().get_multi(args))
 }
 
 /// Set key to hold the string value. If key already holds a value, it is overwritten, regardless
 /// of its type. Any previous time to live associated with the key is discarded on successful SET
 /// operation.
-pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let len = args.len();
-    let mut i = 3;
+pub async fn set(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let mut expiration = None;
     let mut keep_ttl = false;
     let mut override_value = Override::Yes;
     let mut return_previous = false;
 
+    let command = b"SET";
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let value = args.pop_front().ok_or(Error::Syntax)?;
+
     loop {
-        if i >= len {
+        let arg = if let Some(arg) = args.pop_front() {
+            String::from_utf8_lossy(&arg).to_uppercase()
+        } else {
             break;
-        }
-        match String::from_utf8_lossy(&args[i]).to_uppercase().as_str() {
+        };
+
+        match arg.as_str() {
             "EX" => {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
                 expiration = Some(Expiration::new(
-                    try_get_arg!(args, i + 1),
+                    &args.pop_front().ok_or(Error::Syntax)?,
                     false,
                     false,
-                    &args[0],
+                    command,
                 )?);
-                i += 1;
             }
             "PX" => {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
                 expiration = Some(Expiration::new(
-                    try_get_arg!(args, i + 1),
+                    &args.pop_front().ok_or(Error::Syntax)?,
                     true,
                     false,
-                    &args[0],
+                    command,
                 )?);
-                i += 1;
             }
             "EXAT" => {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
                 expiration = Some(Expiration::new(
-                    try_get_arg!(args, i + 1),
+                    &args.pop_front().ok_or(Error::Syntax)?,
                     false,
                     true,
-                    &args[0],
+                    command,
                 )?);
-                i += 1;
             }
             "PXAT" => {
                 if expiration.is_some() {
                     return Err(Error::Syntax);
                 }
                 expiration = Some(Expiration::new(
-                    try_get_arg!(args, i + 1),
+                    &args.pop_front().ok_or(Error::Syntax)?,
                     true,
                     true,
-                    &args[0],
+                    command,
                 )?);
-                i += 1;
             }
             "KEEPTTL" => keep_ttl = true,
             "NX" => override_value = Override::No,
@@ -256,13 +256,11 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
             "GET" => return_previous = true,
             _ => return Err(Error::Syntax),
         }
-
-        i += 1;
     }
     Ok(
         match conn.db().set_advanced(
-            &args[1],
-            Value::new(&args[2]),
+            key,
+            Value::Blob(value),
             expiration.map(|t| t.try_into()).transpose()?,
             override_value,
             keep_ttl,
@@ -282,11 +280,9 @@ pub async fn set(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 ///
 /// It is not possible for clients to see that some of the keys were
 /// updated while others are unchanged.
-pub async fn mset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().multi_set(&args[1..], true).map_err(|e| match e {
-        Error::Syntax => {
-            Error::WrongNumberArgument(String::from_utf8_lossy(&args[0]).to_uppercase())
-        }
+pub async fn mset(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    conn.db().multi_set(args, true).map_err(|e| match e {
+        Error::Syntax => Error::WrongNumberArgument("MSET".to_owned()),
         e => e,
     })
 }
@@ -301,11 +297,9 @@ pub async fn mset(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// MSETNX is atomic, so all given keys are set at once. It is not possible for
 /// clients to see that some of the keys were updated while others are
 /// unchanged.
-pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    conn.db().multi_set(&args[1..], false).map_err(|e| match e {
-        Error::Syntax => {
-            Error::WrongNumberArgument(String::from_utf8_lossy(&args[0]).to_uppercase())
-        }
+pub async fn msetnx(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    conn.db().multi_set(args, false).map_err(|e| match e {
+        Error::Syntax => Error::WrongNumberArgument("MSETNX".to_owned()),
         e => e,
     })
 }
@@ -315,34 +309,51 @@ pub async fn msetnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 ///
 /// SET mykey value
 /// EXPIRE mykey seconds
-pub async fn setex(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    let is_milliseconds = check_arg!(args, 0, "PSETEX");
+#[inline]
+async fn setex_ex(
+    command: &[u8],
+    is_milliseconds: bool,
+    conn: &Connection,
+    mut args: VecDeque<Bytes>,
+) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let expiration = args.pop_front().ok_or(Error::Syntax)?;
+    let value = args.pop_front().ok_or(Error::Syntax)?;
 
-    let expires_in = Expiration::new(&args[2], is_milliseconds, false, &args[0])?;
+    let expires_in = Expiration::new(&expiration, is_milliseconds, false, command)?;
 
     Ok(conn
         .db()
-        .set(&args[1], Value::new(&args[3]), Some(expires_in.try_into()?)))
+        .set(key, Value::Blob(value), Some(expires_in.try_into()?)))
+}
+
+/// Set key to hold the string value and set key to timeout after a given number
+/// of seconds. This command is equivalent to:
+pub async fn setex(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    setex_ex(b"SETEX", false, conn, args).await
+}
+
+/// PSETEX works exactly like SETEX with the sole difference that the expire
+/// time is specified in milliseconds instead of seconds.
+pub async fn psetex(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    setex_ex(b"PSETEX", true, conn, args).await
 }
 
 /// Set key to hold string value if key does not exist. In that case, it is
 /// equal to SET. When key already holds a value, no operation is performed.
 /// SETNX is short for "SET if Not eXists".
-pub async fn setnx(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    Ok(conn.db().set_advanced(
-        &args[1],
-        Value::new(&args[2]),
-        None,
-        Override::No,
-        false,
-        false,
-    ))
+pub async fn setnx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let value = args.pop_front().ok_or(Error::Syntax)?;
+    Ok(conn
+        .db()
+        .set_advanced(key, Value::Blob(value), None, Override::No, false, false))
 }
 
 /// Returns the length of the string value stored at key. An error is returned when key holds a
 /// non-string value.
-pub async fn strlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
-    match conn.db().get(&args[1]) {
+pub async fn strlen(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
+    match conn.db().get(&args[0]) {
         Value::Blob(x) => Ok(x.len().into()),
         Value::String(x) => Ok(x.len().into()),
         Value::Null => Ok(0.into()),
@@ -356,9 +367,9 @@ pub async fn strlen(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
 /// make offset fit. Non-existing keys are considered as empty strings, so this
 /// command will make sure it holds a string large enough to be able to set
 /// value at offset.
-pub async fn setrange(conn: &Connection, args: &[Bytes]) -> Result<Value, Error> {
+pub async fn setrange(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db()
-        .set_range(&args[1], bytes_to_number(&args[2])?, &args[3])
+        .set_range(&args[0], bytes_to_number(&args[1])?, &args[2])
 }
 
 #[cfg(test)]
@@ -741,7 +752,9 @@ mod test {
             run_command(&c, &["setrange", "foo", "30", "xxx"]).await,
         );
         assert_eq!(
-            Ok("\0\0xxx\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xxx\0\0\0\0\0\0\0xxx".into()),
+            Ok(Value::BlobRw(
+                ("\0\0xxx\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xxx\0\0\0\0\0\0\0xxx".into())
+            )),
             run_command(&c, &["get", "foo"]).await,
         );
     }

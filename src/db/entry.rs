@@ -94,6 +94,7 @@ impl Entry {
             &self.value,
             Value::Boolean(_)
                 | Value::Blob(_)
+                | Value::BlobRw(_)
                 | Value::BigInteger(_)
                 | Value::Integer(_)
                 | Value::Float(_)

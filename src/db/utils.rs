@@ -1,6 +1,6 @@
 use crate::error::Error;
 use bytes::Bytes;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use tokio::time::{Duration, Instant};
 
 pub(crate) fn far_future() -> Instant {
@@ -45,6 +45,14 @@ pub struct ExpirationOpts {
     pub GT: bool,
     /// Set expiry only when the new expiry is less than current one
     pub LT: bool,
+}
+
+impl TryFrom<Vec<Bytes>> for ExpirationOpts {
+    type Error = Error;
+
+    fn try_from(args: Vec<Bytes>) -> Result<Self, Self::Error> {
+        args.as_slice().try_into()
+    }
 }
 
 impl TryFrom<&[Bytes]> for ExpirationOpts {

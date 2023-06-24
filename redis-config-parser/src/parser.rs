@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Error {
     /// The data is incomplete. This it not an error per-se, but rather a
     /// mechanism to let the caller know they should keep buffering data before
@@ -8,14 +8,14 @@ pub enum Error {
     Partial,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Args<'a> {
     None,
     Single(Cow<'a, str>),
     Multiple(Vec<Cow<'a, str>>),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct ConfigValue<'a> {
     pub name: Cow<'a, str>,
     pub args: Args<'a>,
@@ -59,7 +59,7 @@ macro_rules! read_until {
 
 pub fn parse(bytes: &'_ [u8]) -> Result<(&'_ [u8], ConfigValue<'_>), Error> {
     let bytes = skip!(bytes, vec![b' ', b'\t', b'\r', b'\n']);
-    let bytes = if bytes.get(0) == Some(&b'#') {
+    let bytes = if bytes.first() == Some(&b'#') {
         // The entire line is a comment, skip the whole line
         let (bytes, _) = read_until!(bytes, vec![b'\n']);
         skip!(bytes, vec![b' ', b'\t', b'\r', b'\n'])
