@@ -21,27 +21,24 @@ use std::{
 pub async fn hdel(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let mut is_empty = false;
     let key = args.pop_front().ok_or(Error::Syntax)?;
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::Hash(h) => {
-                let mut h = h.write();
-                let mut total: i64 = 0;
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::Hash(h)) => {
+            let mut h = h.write();
+            let mut total: i64 = 0;
 
-                for key in args.into_iter() {
-                    if h.remove(&key).is_some() {
-                        total += 1;
-                    }
+            for key in args.into_iter() {
+                if h.remove(&key).is_some() {
+                    total += 1;
                 }
-
-                is_empty = h.len() == 0;
-
-                Ok(total.into())
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(0.into()),
-    )?;
+
+            is_empty = h.len() == 0;
+
+            Ok(total.into())
+        }
+        None => Ok(0.into()),
+        _ => Err(Error::WrongType),
+    })?;
 
     if is_empty {
         let _ = conn.db().del(&[key]);
@@ -54,56 +51,47 @@ pub async fn hdel(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
 
 /// Returns if field is an existing field in the hash stored at key.
 pub async fn hexists(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::Hash(h) => Ok(if h.read().get(&args[1]).is_some() {
-                1.into()
-            } else {
-                0.into()
-            }),
-            _ => Err(Error::WrongType),
-        },
-        || Ok(0.into()),
-    )
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::Hash(h)) => Ok(if h.read().get(&args[1]).is_some() {
+            1.into()
+        } else {
+            0.into()
+        }),
+        None => Ok(0.into()),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Returns the value associated with field in the hash stored at key.
 pub async fn hget(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::Hash(h) => Ok(h
-                .read()
-                .get(&args[1])
-                .map(|v| Value::new(v))
-                .unwrap_or_default()),
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Null),
-    )
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::Hash(h)) => Ok(h
+            .read()
+            .get(&args[1])
+            .map(|v| Value::new(v))
+            .unwrap_or_default()),
+        None => Ok(Value::Null),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Returns all fields and values of the hash stored at key. In the returned value, every field
 /// name is followed by its value, so the length of the reply is twice the size of the hash.
 pub async fn hgetall(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::Hash(h) => {
-                let mut ret = vec![];
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::Hash(h)) => {
+            let mut ret = vec![];
 
-                for (key, value) in h.read().iter() {
-                    ret.push(Value::new(key));
-                    ret.push(Value::new(value));
-                }
-
-                Ok(ret.into())
+            for (key, value) in h.read().iter() {
+                ret.push(Value::new(key));
+                ret.push(Value::new(value));
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Array(vec![])),
-    )
+
+            Ok(ret.into())
+        }
+        None => Ok(Value::Array(vec![])),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Increment the specified field of a hash stored at key, and representing a number, by the
@@ -136,61 +124,50 @@ pub async fn hincrby_float(conn: &Connection, args: VecDeque<Bytes>) -> Result<V
 
 /// Returns all field names in the hash stored at key.
 pub async fn hkeys(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::Hash(h) => {
-                let mut ret = vec![];
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::Hash(h)) => {
+            let mut ret = vec![];
 
-                for key in h.read().keys() {
-                    ret.push(Value::new(key));
-                }
-
-                Ok(ret.into())
+            for key in h.read().keys() {
+                ret.push(Value::new(key));
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Array(vec![])),
-    )
+
+            Ok(ret.into())
+        }
+        None => Ok(Value::Array(vec![])),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Returns the number of fields contained in the hash stored at key.
 pub async fn hlen(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::Hash(h) => Ok(h.read().len().into()),
-            _ => Err(Error::WrongType),
-        },
-        || Ok(0.into()),
-    )
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::Hash(h)) => Ok(h.read().len().into()),
+        None => Ok(0.into()),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Returns the values associated with the specified fields in the hash stored at key.
 pub async fn hmget(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
-    conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::Hash(h) => {
-                let h = h.read();
+    conn.db().get_map(&key, |v| match v {
+        Some(Value::Hash(h)) => {
+            let h = h.read();
 
-                Ok(args
-                    .iter()
-                    .map(|key| h.get(key).map(|v| Value::new(v)).unwrap_or_default())
-                    .collect::<Vec<Value>>()
-                    .into())
-            }
-            _ => Err(Error::WrongType),
-        },
-        || {
             Ok(args
                 .iter()
-                .map(|_| Value::Null)
+                .map(|key| h.get(key).map(|v| Value::new(v)).unwrap_or_default())
                 .collect::<Vec<Value>>()
                 .into())
-        },
-    )
+        }
+        None => Ok(args
+            .iter()
+            .map(|_| Value::Null)
+            .collect::<Vec<Value>>()
+            .into()),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Returns random keys (or values) from a hash
@@ -213,49 +190,46 @@ pub async fn hrandfield(conn: &Connection, args: VecDeque<Bytes>) -> Result<Valu
         _ => (1, true, 1),
     };
 
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::Hash(h) => {
-                let mut ret = vec![];
-                let mut i = 0;
-                let mut rand_sorted = BTreeMap::new();
-                let mut rng = rand::thread_rng();
-                let h = h.read();
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::Hash(h)) => {
+            let mut ret = vec![];
+            let mut i = 0;
+            let mut rand_sorted = BTreeMap::new();
+            let mut rng = rand::thread_rng();
+            let h = h.read();
 
-                for _ in 0..repeat {
-                    for (key, value) in h.iter() {
-                        let rand = rng.gen::<u64>();
-                        rand_sorted.insert((rand, i), (key, value));
-                        i += 1;
-                    }
-                }
-
-                i = 0;
-                for val in rand_sorted.values() {
-                    if single {
-                        return Ok(Value::new(val.0));
-                    }
-
-                    if i == count {
-                        break;
-                    }
-
-                    ret.push(Value::new(val.0));
-
-                    if with_values {
-                        ret.push(Value::new(val.1));
-                    }
-
+            for _ in 0..repeat {
+                for (key, value) in h.iter() {
+                    let rand = rng.gen::<u64>();
+                    rand_sorted.insert((rand, i), (key, value));
                     i += 1;
                 }
-
-                Ok(ret.into())
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Array(vec![])),
-    )
+
+            i = 0;
+            for val in rand_sorted.values() {
+                if single {
+                    return Ok(Value::new(val.0));
+                }
+
+                if i == count {
+                    break;
+                }
+
+                ret.push(Value::new(val.0));
+
+                if with_values {
+                    ret.push(Value::new(val.1));
+                }
+
+                i += 1;
+            }
+
+            Ok(ret.into())
+        }
+        None => Ok(Value::Array(vec![])),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Sets field in the hash stored at key to value. If key does not exist, a new key holding a hash
@@ -265,28 +239,22 @@ pub async fn hmset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
     if args.len() % 2 == 1 {
         return Err(Error::InvalidArgsCount("hset".to_owned()));
     }
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::Hash(h) => {
-                let mut h = h.write();
-                let mut args = args.clone();
-                loop {
-                    if args.is_empty() {
-                        break;
-                    }
-                    let key = args.pop_front().ok_or(Error::Syntax)?;
-                    let value = args.pop_front().ok_or(Error::Syntax)?;
-                    h.insert(key, value);
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::Hash(h)) => {
+            let mut h = h.write();
+            loop {
+                if args.is_empty() {
+                    break;
                 }
-                Ok(Value::Ok)
+                let key = args.pop_front().ok_or(Error::Syntax)?;
+                let value = args.pop_front().ok_or(Error::Syntax)?;
+                h.insert(key, value);
             }
-            _ => Err(Error::WrongType),
-        },
-        || {
+            Ok(Value::Ok)
+        }
+        None => {
             #[allow(clippy::mutable_key_type)]
             let mut h = HashMap::new();
-            let mut args = args.clone();
             loop {
                 if args.is_empty() {
                     break;
@@ -298,8 +266,9 @@ pub async fn hmset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
             let len = h.len();
             conn.db().set(key.clone(), h.into(), None);
             Ok(Value::Ok)
-        },
-    )?;
+        }
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&key);
 
@@ -313,31 +282,25 @@ pub async fn hset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
     if args.len() % 2 == 1 {
         return Err(Error::InvalidArgsCount("hset".to_owned()));
     }
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::Hash(h) => {
-                let mut h = h.write();
-                let mut e: i64 = 0;
-                let mut args = args.clone();
-                loop {
-                    if args.is_empty() {
-                        break;
-                    }
-                    let key = args.pop_front().ok_or(Error::Syntax)?;
-                    let value = args.pop_front().ok_or(Error::Syntax)?;
-                    if h.insert(key, value).is_none() {
-                        e += 1;
-                    }
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::Hash(h)) => {
+            let mut h = h.write();
+            let mut e: i64 = 0;
+            loop {
+                if args.is_empty() {
+                    break;
                 }
-                Ok(e.into())
+                let key = args.pop_front().ok_or(Error::Syntax)?;
+                let value = args.pop_front().ok_or(Error::Syntax)?;
+                if h.insert(key, value).is_none() {
+                    e += 1;
+                }
             }
-            _ => Err(Error::WrongType),
-        },
-        || {
+            Ok(e.into())
+        }
+        None => {
             #[allow(clippy::mutable_key_type)]
             let mut h = HashMap::new();
-            let mut args = args.clone();
             loop {
                 if args.is_empty() {
                     break;
@@ -349,8 +312,9 @@ pub async fn hset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
             let len = h.len();
             conn.db().set(key.clone(), h.into(), None);
             Ok(len.into())
-        },
-    )?;
+        }
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&key);
 
@@ -364,30 +328,27 @@ pub async fn hsetnx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Valu
     let key = args.pop_front().ok_or(Error::Syntax)?;
     let sub_key = args.pop_front().ok_or(Error::Syntax)?;
     let value = args.pop_front().ok_or(Error::Syntax)?;
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::Hash(h) => {
-                let mut h = h.write();
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::Hash(h)) => {
+            let mut h = h.write();
 
-                if h.get(&sub_key).is_some() {
-                    Ok(0.into())
-                } else {
-                    h.insert(sub_key.clone(), value.clone());
-                    Ok(1.into())
-                }
+            if h.get(&sub_key).is_some() {
+                Ok(0.into())
+            } else {
+                h.insert(sub_key, value);
+                Ok(1.into())
             }
-            _ => Err(Error::WrongType),
-        },
-        || {
+        }
+        None => {
             #[allow(clippy::mutable_key_type)]
             let mut h = HashMap::new();
-            h.insert(sub_key.clone(), value.clone());
+            h.insert(sub_key, value);
             let len = h.len();
             conn.db().set(key.clone(), h.into(), None);
             Ok(len.into())
-        },
-    )?;
+        }
+        _ => Err(Error::WrongType),
+    })?;
 
     if result == Value::Integer(1) {
         conn.db().bump_version(&key);
@@ -399,39 +360,33 @@ pub async fn hsetnx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Valu
 /// Returns the string length of the value associated with field in the hash stored at key. If the
 /// key or the field do not exist, 0 is returned.
 pub async fn hstrlen(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::Hash(h) => Ok(h
-                .read()
-                .get(&args[1])
-                .map(|v| v.len())
-                .unwrap_or_default()
-                .into()),
-            _ => Err(Error::WrongType),
-        },
-        || Ok(0.into()),
-    )
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::Hash(h)) => Ok(h
+            .read()
+            .get(&args[1])
+            .map(|v| v.len())
+            .unwrap_or_default()
+            .into()),
+        None => Ok(0.into()),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Returns all values in the hash stored at key.
 pub async fn hvals(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::Hash(h) => {
-                let mut ret = vec![];
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::Hash(h)) => {
+            let mut ret = vec![];
 
-                for value in h.read().values() {
-                    ret.push(Value::new(value));
-                }
-
-                Ok(ret.into())
+            for value in h.read().values() {
+                ret.push(Value::new(value));
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Array(vec![])),
-    )
+
+            Ok(ret.into())
+        }
+        None => Ok(Value::Array(vec![])),
+        _ => Err(Error::WrongType),
+    })
 }
 
 #[cfg(test)]
