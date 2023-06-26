@@ -712,21 +712,19 @@ impl Db {
     ///
     /// This function is useful to read non-scalar values from the database. Non-scalar values are
     /// forbidden to clone, attempting cloning will end-up in an error (Error::WrongType)
-    pub fn get_map_or<F1, F2>(&self, key: &Bytes, found: F1, not_found: F2) -> Result<Value, Error>
+    pub fn get_map<F1>(&self, key: &Bytes, found: F1) -> Result<Value, Error>
     where
-        F1: FnOnce(&Value) -> Result<Value, Error>,
-        F2: FnOnce() -> Result<Value, Error>,
+        F1: FnOnce(Option<&Value>) -> Result<Value, Error>,
     {
         let slot = self.slots[self.get_slot(key)].read();
         let entry = slot.get(key).filter(|x| x.is_valid()).map(|e| e.get());
 
         if let Some(entry) = entry {
-            found(entry)
+            found(Some(entry))
         } else {
             // drop lock
             drop(slot);
-
-            not_found()
+            found(None)
         }
     }
 

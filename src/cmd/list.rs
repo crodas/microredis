@@ -28,44 +28,41 @@ fn remove_element(
 ) -> Result<Value, Error> {
     let db = conn.db();
     let mut new_len = 0;
-    let result = db.get_map_or(
-        key,
-        |v| match v {
-            Value::List(x) => {
-                let mut x = x.write();
+    let result = db.get_map(key, |v| match v {
+        Some(Value::List(x)) => {
+            let mut x = x.write();
 
-                let limit = if let Some(limit) = limit {
-                    limit
-                } else {
-                    // Return a single element
-                    let ret = Ok((if front { x.pop_front() } else { x.pop_back() })
-                        .map_or(Value::Null, |x| x.clone_value()));
-                    new_len = x.len();
-                    return ret;
-                };
-
-                let mut ret = vec![None; limit];
-
-                for i in 0..limit {
-                    if front {
-                        ret[i] = x.pop_front();
-                    } else {
-                        ret[i] = x.pop_back();
-                    }
-                }
+            let limit = if let Some(limit) = limit {
+                limit
+            } else {
+                // Return a single element
+                let ret = Ok((if front { x.pop_front() } else { x.pop_back() })
+                    .map_or(Value::Null, |x| x.clone_value()));
                 new_len = x.len();
+                return ret;
+            };
 
-                Ok(ret
-                    .iter()
-                    .flatten()
-                    .map(|m| m.clone_value())
-                    .collect::<Vec<Value>>()
-                    .into())
+            let mut ret = vec![None; limit];
+
+            for i in 0..limit {
+                if front {
+                    ret[i] = x.pop_front();
+                } else {
+                    ret[i] = x.pop_back();
+                }
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Null),
-    )?;
+            new_len = x.len();
+
+            Ok(ret
+                .iter()
+                .flatten()
+                .map(|m| m.clone_value())
+                .collect::<Vec<Value>>()
+                .into())
+        }
+        None => Ok(Value::Null),
+        _ => Err(Error::WrongType),
+    })?;
 
     if new_len == 0 {
         let _ = db.del(&[key.clone()]);
@@ -307,27 +304,24 @@ pub async fn brpop(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
 /// designate elements starting at the tail of the list. Here, -1 means the last element, -2 means
 /// the penultimate and so forth.
 pub async fn lindex(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::List(x) => {
-                let mut index: i64 = bytes_to_number(&args[1])?;
-                let x = x.read();
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::List(x)) => {
+            let mut index: i64 = bytes_to_number(&args[1])?;
+            let x = x.read();
 
-                let index = if index < 0 {
-                    x.len()
-                        .checked_sub((index * -1) as usize)
-                        .unwrap_or(x.len())
-                } else {
-                    index as usize
-                };
+            let index = if index < 0 {
+                x.len()
+                    .checked_sub((index * -1) as usize)
+                    .unwrap_or(x.len())
+            } else {
+                index as usize
+            };
 
-                Ok(x.get(index).map_or(Value::Null, |x| x.clone_value()))
-            }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Null),
-    )
+            Ok(x.get(index).map_or(Value::Null, |x| x.clone_value()))
+        }
+        None => Ok(Value::Null),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Inserts element in the list stored at key either before or after the reference value pivot.
@@ -348,41 +342,38 @@ pub async fn linsert(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Val
         _ => return Err(Error::Syntax),
     };
 
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::List(x) => {
-                let pivot = checksum::Ref::new(&pivot);
-                let mut x = x.write();
-                let mut found = false;
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::List(x)) => {
+            let pivot = checksum::Ref::new(&pivot);
+            let mut x = x.write();
+            let mut found = false;
 
-                for (key, val) in x.iter().enumerate() {
-                    if *val == pivot {
-                        let id = if is_before { key } else { key + 1 };
+            for (key, val) in x.iter().enumerate() {
+                if *val == pivot {
+                    let id = if is_before { key } else { key + 1 };
 
-                        let value = checksum::Value::new(value);
+                    let value = checksum::Value::new(value);
 
-                        if id > x.len() {
-                            x.push_back(value);
-                        } else {
-                            x.insert(id as usize, value);
-                        }
-
-                        found = true;
-                        break;
+                    if id > x.len() {
+                        x.push_back(value);
+                    } else {
+                        x.insert(id as usize, value);
                     }
-                }
 
-                if found {
-                    Ok(x.len().into())
-                } else {
-                    Ok((-1).into())
+                    found = true;
+                    break;
                 }
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(0.into()),
-    )?;
+
+            if found {
+                Ok(x.len().into())
+            } else {
+                Ok((-1).into())
+            }
+        }
+        None => Ok(0.into()),
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&key);
 
@@ -392,14 +383,11 @@ pub async fn linsert(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Val
 /// Returns the length of the list stored at key. If key does not exist, it is interpreted as an
 /// empty list and 0 is returned. An error is returned when the value stored at key is not a list.
 pub async fn llen(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::List(x) => Ok(x.read().len().into()),
-            _ => Err(Error::WrongType),
-        },
-        || Ok(0.into()),
-    )
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::List(x)) => Ok(x.read().len().into()),
+        None => Ok(0.into()),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Atomically returns and removes the first/last element (head/tail depending on the wherefrom
@@ -433,56 +421,50 @@ pub async fn lmove(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
 
     let mut to_create = None;
 
-    let result = db.get_map_or(
-        &source,
-        |v| match v {
-            Value::List(source) => conn.db().get_map_or(
-                &destination,
-                |v| match v {
-                    Value::List(target) => {
-                        let element = if source_is_left {
-                            source.write().pop_front()
-                        } else {
-                            source.write().pop_back()
-                        };
+    let result = db.get_map(&source, |v| match v {
+        Some(Value::List(source)) => conn.db().get_map(&destination, |v| match v {
+            Some(Value::List(target)) => {
+                let element = if source_is_left {
+                    source.write().pop_front()
+                } else {
+                    source.write().pop_back()
+                };
 
-                        if let Some(element) = element {
-                            let ret = element.clone_value();
-                            if target_is_left {
-                                target.write().push_front(element);
-                            } else {
-                                target.write().push_back(element);
-                            }
-                            Ok(ret)
-                        } else {
-                            Ok(Value::Null)
-                        }
-                    }
-                    _ => Err(Error::WrongType),
-                },
-                || {
-                    let mut source = source.write();
-                    let element = if source_is_left {
-                        source.pop_front()
+                if let Some(element) = element {
+                    let ret = element.clone_value();
+                    if target_is_left {
+                        target.write().push_front(element);
                     } else {
-                        source.pop_back()
-                    };
+                        target.write().push_back(element);
+                    }
+                    Ok(ret)
+                } else {
+                    Ok(Value::Null)
+                }
+            }
+            None => {
+                let mut source = source.write();
+                let element = if source_is_left {
+                    source.pop_front()
+                } else {
+                    source.pop_back()
+                };
 
-                    if let Some(element) = element {
-                        let ret = element.clone_value();
-                        let mut h = VecDeque::new();
-                        h.push_front(element);
-                        to_create = Some(h);
-                        Ok(ret)
-                    } else {
-                        Ok(Value::Null)
-                    }
-                },
-            ),
+                if let Some(element) = element {
+                    let ret = element.clone_value();
+                    let mut h = VecDeque::new();
+                    h.push_front(element);
+                    to_create = Some(h);
+                    Ok(ret)
+                } else {
+                    Ok(Value::Null)
+                }
+            }
             _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Null),
-    );
+        }),
+        None => Ok(Value::Null),
+        _ => Err(Error::WrongType),
+    });
 
     if let Some(to_create) = to_create {
         conn.db().set(destination.clone(), to_create.into(), None);
@@ -555,90 +537,85 @@ pub async fn lpos(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Err
 
     let max_len = max_len.unwrap_or_default();
 
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::List(x) => {
-                let x = x.read();
-                let mut result: Vec<Value> = vec![];
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::List(x)) => {
+            let x = x.read();
+            let mut result: Vec<Value> = vec![];
 
-                let mut values = x
-                    .iter()
-                    .enumerate()
-                    .collect::<Vec<(usize, &checksum::Value)>>();
+            let mut values = x
+                .iter()
+                .enumerate()
+                .collect::<Vec<(usize, &checksum::Value)>>();
 
-                if must_reverse {
-                    values.reverse();
-                }
+            if must_reverse {
+                values.reverse();
+            }
 
-                let mut checks = 1;
+            let mut checks = 1;
 
-                for (id, val) in values.iter() {
-                    if **val == element {
-                        // Match!
-                        if let Some(count) = count {
-                            result.push((*id).into());
-                            if result.len() == count && count != 0 && rank.is_none() {
-                                // There is no point in keep looping. No RANK provided, COUNT is not 0
-                                // therefore we can return the vector of result as IS
-                                return Ok(result.into());
-                            }
-                        } else if let Some(rank) = rank {
-                            result.push((*id).into());
-                            if result.len() == rank {
-                                return Ok((*id).into());
-                            }
-                        } else {
-                            // return first match!
+            for (id, val) in values.iter() {
+                if **val == element {
+                    // Match!
+                    if let Some(count) = count {
+                        result.push((*id).into());
+                        if result.len() == count && count != 0 && rank.is_none() {
+                            // There is no point in keep looping. No RANK provided, COUNT is not 0
+                            // therefore we can return the vector of result as IS
+                            return Ok(result.into());
+                        }
+                    } else if let Some(rank) = rank {
+                        result.push((*id).into());
+                        if result.len() == rank {
                             return Ok((*id).into());
                         }
-                    }
-                    if checks == max_len {
-                        break;
-                    }
-                    checks += 1;
-                }
-
-                if let Some(rank) = rank {
-                    let rank = rank - 1;
-
-                    let result = if rank < result.len() {
-                        (&result[rank..]).to_vec()
                     } else {
-                        vec![]
-                    };
-
-                    return Ok(if let Some(count) = count {
-                        if count > 0 && count < result.len() {
-                            (&result[0..count]).to_vec().into()
-                        } else {
-                            result.to_vec().into()
-                        }
-                    } else {
-                        result
-                            .to_vec()
-                            .get(0)
-                            .map(|c| c.clone())
-                            .unwrap_or_default()
-                    });
+                        // return first match!
+                        return Ok((*id).into());
+                    }
                 }
-
-                if count.is_some() {
-                    Ok(result.into())
-                } else {
-                    Ok(Value::Null)
+                if checks == max_len {
+                    break;
                 }
+                checks += 1;
             }
-            _ => Err(Error::WrongType),
-        },
-        || {
-            Ok(if count.is_some() {
-                Value::Array(vec![])
+
+            if let Some(rank) = rank {
+                let rank = rank - 1;
+
+                let result = if rank < result.len() {
+                    (&result[rank..]).to_vec()
+                } else {
+                    vec![]
+                };
+
+                return Ok(if let Some(count) = count {
+                    if count > 0 && count < result.len() {
+                        (&result[0..count]).to_vec().into()
+                    } else {
+                        result.to_vec().into()
+                    }
+                } else {
+                    result
+                        .to_vec()
+                        .get(0)
+                        .map(|c| c.clone())
+                        .unwrap_or_default()
+                });
+            }
+
+            if count.is_some() {
+                Ok(result.into())
             } else {
-                Value::Null
-            })
-        },
-    )
+                Ok(Value::Null)
+            }
+        }
+        None => Ok(if count.is_some() {
+            Value::Array(vec![])
+        } else {
+            Value::Null
+        }),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Insert all the specified values at the head of the list stored at key. If key does not exist,
@@ -652,30 +629,27 @@ pub async fn lpos(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Err
 /// as third element.
 pub async fn lpush(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::List(x) => {
-                let mut x = x.write();
-                for val in args.clone().into_iter() {
-                    x.push_front(checksum::Value::new(val.clone()));
-                }
-                Ok(x.len().into())
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::List(x)) => {
+            let mut x = x.write();
+            for val in args.into_iter() {
+                x.push_front(checksum::Value::new(val.clone()));
             }
-            _ => Err(Error::WrongType),
-        },
-        || {
+            Ok(x.len().into())
+        }
+        None => {
             let mut h = VecDeque::new();
 
-            for val in args.clone().into_iter() {
+            for val in args.into_iter() {
                 h.push_front(checksum::Value::new(val));
             }
 
             let len = h.len();
             conn.db().set(key.clone(), h.into(), None);
             Ok(len.into())
-        },
-    )?;
+        }
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&key);
     Ok(result)
@@ -684,22 +658,19 @@ pub async fn lpush(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
 /// LPUSHX key element
 pub async fn lpushx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::List(x) => {
-                let mut x = x.write();
-                for val in args.into_iter() {
-                    x.push_front(checksum::Value::new(val));
-                }
-                Ok(x.len().into())
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::List(x)) => {
+            let mut x = x.write();
+            for val in args.into_iter() {
+                x.push_front(checksum::Value::new(val));
             }
-            _ => Err(Error::WrongType),
-        },
-        || {
+            Ok(x.len().into())
+        }
+        None => {
             return Ok(0.into());
-        },
-    )?;
+        }
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&key);
     Ok(result)
@@ -712,93 +683,87 @@ pub async fn lpushx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Valu
 /// These offsets can also be negative numbers indicating offsets starting at the end of the list.
 /// For example, -1 is the last element of the list, -2 the penultimate, and so on.
 pub async fn lrange(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::List(x) => {
-                let start: i64 = bytes_to_number(&args[1])?;
-                let end: i64 = bytes_to_number(&args[2])?;
-                let mut ret = vec![];
-                let x = x.read();
+    conn.db().get_map(&args[0], |v| match v {
+        Some(Value::List(x)) => {
+            let start: i64 = bytes_to_number(&args[1])?;
+            let end: i64 = bytes_to_number(&args[2])?;
+            let mut ret = vec![];
+            let x = x.read();
 
-                let start = if start < 0 {
-                    x.len()
-                        .checked_sub((start * -1) as usize)
-                        .unwrap_or_default()
+            let start = if start < 0 {
+                x.len()
+                    .checked_sub((start * -1) as usize)
+                    .unwrap_or_default()
+            } else {
+                (start as usize)
+            };
+
+            let end = if end < 0 {
+                if let Some(x) = x.len().checked_sub((end * -1) as usize) {
+                    x
                 } else {
-                    (start as usize)
-                };
-
-                let end = if end < 0 {
-                    if let Some(x) = x.len().checked_sub((end * -1) as usize) {
-                        x
-                    } else {
-                        return Ok(Value::Array((vec![])));
-                    }
-                } else {
-                    end as usize
-                };
-
-                for (i, val) in x.iter().enumerate().skip(start) {
-                    if i > end {
-                        break;
-                    }
-                    ret.push(val.clone_value());
+                    return Ok(Value::Array((vec![])));
                 }
-                Ok(ret.into())
+            } else {
+                end as usize
+            };
+
+            for (i, val) in x.iter().enumerate().skip(start) {
+                if i > end {
+                    break;
+                }
+                ret.push(val.clone_value());
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Array(vec![])),
-    )
+            Ok(ret.into())
+        }
+        None => Ok(Value::Array(vec![])),
+        _ => Err(Error::WrongType),
+    })
 }
 
 /// Removes the first count occurrences of elements equal to element from the list stored at key
 pub async fn lrem(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    let result = conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::List(x) => {
-                let element = checksum::Ref::new(&args[2]);
-                let limit: i64 = bytes_to_number(&args[1])?;
-                let mut x = x.write();
+    let result = conn.db().get_map(&args[0], |v| match v {
+        Some(Value::List(x)) => {
+            let element = checksum::Ref::new(&args[2]);
+            let limit: i64 = bytes_to_number(&args[1])?;
+            let mut x = x.write();
 
-                let (is_reverse, limit) = if limit < 0 {
-                    (true, -limit)
-                } else {
-                    (false, limit)
-                };
+            let (is_reverse, limit) = if limit < 0 {
+                (true, -limit)
+            } else {
+                (false, limit)
+            };
 
-                let mut keep = vec![true; x.len()];
-                let mut removed = 0;
-                let len = x.len();
+            let mut keep = vec![true; x.len()];
+            let mut removed = 0;
+            let len = x.len();
 
-                for i in 0..len {
-                    let i = if is_reverse { len - 1 - i } else { i };
+            for i in 0..len {
+                let i = if is_reverse { len - 1 - i } else { i };
 
-                    if let Some(value) = x.get(i) {
-                        if *value == element {
-                            keep[i] = false;
-                            removed += 1;
-                            if removed == limit {
-                                break;
-                            }
+                if let Some(value) = x.get(i) {
+                    if *value == element {
+                        keep[i] = false;
+                        removed += 1;
+                        if removed == limit {
+                            break;
                         }
                     }
                 }
-
-                let mut i = 0;
-                x.retain(|_| {
-                    i += 1;
-                    keep[i - 1]
-                });
-
-                Ok(removed.into())
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(0.into()),
-    )?;
+
+            let mut i = 0;
+            x.retain(|_| {
+                i += 1;
+                keep[i - 1]
+            });
+
+            Ok(removed.into())
+        }
+        None => Ok(0.into()),
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&args[0]);
 
@@ -814,28 +779,25 @@ pub async fn lset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
     let index = args.pop_front().ok_or(Error::Syntax)?;
     let value = args.pop_front().ok_or(Error::Syntax)?;
 
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::List(x) => {
-                let mut index: i64 = bytes_to_number(&index)?;
-                let mut x = x.write();
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::List(x)) => {
+            let mut index: i64 = bytes_to_number(&index)?;
+            let mut x = x.write();
 
-                if index < 0 {
-                    index += x.len() as i64;
-                }
-
-                if let Some(x) = x.get_mut(index as usize) {
-                    *x = checksum::Value::new(value);
-                    Ok(Value::Ok)
-                } else {
-                    Err(Error::OutOfRange)
-                }
+            if index < 0 {
+                index += x.len() as i64;
             }
-            _ => Err(Error::WrongType),
-        },
-        || Err(Error::NotFound),
-    )?;
+
+            if let Some(x) = x.get_mut(index as usize) {
+                *x = checksum::Value::new(value);
+                Ok(Value::Ok)
+            } else {
+                Err(Error::OutOfRange)
+            }
+        }
+        None => Err(Error::NotFound),
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&key);
 
@@ -846,35 +808,32 @@ pub async fn lset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
 /// Both start and stop are zero-based indexes, where 0 is the first element of the list (the
 /// head), 1 the next element and so on.
 pub async fn ltrim(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    let result = conn.db().get_map_or(
-        &args[0],
-        |v| match v {
-            Value::List(x) => {
-                let mut start: i64 = bytes_to_number(&args[1])?;
-                let mut end: i64 = bytes_to_number(&args[2])?;
-                let mut x = x.write();
+    let result = conn.db().get_map(&args[0], |v| match v {
+        Some(Value::List(x)) => {
+            let mut start: i64 = bytes_to_number(&args[1])?;
+            let mut end: i64 = bytes_to_number(&args[2])?;
+            let mut x = x.write();
 
-                if start < 0 {
-                    start += x.len() as i64;
-                }
-
-                if end < 0 {
-                    end += x.len() as i64;
-                }
-
-                let mut i = 0;
-                x.retain(|_| {
-                    let retain = i >= start && i <= end;
-                    i += 1;
-                    retain
-                });
-
-                Ok(Value::Ok)
+            if start < 0 {
+                start += x.len() as i64;
             }
-            _ => Err(Error::WrongType),
-        },
-        || Ok(Value::Ok),
-    )?;
+
+            if end < 0 {
+                end += x.len() as i64;
+            }
+
+            let mut i = 0;
+            x.retain(|_| {
+                let retain = i >= start && i <= end;
+                i += 1;
+                retain
+            });
+
+            Ok(Value::Ok)
+        }
+        None => Ok(Value::Ok),
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&args[1]);
 
@@ -915,22 +874,17 @@ pub async fn rpoplpush(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<V
 /// is not a list, an error is returned.
 pub async fn rpushx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::List(x) => {
-                let mut x = x.write();
-                for val in args.into_iter() {
-                    x.push_back(checksum::Value::new(val));
-                }
-                Ok(x.len().into())
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::List(x)) => {
+            let mut x = x.write();
+            for val in args.into_iter() {
+                x.push_back(checksum::Value::new(val));
             }
-            _ => Err(Error::WrongType),
-        },
-        || {
-            return Ok(0.into());
-        },
-    )?;
+            Ok(x.len().into())
+        }
+        None => Ok(0.into()),
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&key);
     Ok(result)
@@ -941,30 +895,27 @@ pub async fn rpushx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Valu
 /// is not a list, an error is returned.
 pub async fn rpush(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
-    let result = conn.db().get_map_or(
-        &key,
-        |v| match v {
-            Value::List(x) => {
-                let mut x = x.write();
-                for val in args.clone().into_iter() {
-                    x.push_back(checksum::Value::new(val));
-                }
-                Ok(x.len().into())
+    let result = conn.db().get_map(&key, |v| match v {
+        Some(Value::List(x)) => {
+            let mut x = x.write();
+            for val in args.into_iter() {
+                x.push_back(checksum::Value::new(val));
             }
-            _ => Err(Error::WrongType),
-        },
-        || {
+            Ok(x.len().into())
+        }
+        None => {
             let mut h = VecDeque::new();
 
-            for val in args.clone().into_iter() {
+            for val in args.into_iter() {
                 h.push_back(checksum::Value::new(val));
             }
 
             let len = h.len();
             conn.db().set(key.clone(), h.into(), None);
             Ok(len.into())
-        },
-    )?;
+        }
+        _ => Err(Error::WrongType),
+    })?;
 
     conn.db().bump_version(&key);
     Ok(result)
