@@ -1,6 +1,4 @@
 //! # Sorted Set command handlers
-use std::collections::VecDeque;
-
 use crate::{
     connection::Connection,
     error::Error,
@@ -12,6 +10,7 @@ use crate::{
 };
 use bytes::Bytes;
 use float_ord::FloatOrd;
+use std::collections::VecDeque;
 
 /// Adds all the specified members with the specified scores to the sorted set
 /// stored at key. It is possible to specify multiple score / member pairs. If a
@@ -99,6 +98,36 @@ pub async fn zadd(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
 
     conn.db().bump_version(&key);
 
+    Ok(result)
+}
+
+/// Increments the score of member in the sorted set stored at key by increment.
+/// If member does not exist in the sorted set, it is added with increment as
+/// its score (as if its previous score was 0.0). If key does not exist, a new
+/// sorted set with the specified member as its sole member is created.
+pub async fn zincr_by(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+    let key = args.pop_front().ok_or(Error::Syntax)?;
+    let score = bytes_to_number::<f64>(&args.pop_front().ok_or(Error::Syntax)?)?;
+    let value = args.pop_front().ok_or(Error::Syntax)?;
+    let option = IOption::incr();
+    let result = conn
+        .db()
+        .get(&key)
+        .map_mut(|v| match v {
+            Value::SortedSet(x) => {
+                let _ = x.insert(FloatOrd(score), value.clone(), &option);
+                Ok(x.get_score(&value).unwrap_or_default().into())
+            }
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or_else(|| {
+            #[allow(clippy::mutable_key_type)]
+            let mut x = SortedSet::new();
+            let _ = x.insert(FloatOrd(score), value.clone(), &option);
+            Ok(x.get_score(&value).unwrap_or_default().into())
+        })?;
+
+    conn.db().bump_version(&key);
     Ok(result)
 }
 

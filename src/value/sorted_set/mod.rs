@@ -12,16 +12,27 @@ mod insert;
 pub use insert::{IOption, IResult};
 use insert::{IPolicy, UPolicyScore};
 
+/// Sorted set score
+pub type Score = FloatOrd<f64>;
+/// Sorted set data with score
+pub type DataWithScore = (Score, Bytes);
+
 /// Sorted set structure
 #[derive(Debug, Clone)]
 pub struct SortedSet {
-    set: HashMap<Bytes, (FloatOrd<f64>, usize)>,
-    order: BTreeMap<(FloatOrd<f64>, Bytes), usize>,
+    set: HashMap<Bytes, (Score, usize)>,
+    order: BTreeMap<DataWithScore, usize>,
 }
 
 impl PartialEq for SortedSet {
     fn eq(&self, other: &SortedSet) -> bool {
         self.order == other.order
+    }
+}
+
+impl Default for SortedSet {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -40,6 +51,11 @@ impl SortedSet {
         self.order.clear();
     }
 
+    /// Returns `true` if the map contains no elements.
+    pub fn is_empty(&self) -> bool {
+        self.set.is_empty()
+    }
+
     /// Returns the number of elements in the set
     pub fn len(&self) -> usize {
         self.set.len()
@@ -49,7 +65,7 @@ impl SortedSet {
     /// If the set did not have this value present, true is returned.
     ///
     /// If the set did have this value present, false is returned.
-    pub fn insert(&mut self, score: FloatOrd<f64>, value: Bytes, option: &IOption) -> IResult {
+    pub fn insert(&mut self, score: Score, value: Bytes, option: &IOption) -> IResult {
         if let Some((current_score, _)) = self.set.get(&value).cloned() {
             if option.insert_policy == Some(IPolicy::NX) {
                 return IResult::NoOp;
@@ -93,8 +109,8 @@ impl SortedSet {
     }
 
     /// Returns a reference to the score in the set, if any, that is equal to the given value.
-    pub fn get_score(&self, value: &Bytes) -> Option<FloatOrd<f64>> {
-        self.set.get(value).map(|(value, _)| *value)
+    pub fn get_score(&self, value: &Bytes) -> Option<f64> {
+        self.set.get(value).map(|(value, _)| value.0)
     }
 
     /// Returns all the values sorted by their score
@@ -104,9 +120,9 @@ impl SortedSet {
 
     #[inline]
     fn convert_to_range(
-        min: Bound<FloatOrd<f64>>,
-        max: Bound<FloatOrd<f64>>,
-    ) -> (Bound<(FloatOrd<f64>, Bytes)>, Bound<(FloatOrd<f64>, Bytes)>) {
+        min: Bound<Score>,
+        max: Bound<Score>,
+    ) -> (Bound<DataWithScore>, Bound<DataWithScore>) {
         let min_bytes = Bytes::new();
         let max_bytes = Bytes::copy_from_slice(&vec![255u8; 4096]);
 
@@ -125,20 +141,12 @@ impl SortedSet {
     }
 
     /// Get total number of values in a score range
-    pub fn count_values_by_score_range(
-        &self,
-        min: Bound<FloatOrd<f64>>,
-        max: Bound<FloatOrd<f64>>,
-    ) -> usize {
+    pub fn count_values_by_score_range(&self, min: Bound<Score>, max: Bound<Score>) -> usize {
         self.order.range(Self::convert_to_range(min, max)).count()
     }
 
     /// Get values in a score range
-    pub fn get_values_by_score_range(
-        &self,
-        min: Bound<FloatOrd<f64>>,
-        max: Bound<FloatOrd<f64>>,
-    ) -> Vec<Bytes> {
+    pub fn get_values_by_score_range(&self, min: Bound<Score>, max: Bound<Score>) -> Vec<Bytes> {
         self.order
             .range(Self::convert_to_range(min, max))
             .map(|(k, _)| k.1.clone())
@@ -148,13 +156,11 @@ impl SortedSet {
     /// Adds the position in the set to each value based on their score
     #[inline]
     fn update_value_position(&mut self) {
-        let mut i = 0;
-        for ((_, key), value) in self.order.iter_mut() {
+        for (i, ((_, key), value)) in self.order.iter_mut().enumerate() {
             *value = i;
             if let Some(value) = self.set.get_mut(key) {
                 value.1 = i;
             }
-            i += 1;
         }
     }
 
@@ -171,8 +177,10 @@ mod test {
     #[test]
     fn basic_usage() {
         let mut set: SortedSet = SortedSet::new();
-        let mut op = IOption::default();
-        op.insert_policy = Some(IPolicy::NX);
+        let mut op = IOption {
+            insert_policy: Some(IPolicy::NX),
+            ..Default::default()
+        };
 
         assert_eq!(
             set.insert(FloatOrd(1.0), "2".into(), &op),
@@ -189,7 +197,7 @@ mod test {
         assert_eq!(set.insert(FloatOrd(2.0), "2".into(), &op), IResult::Updated);
 
         //assert_eq!(vec![3, 2], set.get_values());
-        assert_eq!(Some(FloatOrd(3.0)), set.get_score(&"2".into()));
+        assert_eq!(Some(3.0), set.get_score(&"2".into()));
         assert_eq!(Some(1), set.get_value_pos(&"2".into()));
         assert_eq!(Some(0), set.get_value_pos(&"3".into()));
         assert_eq!(None, set.get_value_pos(&"5".into()));

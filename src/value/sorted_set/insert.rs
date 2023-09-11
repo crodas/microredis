@@ -32,65 +32,63 @@ pub struct IOption {
 }
 
 impl IOption {
+    /// Creates a new instance where only incr is set to true
+    pub fn incr() -> Self {
+        Self {
+            incr: true,
+            ..Default::default()
+        }
+    }
     /// Creates a new instance
     pub fn new(args: &mut VecDeque<Bytes>) -> Result<Self, Error> {
         let mut update_policy = None;
         let mut update_policy_score = None;
         let mut return_change = false;
         let mut incr = false;
-        loop {
-            match args.get(0) {
-                Some(t) => {
-                    let command = String::from_utf8_lossy(t);
-                    match command.to_uppercase().as_str() {
-                        "NX" => {
-                            if update_policy == Some(IPolicy::XX) {
-                                return Err(Error::OptsNotCompatible("XX AND NX".to_owned()));
-                            }
-                            update_policy = Some(IPolicy::NX);
-                            args.pop_front();
-                        }
-                        "XX" => {
-                            if update_policy == Some(IPolicy::NX) {
-                                return Err(Error::OptsNotCompatible("XX AND NX".to_owned()));
-                            }
-                            update_policy = Some(IPolicy::XX);
-                            args.pop_front();
-                        }
-                        "LT" => {
-                            if update_policy == Some(IPolicy::NX)
-                                || update_policy_score == Some(UPolicyScore::GT)
-                            {
-                                return Err(Error::OptsNotCompatible(
-                                    "GT, LT, and/or NX".to_owned(),
-                                ));
-                            }
-                            update_policy_score = Some(UPolicyScore::LT);
-                            args.pop_front();
-                        }
-                        "GT" => {
-                            if update_policy == Some(IPolicy::NX)
-                                || update_policy_score == Some(UPolicyScore::LT)
-                            {
-                                return Err(Error::OptsNotCompatible(
-                                    "GT, LT, and/or NX".to_owned(),
-                                ));
-                            }
-                            update_policy_score = Some(UPolicyScore::GT);
-                            args.pop_front();
-                        }
-                        "CH" => {
-                            return_change = true;
-                            args.pop_front();
-                        }
-                        "INCR" => {
-                            incr = true;
-                            args.pop_front();
-                        }
-                        _ => break,
+        while let Some(t) = args.front() {
+            let command = String::from_utf8_lossy(t);
+            match command.to_uppercase().as_str() {
+                "NX" => {
+                    if update_policy == Some(IPolicy::XX) {
+                        return Err(Error::OptsNotCompatible("XX AND NX".to_owned()));
                     }
+                    update_policy = Some(IPolicy::NX);
+                    args.pop_front();
                 }
-                None => break,
+                "XX" => {
+                    if update_policy == Some(IPolicy::NX) {
+                        return Err(Error::OptsNotCompatible("XX AND NX".to_owned()));
+                    }
+                    update_policy = Some(IPolicy::XX);
+                    args.pop_front();
+                }
+                "LT" => {
+                    if update_policy == Some(IPolicy::NX)
+                        || update_policy_score == Some(UPolicyScore::GT)
+                    {
+                        return Err(Error::OptsNotCompatible("GT, LT, and/or NX".to_owned()));
+                    }
+                    update_policy_score = Some(UPolicyScore::LT);
+                    args.pop_front();
+                }
+                "GT" => {
+                    if update_policy == Some(IPolicy::NX)
+                        || update_policy_score == Some(UPolicyScore::LT)
+                    {
+                        return Err(Error::OptsNotCompatible("GT, LT, and/or NX".to_owned()));
+                    }
+                    update_policy_score = Some(UPolicyScore::GT);
+                    args.pop_front();
+                }
+                "CH" => {
+                    return_change = true;
+                    args.pop_front();
+                }
+                "INCR" => {
+                    incr = true;
+                    args.pop_front();
+                }
+                _ => break,
             }
         }
         Ok(Self {

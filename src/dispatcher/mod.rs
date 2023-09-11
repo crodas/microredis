@@ -47,6 +47,15 @@ dispatcher! {
             1,
             true,
         },
+        ZINCRBY {
+            cmd::sorted_set::zincr_by,
+            [Flag::Write Flag::DenyOom Flag::Fast],
+            4,
+            1,
+            1,
+            1,
+            true,
+        }
     },
     set {
         SADD {

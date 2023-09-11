@@ -244,7 +244,7 @@ pub fn bytes_to_range<T: FromStr>(bytes: &[u8]) -> Result<Bound<T>, Error> {
 }
 
 /// Converts bytes to a Range of float FloatOrd numbers
-pub fn bytes_to_range_floatord(bytes: &[u8]) -> Result<Bound<FloatOrd<f64>>, Error> {
+pub fn bytes_to_range_floatord(bytes: &[u8]) -> Result<Bound<sorted_set::Score>, Error> {
     match bytes_to_range(bytes)? {
         Bound::Included(n) => Ok(Bound::Included(FloatOrd(n))),
         Bound::Excluded(n) => Ok(Bound::Excluded(FloatOrd(n))),
