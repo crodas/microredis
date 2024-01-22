@@ -41,7 +41,7 @@ impl Entry {
     }
 
     pub fn clone(&self) -> Self {
-        Self::new(self.value.clone(), self.expires_at.clone())
+        Self::new(self.value.clone(), self.expires_at)
     }
 
     pub fn get_ttl(&self) -> Option<Instant> {

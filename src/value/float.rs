@@ -36,9 +36,9 @@ impl TryFrom<&Value> for Float {
     }
 }
 
-impl Into<Value> for Float {
-    fn into(self) -> Value {
-        Value::Float(self.0)
+impl From<Float> for Value {
+    fn from(val: Float) -> Self {
+        Value::Float(val.0)
     }
 }
 

@@ -2,7 +2,7 @@
 //!
 //! There is one instance of this mod active per server instance.
 use crate::{connection::Connection, error::Error, value::Value};
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use glob::Pattern;
 use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
@@ -16,6 +16,12 @@ type Subscription = HashMap<u128, Sender>;
 pub struct Pubsub {
     subscriptions: RwLock<HashMap<Bytes, Subscription>>,
     psubscriptions: RwLock<HashMap<Pattern, Subscription>>,
+}
+
+impl Default for Pubsub {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Pubsub {
@@ -97,8 +103,8 @@ impl Pubsub {
                 if sender
                     .try_send(Value::Array(vec![
                         "message".into(),
-                        Value::new(&channel),
-                        Value::new(&message),
+                        Value::new(channel),
+                        Value::new(message),
                     ]))
                     .is_ok()
                 {
@@ -163,7 +169,6 @@ impl Pubsub {
     /// Subscribe connection to channels
     pub fn subscribe(&self, channels: VecDeque<Bytes>, conn: &Connection) {
         let mut subscriptions = self.subscriptions.write();
-        let total_psubs = self.psubscriptions.read().len();
 
         channels
             .into_iter()
@@ -213,7 +218,7 @@ impl Pubsub {
                 if notify {
                     conn.append_response(Value::Array(vec![
                         "unsubscribe".into(),
-                        Value::new(&channel),
+                        Value::new(channel),
                         (all_subs.len() + total_psubs).into(),
                     ]));
                 }

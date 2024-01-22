@@ -1,7 +1,7 @@
 //! # Pubsub command handlers
 use std::collections::VecDeque;
 
-use crate::{check_arg, connection::Connection, error::Error, value::Value};
+use crate::{connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
 use glob::Pattern;
 
@@ -20,7 +20,7 @@ pub async fn pubsub(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Valu
             conn.pubsub()
                 .channels()
                 .iter()
-                .map(|v| Value::new(&v))
+                .map(|v| Value::new(v))
                 .collect(),
         )),
         "help" => super::help::pubsub(),
@@ -29,8 +29,7 @@ pub async fn pubsub(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Valu
             .pubsub()
             .get_number_of_subscribers(&args)
             .iter()
-            .map(|(channel, subs)| vec![Value::new(channel), (*subs).into()])
-            .flatten()
+            .flat_map(|(channel, subs)| vec![Value::new(channel), (*subs).into()])
             .collect::<Vec<Value>>()
             .into()),
         cmd => Err(Error::SubCommandNotFound(cmd.into(), "pubsub".into())),
@@ -53,7 +52,7 @@ pub async fn psubscribe(conn: &Connection, args: VecDeque<Bytes>) -> Result<Valu
 
 /// Unsubscribes the client from the given patterns, or from all of them if none is given.
 pub async fn punsubscribe(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    let channels = if args.len() == 0 {
+    let channels = if args.is_empty() {
         conn.pubsub_client().psubscriptions()
     } else {
         args.into_iter()
@@ -64,20 +63,20 @@ pub async fn punsubscribe(conn: &Connection, args: VecDeque<Bytes>) -> Result<Va
             .collect::<Result<Vec<Pattern>, Error>>()?
     };
 
-    let _ = conn.pubsub_client().punsubscribe(&channels, conn);
+    conn.pubsub_client().punsubscribe(&channels, conn);
 
     Ok(Value::Ignore)
 }
 
 /// Unsubscribes the client from the given channels, or from all of them if none is given.
 pub async fn unsubscribe(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    let channels = if args.len() == 0 {
+    let channels = if args.is_empty() {
         conn.pubsub_client().subscriptions()
     } else {
         args.into_iter().collect()
     };
 
-    let _ = conn.pubsub_client().unsubscribe(&channels, conn);
+    conn.pubsub_client().unsubscribe(&channels, conn);
     Ok(Value::Ignore)
 }
 

@@ -2,7 +2,7 @@
 //!
 //! In-memory database compatible with Redis.
 #![deny(missing_docs)]
-#![allow(warnings)]
+#![deny(warnings)]
 
 pub mod cmd;
 pub mod config;

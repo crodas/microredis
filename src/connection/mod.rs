@@ -14,7 +14,7 @@ pub mod pubsub_connection;
 pub mod pubsub_server;
 
 /// Possible status of connections
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub enum ConnectionStatus {
     /// The connection is in a MULTI stage and commands are being queued
     Multi,
@@ -25,13 +25,8 @@ pub enum ConnectionStatus {
     /// The connection is in pub-sub only mode
     Pubsub,
     /// The connection is a normal conection
+    #[default]
     Normal,
-}
-
-impl Default for ConnectionStatus {
-    fn default() -> Self {
-        ConnectionStatus::Normal
-    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -100,7 +95,7 @@ impl Connection {
     }
 
     /// Creates a clone connection
-    pub fn clone(&self) -> Arc<Connection> {
+    pub fn get_connection(&self) -> Arc<Connection> {
         self.all_connections
             .get_by_conn_id(self.id)
             .expect("Connection must be registered")
@@ -170,7 +165,7 @@ impl Connection {
     pub fn unblock(&self, reason: UnblockReason) -> bool {
         let mut info = self.info.write();
         if info.is_blocked {
-            let notification = info.blocked_notification.as_ref().map(|s| s.clone());
+            let notification = info.blocked_notification.as_ref().cloned();
             info.is_blocked = false;
             info.unblock_reason = Some(reason);
             info.blocked_notification = None;
@@ -178,7 +173,7 @@ impl Connection {
 
             if let Some(s) = notification {
                 // Notify connection about this change
-                s.send(());
+                let _ = s.send(());
             }
 
             true

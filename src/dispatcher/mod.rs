@@ -14,11 +14,10 @@ use crate::{
 };
 use bytes::Bytes;
 use command::Flag;
-use std::convert::TryInto;
 
 pub mod command;
 
-/// Returns the server time
+// Returns the server time
 dispatcher! {
     set {
         SADD {

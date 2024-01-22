@@ -4,22 +4,22 @@
 //! metrics.
 use crate::{
     config::Config,
-    connection::{connections::Connections, Connection, ConnectionStatus},
+    connection::{connections::Connections, Connection},
     db::{pool::Databases, Db},
     dispatcher::Dispatcher,
     error::Error,
     value::Value,
 };
 use bytes::{Buf, Bytes, BytesMut};
-use futures::{channel::mpsc::Receiver, future, SinkExt};
+use futures::{future, SinkExt};
 use log::{info, trace, warn};
 use redis_zero_protocol_parser::{parse_server, Error as RedisError};
-use std::{collections::VecDeque, io, net::SocketAddr, sync::Arc};
+use std::{collections::VecDeque, io, sync::Arc};
 #[cfg(unix)]
 use tokio::net::UnixListener;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpListener,
     time::{sleep, Duration},
 };
 use tokio_stream::StreamExt;
@@ -105,8 +105,6 @@ async fn server_metrics(all_connections: Arc<Connections>) -> Result<(), Error> 
         let _ = stream.write_all(response.as_bytes()).await;
         let _ = stream.flush().await;
     }
-
-    Ok(())
 }
 
 /// Spawn the TCP/IP micro-redis server.
@@ -121,7 +119,7 @@ async fn serve_tcp(
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
-                let mut transport = Framed::new(socket, RedisParser);
+                let transport = Framed::new(socket, RedisParser);
                 let all_connections = all_connections.clone();
                 let default_db = default_db.clone();
 
@@ -132,8 +130,6 @@ async fn serve_tcp(
             Err(e) => println!("error accepting socket; error = {:?}", e),
         }
     }
-
-    Ok(())
 }
 
 #[cfg(unix)]
@@ -150,7 +146,7 @@ async fn serve_unixsocket(
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
-                let mut transport = Framed::new(socket, RedisParser);
+                let transport = Framed::new(socket, RedisParser);
                 let all_connections = all_connections.clone();
                 let default_db = default_db.clone();
 
@@ -169,7 +165,6 @@ async fn serve_unixsocket(
             Err(e) => println!("error accepting socket; error = {:?}", e),
         }
     }
-    Ok(())
 }
 
 #[inline]
@@ -178,7 +173,7 @@ async fn execute_command(
     dispatcher: &Dispatcher,
     args: VecDeque<Bytes>,
 ) -> Option<Value> {
-    match dispatcher.execute(&conn, args).await {
+    match dispatcher.execute(conn, args).await {
         Ok(result) => Some(result),
         Err(Error::EmptyLine) => Some(Value::Ignore),
         Err(Error::Quit) => None,

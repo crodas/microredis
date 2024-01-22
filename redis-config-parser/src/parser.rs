@@ -58,16 +58,16 @@ macro_rules! read_until {
 }
 
 pub fn parse(bytes: &'_ [u8]) -> Result<(&'_ [u8], ConfigValue<'_>), Error> {
-    let bytes = skip!(bytes, vec![b' ', b'\t', b'\r', b'\n']);
+    let bytes = skip!(bytes, [b' ', b'\t', b'\r', b'\n']);
     let bytes = if bytes.first() == Some(&b'#') {
         // The entire line is a comment, skip the whole line
-        let (bytes, _) = read_until!(bytes, vec![b'\n']);
-        skip!(bytes, vec![b' ', b'\t', b'\r', b'\n'])
+        let (bytes, _) = read_until!(bytes, [b'\n']);
+        skip!(bytes, [b' ', b'\t', b'\r', b'\n'])
     } else {
         bytes
     };
-    let (bytes, name) = read_until!(bytes, vec![b' ', b'\t', b'\r']);
-    let bytes = skip!(bytes, vec![b' ', b'\t', b'\r']);
+    let (bytes, name) = read_until!(bytes, [b' ', b'\t', b'\r']);
+    let bytes = skip!(bytes, [b' ', b'\t', b'\r']);
 
     let mut args = vec![];
     let len = bytes.len();
@@ -86,7 +86,7 @@ pub fn parse(bytes: &'_ [u8]) -> Result<(&'_ [u8], ConfigValue<'_>), Error> {
                 break;
             }
             b'#' => {
-                let (_, skipped) = read_until!(bytes, vec![b'\n']);
+                let (_, skipped) = read_until!(bytes, [b'\n']);
                 i += skipped.len() + 1;
                 break;
             }

@@ -30,6 +30,7 @@ macro_rules! dispatcher {
 
         /// Metrics for all defined commands
         #[derive(serde::Serialize)]
+        #[allow(non_snake_case, non_camel_case_types)]
         pub struct ServiceMetricRegistry<'a> {
             $($(
             $command: &'a command::Metrics,
@@ -45,6 +46,12 @@ macro_rules! dispatcher {
             $($(
                 $command: command::Command,
             )+)+
+        }
+
+        impl Default for Dispatcher {
+            fn default() -> Self {
+                Self::new()
+            }
         }
 
         impl Dispatcher {

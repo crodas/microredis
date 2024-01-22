@@ -38,13 +38,13 @@ impl Default for Override {
 #[derive(PartialEq, Debug, Clone, Copy, Default)]
 pub struct ExpirationOpts {
     /// Set expiry only when the key has no expiry
-    pub NX: bool,
+    pub if_none: bool,
     /// Set expiry only when the key has an existing expiry
-    pub XX: bool,
+    pub replace_only: bool,
     /// Set expiry only when the new expiry is greater than current one
-    pub GT: bool,
+    pub greater_than: bool,
     /// Set expiry only when the new expiry is less than current one
-    pub LT: bool,
+    pub lower_than: bool,
 }
 
 impl TryFrom<Vec<Bytes>> for ExpirationOpts {
@@ -62,10 +62,10 @@ impl TryFrom<&[Bytes]> for ExpirationOpts {
         let mut expiration_opts = Self::default();
         for arg in args.iter() {
             match String::from_utf8_lossy(arg).to_uppercase().as_str() {
-                "NX" => expiration_opts.NX = true,
-                "XX" => expiration_opts.XX = true,
-                "GT" => expiration_opts.GT = true,
-                "LT" => expiration_opts.LT = true,
+                "NX" => expiration_opts.if_none = true,
+                "XX" => expiration_opts.replace_only = true,
+                "GT" => expiration_opts.greater_than = true,
+                "LT" => expiration_opts.lower_than = true,
                 invalid => return Err(Error::UnsupportedOption(invalid.to_owned())),
             }
         }
@@ -87,10 +87,10 @@ mod test {
             Bytes::copy_from_slice(b"lT"),
         ];
         let x: ExpirationOpts = opts.as_slice().try_into().unwrap();
-        assert!(x.NX);
-        assert!(x.XX);
-        assert!(x.GT);
-        assert!(x.LT);
+        assert!(x.if_none);
+        assert!(x.replace_only);
+        assert!(x.greater_than);
+        assert!(x.lower_than);
     }
 
     #[test]
@@ -98,10 +98,10 @@ mod test {
         let opts = vec![Bytes::copy_from_slice(b"nx")];
         let x: ExpirationOpts = opts.as_slice().try_into().unwrap();
 
-        assert!(x.NX);
-        assert!(!x.XX);
-        assert!(!x.GT);
-        assert!(!x.LT);
+        assert!(x.if_none);
+        assert!(!x.replace_only);
+        assert!(!x.greater_than);
+        assert!(!x.lower_than);
     }
 
     #[test]

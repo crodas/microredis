@@ -3,20 +3,15 @@ use super::now;
 use crate::{
     check_arg,
     connection::Connection,
-    db::{scan::Scan, utils::ExpirationOpts},
+    db::scan::Scan,
     error::Error,
     value::{
         bytes_to_int, bytes_to_number, cursor::Cursor, expiration::Expiration, typ::Typ, Value,
     },
 };
 use bytes::Bytes;
-use std::{
-    collections::VecDeque,
-    convert::TryInto,
-    str::FromStr,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tokio::time::{Duration, Instant};
+use std::{collections::VecDeque, convert::TryInto, str::FromStr};
+use tokio::time::Instant;
 
 /// This command copies the value stored at the source key to the destination
 /// key.
@@ -68,13 +63,13 @@ pub async fn copy(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
 }
 
 /// Removes the specified keys. A key is ignored if it does not exist.
-pub async fn del(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+pub async fn del(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let keys = args.into_iter().collect::<Vec<_>>();
     Ok(conn.db().del(&keys))
 }
 
 /// Returns if key exists.
-pub async fn exists(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+pub async fn exists(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     let keys = args.into_iter().collect::<Vec<_>>();
     Ok(conn.db().exists(&keys).into())
 }
@@ -247,7 +242,7 @@ pub async fn object(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, E
 
     if expected_args != args.len() {
         return Err(Error::SubCommandNotFound(
-            subcommand.into(),
+            subcommand,
             String::from_utf8_lossy(&args[0]).into(),
         ));
     }
@@ -260,7 +255,7 @@ pub async fn object(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, E
             Value::Null
         }),
         _ => Err(Error::SubCommandNotFound(
-            subcommand.into(),
+            subcommand,
             String::from_utf8_lossy(&args[0]).into(),
         )),
     }
@@ -620,7 +615,7 @@ mod test {
     #[tokio::test]
     async fn scan_no_args() {
         let c = create_connection();
-        for i in (1..100) {
+        for i in 1..100 {
             assert_eq!(
                 Ok(1.into()),
                 run_command(&c, &["incr", &format!("foo-{}", i)]).await
@@ -641,7 +636,7 @@ mod test {
     #[tokio::test]
     async fn scan_with_count_match() {
         let c = create_connection();
-        for i in (1..100) {
+        for i in 1..100 {
             assert_eq!(
                 Ok(1.into()),
                 run_command(&c, &["incr", &format!("foo-{}", i)]).await
@@ -662,7 +657,7 @@ mod test {
     #[tokio::test]
     async fn scan_with_type_1() {
         let c = create_connection();
-        for i in (1..100) {
+        for i in 1..100 {
             assert_eq!(
                 Ok(1.into()),
                 run_command(&c, &["incr", &format!("foo-{}", i)]).await
@@ -683,7 +678,7 @@ mod test {
     #[tokio::test]
     async fn scan_with_type_2() {
         let c = create_connection();
-        for i in (1..100) {
+        for i in 1..100 {
             assert_eq!(
                 Ok(1.into()),
                 run_command(&c, &["incr", &format!("foo-{}", i)]).await
@@ -704,7 +699,7 @@ mod test {
     #[tokio::test]
     async fn scan_with_count() {
         let c = create_connection();
-        for i in (1..100) {
+        for i in 1..100 {
             assert_eq!(
                 Ok(1.into()),
                 run_command(&c, &["incr", &format!("foo-{}", i)]).await

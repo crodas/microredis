@@ -57,9 +57,9 @@ impl Typ {
 impl FromStr for Typ {
     type Err = strum::ParseError;
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        if input.chars().next() == Some('!') {
+        if let Some(stripped_input) = input.strip_prefix('!') {
             Ok(Self {
-                typ: ValueTyp::from_str(&input[1..])?,
+                typ: ValueTyp::from_str(stripped_input)?,
                 is_negated: true,
             })
         } else {

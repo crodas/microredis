@@ -120,7 +120,7 @@ activerehashing yes
 unixsocket /Users/crodas/projects/rust/microredis/tests/tmp/server.43948.1/socket
 ";
 
-        let config: Config = from_str(&config).unwrap();
+        let config: Config = from_str(config).unwrap();
         assert!(!config.daemonize);
         assert_eq!(21111, config.port);
         assert_eq!(vec!["127.0.0.1"], config.bind);

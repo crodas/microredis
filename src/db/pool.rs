@@ -34,7 +34,7 @@ impl Databases {
     pub fn get(&self, db: usize) -> Result<Arc<Db>, Error> {
         self.databases
             .get(db)
-            .map(|db| db.clone())
+            .cloned()
             .ok_or(Error::NotSuchDatabase)
     }
 }
