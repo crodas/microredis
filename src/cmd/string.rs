@@ -12,7 +12,7 @@ use std::{
     cmp::min,
     collections::VecDeque,
     convert::TryInto,
-    ops::{Bound, Neg},
+    ops::{Bound, Deref, Neg},
 };
 
 /// If key already exists and is a string, this command appends the value at the
@@ -77,7 +77,7 @@ pub async fn decr_by(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, 
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
 /// returned if the value stored at key is not a string, because GET only handles string values.
 pub async fn get(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    Ok(conn.db().get(&args[0]))
+    Ok(conn.db().get(&args[0]).inner())
 }
 
 /// Get the value of key and optionally set its expiration. GETEX is similar to
@@ -124,9 +124,9 @@ pub async fn getex(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Er
 /// Get the value of key. If the key does not exist the special value nil is returned. An error is
 /// returned if the value stored at key is not a string, because GET only handles string values.
 pub async fn getrange(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    let bytes = match conn.db().get(&args[0]) {
-        Value::Blob(binary) => binary,
-        Value::BlobRw(binary) => binary.freeze(),
+    let bytes = match conn.db().get(&args[0]).deref() {
+        Value::Blob(binary) => binary.clone(),
+        Value::BlobRw(binary) => binary.clone().freeze(),
         Value::Null => return Ok("".into()),
         _ => return Err(Error::WrongType),
     };
@@ -350,7 +350,7 @@ pub async fn setnx(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
 /// Returns the length of the string value stored at key. An error is returned when key holds a
 /// non-string value.
 pub async fn strlen(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    match conn.db().get(&args[0]) {
+    match conn.db().get(&args[0]).deref() {
         Value::Blob(x) => Ok(x.len().into()),
         Value::String(x) => Ok(x.len().into()),
         Value::Null => Ok(0.into()),

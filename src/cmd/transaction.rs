@@ -77,7 +77,7 @@ pub async fn watch(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Er
                 let v = conn.db().get_version(&key);
                 (key, v)
             })
-            .collect::<Vec<(Bytes, u128)>>(),
+            .collect::<Vec<(Bytes, usize)>>(),
     );
     Ok(Value::Ok)
 }

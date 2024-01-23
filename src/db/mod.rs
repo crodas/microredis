@@ -8,19 +8,18 @@ use crate::{
     value::{bytes_to_number, cursor::Cursor, typ::Typ, VDebug, Value},
 };
 use bytes::{BufMut, Bytes, BytesMut};
-
-use entry::{new_version, Entry};
+use entry::{unique_id, Entry};
 use expiration::ExpirationDb;
-
 use glob::Pattern;
 use log::trace;
 use num_traits::CheckedAdd;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use rand::{prelude::SliceRandom, Rng};
 use seahash::hash;
 use std::{
     collections::{HashMap, VecDeque},
     convert::{TryFrom, TryInto},
+    ops::Deref,
     str::FromStr,
     sync::Arc,
     thread,
@@ -35,6 +34,52 @@ mod expiration;
 pub mod pool;
 pub mod scan;
 pub(crate) mod utils;
+
+/// Read only reference
+pub struct RefValue<'a> {
+    key: &'a Bytes,
+    slot: RwLockReadGuard<'a, HashMap<Bytes, Entry>>,
+}
+
+impl<'a> RefValue<'a> {
+    /// test
+    #[inline(always)]
+    pub fn inner(self) -> Value {
+        self.slot
+            .get(self.key)
+            .filter(|x| x.is_valid())
+            .map(|x| {
+                if x.is_scalar() {
+                    x.get().clone()
+                } else {
+                    Error::WrongType.into()
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    /// Returns the version of a given key
+    #[inline(always)]
+    pub fn version(&self) -> usize {
+        self.slot
+            .get(self.key)
+            .filter(|x| x.is_valid())
+            .map(|x| x.version())
+            .unwrap_or_default()
+    }
+}
+
+impl Deref for RefValue<'_> {
+    type Target = Value;
+
+    fn deref(&self) -> &Self::Target {
+        self.slot
+            .get(self.key)
+            .filter(|x| x.is_valid())
+            .map(|x| x.get())
+            .unwrap_or(&Value::Null)
+    }
+}
 
 /// Database structure
 ///
@@ -77,7 +122,7 @@ pub struct Db {
 
     /// Databases unique ID. This is an internal identifier to avoid deadlocks
     /// when copying and moving data between databases.
-    pub db_id: u128,
+    pub db_id: usize,
 
     /// Current connection  ID
     ///
@@ -106,7 +151,7 @@ impl Db {
             expirations: Arc::new(Mutex::new(ExpirationDb::new())),
             change_subscriptions: Arc::new(RwLock::new(HashMap::new())),
             conn_id: 0,
-            db_id: new_version(),
+            db_id: unique_id(),
             tx_key_locks: Arc::new(RwLock::new(HashMap::new())),
             number_of_slots,
         }
@@ -357,7 +402,7 @@ impl Db {
         let mut slot = self.slots[self.get_slot(key)].write();
         match slot.get_mut(key).filter(|x| x.is_valid()) {
             Some(x) => {
-                if !x.is_clonable() {
+                if !x.is_scalar() {
                     return Err(Error::WrongType);
                 }
                 let value = x.get();
@@ -381,8 +426,8 @@ impl Db {
 
     /// Removes any expiration associated with a given key
     pub fn persist(&self, key: &Bytes) -> Value {
-        let mut slot = self.slots[self.get_slot(key)].write();
-        slot.get_mut(key)
+        let slot = self.slots[self.get_slot(key)].read();
+        slot.get(key)
             .filter(|x| x.is_valid())
             .map_or(0.into(), |x| {
                 if x.has_ttl() {
@@ -410,13 +455,13 @@ impl Db {
             return Err(Error::OptsNotCompatible("GT and LT".to_owned()));
         }
 
-        let mut slot = self.slots[self.get_slot(key)].write();
+        let slot = self.slots[self.get_slot(key)].read();
         let expires_at = Instant::now()
             .checked_add(expires_in)
             .unwrap_or_else(far_future);
 
         Ok(slot
-            .get_mut(key)
+            .get(key)
             .filter(|x| x.is_valid())
             .map_or(0.into(), |x| {
                 let current_expire = x.get_ttl();
@@ -732,9 +777,9 @@ impl Db {
 
     /// Updates the entry version of a given key
     pub fn bump_version(&self, key: &Bytes) -> bool {
-        let mut slot = self.slots[self.get_slot(key)].write();
+        let slot = self.slots[self.get_slot(key)].read();
         let to_return = slot
-            .get_mut(key)
+            .get(key)
             .filter(|x| x.is_valid())
             .map(|entry| {
                 entry.bump_version();
@@ -775,7 +820,7 @@ impl Db {
 
     /// Returns the version of a given key
     #[inline]
-    pub fn get_version(&self, key: &Bytes) -> u128 {
+    pub fn get_version(&self, key: &Bytes) -> usize {
         let slot = self.slots[self.get_slot(key)].read();
         slot.get(key)
             .filter(|x| x.is_valid())
@@ -793,18 +838,18 @@ impl Db {
             })
     }
 
-    /// Get a copy of an entry
-    pub fn get(&self, key: &Bytes) -> Value {
-        let slot = self.slots[self.get_slot(key)].read();
-        slot.get(key)
-            .filter(|x| x.is_valid())
-            .map_or(Value::Null, |x| x.clone_value())
+    /// Get a ref value
+    pub fn get<'a>(&'a self, key: &'a Bytes) -> RefValue<'a> {
+        RefValue {
+            slot: self.slots[self.get_slot(key)].read(),
+            key,
+        }
     }
 
     /// Get a copy of an entry and modifies the expiration of the key
     pub fn getex(&self, key: &Bytes, expires_in: Option<Duration>, make_persistent: bool) -> Value {
-        let mut slot = self.slots[self.get_slot(key)].write();
-        slot.get_mut(key)
+        let slot = self.slots[self.get_slot(key)].read();
+        slot.get(key)
             .filter(|x| x.is_valid())
             .map(|value| {
                 if make_persistent {
@@ -828,7 +873,7 @@ impl Db {
             .map(|key| {
                 let slot = self.slots[self.get_slot(key)].read();
                 slot.get(key)
-                    .filter(|x| x.is_valid() && x.is_clonable())
+                    .filter(|x| x.is_valid() && x.is_scalar())
                     .map_or(Value::Null, |x| x.clone_value())
             })
             .collect::<Vec<Value>>()
@@ -1147,7 +1192,10 @@ mod test {
 
         assert!(r.is_err());
         assert_eq!(Error::NotANumber, r.expect_err("should fail"));
-        assert_eq!(Value::Blob(bytes!("some string")), db.get(&bytes!("num")));
+        assert_eq!(
+            Value::Blob(bytes!("some string")),
+            db.get(&bytes!("num")).inner()
+        );
     }
 
     #[test]
@@ -1156,7 +1204,7 @@ mod test {
         db.set(bytes!(b"num"), Value::Blob(bytes!("1.1")), None);
 
         assert_eq!(Ok(2.2.into()), db.incr::<Float>(&bytes!("num"), 1.1.into()));
-        assert_eq!(Value::Blob(bytes!("2.2")), db.get(&bytes!("num")));
+        assert_eq!(Value::Blob(bytes!("2.2")), db.get(&bytes!("num")).inner());
     }
 
     #[test]
@@ -1165,7 +1213,7 @@ mod test {
         db.set(bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
         assert_eq!(Ok(2.1.into()), db.incr::<Float>(&bytes!("num"), 1.1.into()));
-        assert_eq!(Value::Blob(bytes!("2.1")), db.get(&bytes!("num")));
+        assert_eq!(Value::Blob(bytes!("2.1")), db.get(&bytes!("num")).inner());
     }
 
     #[test]
@@ -1174,21 +1222,21 @@ mod test {
         db.set(bytes!(b"num"), Value::Blob(bytes!("1")), None);
 
         assert_eq!(Ok(2), db.incr(&bytes!("num"), 1));
-        assert_eq!(Value::Blob(bytes!("2")), db.get(&bytes!("num")));
+        assert_eq!(Value::Blob(bytes!("2")), db.get(&bytes!("num")).inner());
     }
 
     #[test]
     fn incr_blob_int_set() {
         let db = Db::new(100);
         assert_eq!(Ok(1), db.incr(&bytes!("num"), 1));
-        assert_eq!(Value::Blob(bytes!("1")), db.get(&bytes!("num")));
+        assert_eq!(Value::Blob(bytes!("1")), db.get(&bytes!("num")).inner());
     }
 
     #[test]
     fn incr_blob_float_set() {
         let db = Db::new(100);
         assert_eq!(Ok(1.1.into()), db.incr::<Float>(&bytes!("num"), 1.1.into()));
-        assert_eq!(Value::Blob(bytes!("1.1")), db.get(&bytes!("num")));
+        assert_eq!(Value::Blob(bytes!("1.1")), db.get(&bytes!("num")).inner());
     }
 
     #[test]
@@ -1226,7 +1274,7 @@ mod test {
     fn persist_bug() {
         let db = Db::new(100);
         db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(1)));
-        assert_eq!(Value::Ok, db.get(&bytes!(b"one")));
+        assert_eq!(Value::Ok, db.get(&bytes!(b"one")).inner());
         assert!(db.is_key_in_expiration_list(&bytes!(b"one")));
         db.persist(&bytes!(b"one"));
         assert!(!db.is_key_in_expiration_list(&bytes!(b"one")));
@@ -1238,13 +1286,13 @@ mod test {
         db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
-        assert_eq!(Value::Null, db.get(&bytes!(b"one")));
+        assert_eq!(Value::Null, db.get(&bytes!(b"one")).inner());
 
         // Purge twice
         assert_eq!(1, db.purge());
         assert_eq!(0, db.purge());
 
-        assert_eq!(Value::Null, db.get(&bytes!(b"one")));
+        assert_eq!(Value::Null, db.get(&bytes!(b"one")).inner());
     }
 
     #[test]
@@ -1253,10 +1301,10 @@ mod test {
         db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(0)));
         // Expired keys should not be returned, even if they are not yet
         // removed by the purge process.
-        assert_eq!(Value::Null, db.get(&bytes!(b"one")));
+        assert_eq!(Value::Null, db.get(&bytes!(b"one")).inner());
 
         db.set(bytes!(b"one"), Value::Ok, Some(Duration::from_secs(5)));
-        assert_eq!(Value::Ok, db.get(&bytes!(b"one")));
+        assert_eq!(Value::Ok, db.get(&bytes!(b"one")).inner());
 
         // Purge should return 0 as the expired key has been removed already
         assert_eq!(0, db.purge());
