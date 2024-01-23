@@ -1,12 +1,13 @@
 use crate::{error::Error, value::Value};
-use parking_lot::Mutex;
+use bytes::BytesMut;
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::time::Instant;
 
 #[derive(Debug)]
 pub struct Entry {
-    pub value: Value,
-    pub version: AtomicUsize,
+    value: RwLock<Value>,
+    version: AtomicUsize,
     expires_at: Mutex<Option<Instant>>,
 }
 
@@ -27,10 +28,18 @@ pub fn unique_id() -> usize {
 impl Entry {
     pub fn new(value: Value, expires_at: Option<Instant>) -> Self {
         Self {
-            value,
+            value: RwLock::new(value),
             expires_at: Mutex::new(expires_at),
             version: AtomicUsize::new(LAST_VERSION.fetch_add(1, Ordering::Relaxed)),
         }
+    }
+
+    pub fn take_value(self) -> Value {
+        self.value.into_inner()
+    }
+
+    pub fn digest(&self) -> Vec<u8> {
+        self.value.read().digest()
     }
 
     #[inline(always)]
@@ -46,7 +55,7 @@ impl Entry {
     }
 
     pub fn clone(&self) -> Self {
-        Self::new(self.value.clone(), *self.expires_at.lock())
+        Self::new(self.value.read().clone(), *self.expires_at.lock())
     }
 
     pub fn get_ttl(&self) -> Option<Instant> {
@@ -66,21 +75,26 @@ impl Entry {
         self.version.load(Ordering::Relaxed)
     }
 
-    /// Changes the value that is wrapped in this entry, the TTL (expired_at) is
-    /// not affected.
-    pub fn change_value(&mut self, value: Value) {
-        self.value = value;
-        self.bump_version()
+    pub fn get(&self) -> RwLockReadGuard<'_, Value> {
+        self.value.read()
     }
 
-    #[allow(dead_code)]
-    pub fn get_mut(&mut self) -> &mut Value {
+    pub fn get_mut(&self) -> RwLockWriteGuard<'_, Value> {
         self.bump_version();
-        &mut self.value
+        self.value.write()
     }
 
-    pub fn get(&self) -> &Value {
-        &self.value
+    pub fn ensure_blob_is_mutable(&self) -> Result<(), Error> {
+        let mut val = self.get_mut();
+        match *val {
+            Value::Blob(ref mut data) => {
+                let rw_data = BytesMut::from(&data[..]);
+                *val = Value::BlobRw(rw_data);
+                Ok(())
+            }
+            Value::BlobRw(_) => Ok(()),
+            _ => Err(Error::WrongType),
+        }
     }
 
     /// If the Entry should be taken as valid, if this function returns FALSE
@@ -94,7 +108,7 @@ impl Entry {
     /// Whether or not the value is scalar
     pub fn is_scalar(&self) -> bool {
         matches!(
-            &self.value,
+            *self.value.read(),
             Value::Boolean(_)
                 | Value::Blob(_)
                 | Value::BlobRw(_)
@@ -111,7 +125,7 @@ impl Entry {
     /// returned instead
     pub fn clone_value(&self) -> Value {
         if self.is_scalar() {
-            self.value.clone()
+            self.value.read().clone()
         } else {
             Error::WrongType.into()
         }

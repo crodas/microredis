@@ -281,7 +281,7 @@ impl Connection {
         let watch_keys = &self.info.read().watch_keys;
 
         for key in watch_keys.iter() {
-            if self.info.read().db.get_version(&key.0) != key.1 {
+            if self.info.read().db.get(&key.0).version() != key.1 {
                 return true;
             }
         }
