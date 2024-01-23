@@ -1,22 +1,19 @@
 //! # String command handlers
-use super::now;
+
 use crate::{
     check_arg,
     connection::Connection,
     db::utils::Override,
     error::Error,
-    try_get_arg,
-    value::{bytes_to_int, bytes_to_number, expiration::Expiration, float::Float, Value},
+    value::{bytes_to_number, expiration::Expiration, float::Float, Value},
 };
 use bytes::Bytes;
 use std::{
     cmp::min,
     collections::VecDeque,
     convert::TryInto,
-    f32::consts::E,
     ops::{Bound, Neg},
 };
-use tokio::time::Duration;
 
 /// If key already exists and is a string, this command appends the value at the
 /// end of the string. If key does not exist it is created and set as an empty
@@ -753,7 +750,7 @@ mod test {
         );
         assert_eq!(
             Ok(Value::BlobRw(
-                ("\0\0xxx\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xxx\0\0\0\0\0\0\0xxx".into())
+                "\0\0xxx\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xxx\0\0\0\0\0\0\0xxx".into()
             )),
             run_command(&c, &["get", "foo"]).await,
         );

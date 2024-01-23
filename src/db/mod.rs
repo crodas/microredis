@@ -5,18 +5,13 @@
 use self::utils::{far_future, ExpirationOpts, Override};
 use crate::{
     error::Error,
-    value::{
-        bytes_to_number,
-        cursor::Cursor,
-        typ::{Typ, ValueTyp},
-        VDebug, Value,
-    },
+    value::{bytes_to_number, cursor::Cursor, typ::Typ, VDebug, Value},
 };
 use bytes::{BufMut, Bytes, BytesMut};
-use core::num;
+
 use entry::{new_version, Entry};
 use expiration::ExpirationDb;
-use futures::Future;
+
 use glob::Pattern;
 use log::trace;
 use num_traits::CheckedAdd;
@@ -26,7 +21,6 @@ use seahash::hash;
 use std::{
     collections::{HashMap, VecDeque},
     convert::{TryFrom, TryInto},
-    ops::{AddAssign, Deref},
     str::FromStr,
     sync::Arc,
     thread,
@@ -234,7 +228,7 @@ impl Db {
                 Value::new(
                     slot.get(key)
                         .filter(|v| v.is_valid())
-                        .map(|v| hex::encode(&v.value.digest()))
+                        .map(|v| hex::encode(v.value.digest()))
                         .unwrap_or("00000".into())
                         .as_bytes(),
                 )
@@ -253,6 +247,17 @@ impl Db {
             })
             .for_each(drop);
         Ok(Value::Ok)
+    }
+
+    /// Checks if the database is empty
+    pub fn is_empty(&self) -> bool {
+        for slot in self.slots.iter() {
+            if slot.read().len() > 0 {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Returns the number of elements in the database
@@ -285,7 +290,7 @@ impl Db {
 
     // Converts a given number to a correct Value, it should be used with Self::round_numbers()
     fn number_to_value(number: &[u8]) -> Result<Value, Error> {
-        if number.iter().find(|x| **x == b'.').is_some() {
+        if number.iter().any(|x| *x == b'.') {
             Ok(Value::new(number))
         } else {
             Ok(Value::Integer(bytes_to_number(number)?))
@@ -397,11 +402,11 @@ impl Db {
         expires_in: Duration,
         opts: ExpirationOpts,
     ) -> Result<Value, Error> {
-        if (opts.NX && opts.XX) || (opts.NX && opts.GT) || (opts.NX && opts.LT) {
+        if opts.if_none && (opts.replace_only || opts.greater_than || opts.lower_than) {
             return Err(Error::OptsNotCompatible("NX and XX, GT or LT".to_owned()));
         }
 
-        if opts.GT && opts.LT {
+        if opts.greater_than && opts.lower_than {
             return Err(Error::OptsNotCompatible("GT and LT".to_owned()));
         }
 
@@ -415,13 +420,13 @@ impl Db {
             .filter(|x| x.is_valid())
             .map_or(0.into(), |x| {
                 let current_expire = x.get_ttl();
-                if opts.NX && current_expire.is_some() {
+                if opts.if_none && current_expire.is_some() {
                     return 0.into();
                 }
-                if opts.XX && current_expire.is_none() {
+                if opts.replace_only && current_expire.is_none() {
                     return 0.into();
                 }
-                if opts.GT {
+                if opts.greater_than {
                     if let Some(current_expire) = current_expire {
                         if expires_at <= current_expire {
                             return 0.into();
@@ -431,7 +436,7 @@ impl Db {
                     }
                 }
 
-                if opts.LT {
+                if opts.lower_than {
                     if let Some(current_expire) = current_expire {
                         if expires_at >= current_expire {
                             return 0.into();
@@ -488,7 +493,7 @@ impl Db {
                 Ok(bytes.len().into())
             }
             None => {
-                if data.len() == 0 {
+                if data.is_empty() {
                     return Ok(0.into());
                 }
                 let mut bytes = BytesMut::new();
@@ -587,21 +592,19 @@ impl Db {
         let mut candidates = self
             .slots
             .iter()
-            .map(|slot| {
+            .filter_map(|slot| {
                 let slot = slot.read();
                 if slot.is_empty() {
                     None
                 } else {
                     slot.iter()
-                        .skip(rng.gen_range((0..slot.len())))
-                        .next()
-                        .map(|(k, v)| k.clone())
+                        .nth(rng.gen_range(0..slot.len()))
+                        .map(|(k, _v)| k.clone())
                 }
             })
-            .filter_map(|v| v)
             .collect::<Vec<Bytes>>();
         candidates.shuffle(&mut rng);
-        Ok(candidates.get(0).into())
+        Ok(candidates.first().into())
     }
 
     /// Renames a key
@@ -671,7 +674,7 @@ impl Db {
         Ok(self
             .slots
             .iter()
-            .map(|slot| {
+            .flat_map(|slot| {
                 slot.read()
                     .keys()
                     .filter(|key| {
@@ -681,7 +684,6 @@ impl Db {
                     .map(|key| Value::new(key))
                     .collect::<Vec<Value>>()
             })
-            .flatten()
             .collect())
     }
 
@@ -854,7 +856,6 @@ impl Db {
     /// Set a key, value with an optional expiration time
     pub fn append(&self, key: &Bytes, value_to_append: &Bytes) -> Result<Value, Error> {
         let mut slot = self.slots[self.get_slot(key)].write();
-        let mut entry = slot.get_mut(key).filter(|x| x.is_valid());
 
         if let Some(entry) = slot.get_mut(key).filter(|x| x.is_valid()) {
             if let Value::Blob(data) = entry.get() {
@@ -1002,8 +1003,8 @@ impl Db {
         if let Some(expires_at) = expires_at {
             self.expirations.lock().add(&key, expires_at);
         } else {
-            /// Make sure to remove the new key (or replaced) from the
-            /// expiration table (from any possible past value).
+            // Make sure to remove the new key (or replaced) from the
+            // expiration table (from any possible past value).
             self.expirations.lock().remove(&key);
         }
 
@@ -1218,10 +1219,7 @@ mod test {
         assert_eq!(None, db.ttl(&bytes!(b"expired")));
         assert_eq!(None, db.ttl(&bytes!(b"not_existing_key")));
         assert_eq!(Some(None), db.ttl(&bytes!(b"valid")));
-        assert!(match db.ttl(&bytes!(b"expiring")) {
-            Some(Some(_)) => true,
-            _ => false,
-        });
+        assert!(matches!(db.ttl(&bytes!(b"expiring")), Some(Some(_))));
     }
 
     #[test]
@@ -1338,7 +1336,7 @@ mod test {
         let shared1 = shared.clone();
         let shared2 = shared.clone();
         let shared3 = shared.clone();
-        tokio::join!(
+        let _ = tokio::join!(
             tokio::spawn(async move {
                 db1.lock_keys(&["test".into()]);
                 let mut x = shared1.write();

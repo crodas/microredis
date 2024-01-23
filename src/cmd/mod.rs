@@ -1,6 +1,6 @@
 //! # All commands handlers
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::time::{Duration, Instant};
+use tokio::time::Duration;
 
 pub mod client;
 pub mod hash;

@@ -31,7 +31,7 @@ pub async fn exec(conn: &Connection, _: VecDeque<Bytes>) -> Result<Value, Error>
     match conn.status() {
         ConnectionStatus::Multi => Ok(()),
         ConnectionStatus::FailedTx => {
-            conn.stop_transaction();
+            let _ = conn.stop_transaction();
             Err(Error::TxAborted)
         }
         _ => Err(Error::NotInTx),

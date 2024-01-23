@@ -3,17 +3,11 @@ use crate::{
     check_arg,
     connection::Connection,
     error::Error,
-    value::Value,
-    value::{self, bytes_to_number, float::Float},
+    value::{bytes_to_number, float::Float, Value},
 };
 use bytes::Bytes;
 use rand::Rng;
-use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
-    convert::TryFrom,
-    ops::AddAssign,
-    str::FromStr,
-};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 /// Removes the specified fields from the hash stored at key. Specified fields that do not exist
 /// within this hash are ignored. If key does not exist, it is treated as an empty hash and this
@@ -77,7 +71,7 @@ pub async fn hget(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Err
 
 /// Returns all fields and values of the hash stored at key. In the returned value, every field
 /// name is followed by its value, so the length of the reply is twice the size of the hash.
-pub async fn hgetall(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
+pub async fn hgetall(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
     conn.db().get_map(&args[0], |v| match v {
         Some(Value::Hash(h)) => {
             let mut ret = vec![];
@@ -263,7 +257,7 @@ pub async fn hmset(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
                 let value = args.pop_front().ok_or(Error::Syntax)?;
                 h.insert(key, value);
             }
-            let len = h.len();
+            let _len = h.len();
             conn.db().set(key.clone(), h.into(), None);
             Ok(Value::Ok)
         }

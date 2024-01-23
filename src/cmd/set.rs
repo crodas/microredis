@@ -60,7 +60,7 @@ where
 
             Ok(all_entries
                 .iter()
-                .map(|entry| Value::new(&entry))
+                .map(|entry| Value::new(entry))
                 .collect::<Vec<Value>>()
                 .into())
         }
@@ -86,7 +86,7 @@ where
 
             Ok(all_entries
                 .iter()
-                .map(|entry| Value::new(&entry))
+                .map(|entry| Value::new(entry))
                 .collect::<Vec<Value>>()
                 .into())
         }
@@ -168,7 +168,7 @@ pub async fn sdiff(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Er
 pub async fn sdiffstore(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key_name = args.pop_front().ok_or(Error::Syntax)?;
     if let Value::Array(values) = sdiff(conn, args).await? {
-        if values.len() > 0 {
+        if !values.is_empty() {
             Ok(store_key_values(conn, key_name, values).into())
         } else {
             let _ = conn.db().del(&[key_name]);
@@ -221,7 +221,7 @@ pub async fn sintercard(conn: &Connection, args: VecDeque<Bytes>) -> Result<Valu
 pub async fn sinterstore(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key_name = args.pop_front().ok_or(Error::Syntax)?;
     if let Value::Array(values) = sinter(conn, args).await? {
-        if values.len() > 0 {
+        if !values.is_empty() {
             Ok(store_key_values(conn, key_name, values).into())
         } else {
             let _ = conn.db().del(&[key_name]);
@@ -427,12 +427,12 @@ pub async fn srandmember(conn: &Connection, args: VecDeque<Bytes>) -> Result<Val
                     let len: usize = min(items.len(), len as usize);
                     Ok(items[0..len]
                         .iter()
-                        .map(|item| Value::new(&item.0))
+                        .map(|item| Value::new(item.0))
                         .collect::<Vec<Value>>()
                         .into())
                 } else {
                     // duplicated results are allowed and the requested number must be returned
-                    let len = (len * -1) as usize;
+                    let len = -len as usize;
                     let total = items.len() - 1;
                     let mut i = 0;
                     let items = (0..len)
@@ -444,7 +444,7 @@ pub async fn srandmember(conn: &Connection, args: VecDeque<Bytes>) -> Result<Val
                         .collect::<Vec<(&Bytes, i128)>>();
                     Ok(items
                         .iter()
-                        .map(|item| Value::new(&item.0))
+                        .map(|item| Value::new(item.0))
                         .collect::<Vec<Value>>()
                         .into())
                 }
@@ -505,7 +505,7 @@ pub async fn sunion(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, E
 pub async fn sunionstore(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key_name = args.pop_front().ok_or(Error::Syntax)?;
     if let Value::Array(values) = sunion(conn, args).await? {
-        if values.len() > 0 {
+        if !values.is_empty() {
             Ok(store_key_values(conn, key_name, values).into())
         } else {
             let _ = conn.db().del(&[key_name]);

@@ -42,7 +42,7 @@ pub async fn client(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Valu
         }
         "unblock" => {
             let reason = match args.get(1) {
-                Some(x) => match String::from_utf8_lossy(&x).to_uppercase().as_str() {
+                Some(x) => match String::from_utf8_lossy(x).to_uppercase().as_str() {
                     "TIMEOUT" => UnblockReason::Timeout,
                     "ERROR" => UnblockReason::Error,
                     _ => return Err(Error::Syntax),
@@ -102,7 +102,7 @@ pub async fn ping(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
     if conn.status() == ConnectionStatus::Pubsub {
         return Ok(Value::Array(vec![
             "pong".into(),
-            args.pop_front().map(|p| Value::Blob(p)).unwrap_or_default(),
+            args.pop_front().map(Value::Blob).unwrap_or_default(),
         ]));
     }
     match args.len() {
@@ -286,7 +286,7 @@ mod test {
     async fn client_unblock_4() {
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let c1 = create_connection();
-        let (mut c2_recv, c2) = c1.all_connections().new_connection(c1.db(), addr);
+        let (_, c2) = c1.all_connections().new_connection(c1.db(), addr);
         // block c2
         c2.block();
 

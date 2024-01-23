@@ -5,12 +5,7 @@
 //!
 //! Each command is defined with the dispatcher macro, which generates efficient and developer
 //! friendly code.
-use crate::{
-    connection::{Connection, ConnectionStatus},
-    dispatcher,
-    error::Error,
-    value::Value,
-};
+use crate::value::Value;
 use bytes::Bytes;
 use metered::{ErrorCount, HitCount, InFlight, ResponseTime, Throughput};
 use std::{collections::VecDeque, convert::TryInto};
@@ -100,6 +95,7 @@ pub struct Metrics {
 }
 
 impl Command {
+    #[allow(clippy::too_many_arguments)]
     /// Creates a new comamnd
     pub fn new(
         name: &'static str,
@@ -170,10 +166,10 @@ impl Command {
 
     /// Checks if a given number of args is expected by this command
     pub fn check_number_args(&self, n: usize) -> bool {
-        if (self.min_args >= 0) {
-            n == (self.min_args as i32).try_into().unwrap_or(0)
+        if self.min_args >= 0 {
+            n == self.min_args.try_into().unwrap_or(0)
         } else {
-            let s: usize = (self.min_args as i32).abs().try_into().unwrap_or(0);
+            let s: usize = self.min_args.abs().try_into().unwrap_or(0);
             n >= s
         }
     }
@@ -225,11 +221,11 @@ impl Command {
 
     /// Command group
     pub fn group(&self) -> &'static str {
-        &self.group
+        self.group
     }
 
     /// Command name
     pub fn name(&self) -> &'static str {
-        &self.name
+        self.name
     }
 }

@@ -1,22 +1,16 @@
 //! # Server command handlers
-use crate::{
-    check_arg, connection::Connection, error::Error, try_get_arg, value::bytes_to_number,
-    value::Value,
-};
+use crate::{connection::Connection, error::Error, value::Value};
 use bytes::Bytes;
 use git_version::git_version;
 use std::{
     collections::VecDeque,
-    convert::TryInto,
-    ops::Neg,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::time::Duration;
 
 /// Returns Array reply of details about all Redis commands.
 pub async fn command(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let dispatcher = conn.all_connections().get_dispatcher();
-    if args.len() == 0 {
+    if args.is_empty() {
         return Ok(Value::Array(
             dispatcher
                 .get_all_commands()
@@ -47,7 +41,7 @@ pub async fn command(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Val
             Ok(Value::Array(result))
         }
         "getkeys" => {
-            if args.len() == 0 {
+            if args.is_empty() {
                 return Err(Error::SubCommandNotFound(
                     String::from_utf8_lossy(&sub_command).into(),
                     "command".into(),
@@ -59,7 +53,7 @@ pub async fn command(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Val
                 command
                     .get_keys(&args, false)
                     .into_iter()
-                    .map(|p| Value::Blob(p))
+                    .map(Value::Blob)
                     .collect(),
             ))
         }

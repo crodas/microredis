@@ -8,7 +8,7 @@ pub mod float;
 pub mod locked;
 pub mod typ;
 
-use crate::{cmd::now, error::Error, value_try_from, value_vec_try_from};
+use crate::{error::Error, value_try_from, value_vec_try_from};
 use bytes::{Bytes, BytesMut};
 use redis_zero_protocol_parser::Value as ParsedValue;
 use sha2::{Digest, Sha256};
@@ -16,7 +16,6 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     convert::{TryFrom, TryInto},
     str::FromStr,
-    time::Duration,
 };
 
 /// Redis Value.
@@ -104,10 +103,7 @@ impl Value {
 
     /// Is the current value an error?
     pub fn is_err(&self) -> bool {
-        match self {
-            Self::Err(..) => true,
-            _ => false,
-        }
+        matches!(self, Self::Err(..))
     }
 
     /// Return debug information for the type
@@ -146,14 +142,14 @@ impl From<&Value> for Vec<u8> {
             Value::Float(x) => format!(",{}\r\n", x).into(),
             Value::BlobRw(x) => {
                 let s = format!("${}\r\n", x.len());
-                let mut s: BytesMut = s.as_str().as_bytes().into();
+                let mut s: BytesMut = s.as_bytes().into();
                 s.extend_from_slice(x);
                 s.extend_from_slice(b"\r\n");
                 s.to_vec()
             }
             Value::Blob(x) => {
                 let s = format!("${}\r\n", x.len());
-                let mut s: BytesMut = s.as_str().as_bytes().into();
+                let mut s: BytesMut = s.as_bytes().into();
                 s.extend_from_slice(x);
                 s.extend_from_slice(b"\r\n");
                 s.to_vec()
@@ -181,7 +177,7 @@ impl TryFrom<&Value> for i64 {
         match val {
             Value::BigInteger(x) => (*x).try_into().map_err(|_| Error::NotANumber),
             Value::Integer(x) => Ok(*x),
-            Value::Blob(x) => bytes_to_number::<i64>(&x),
+            Value::Blob(x) => bytes_to_number::<i64>(x),
             Value::String(x) => x.parse::<i64>().map_err(|_| Error::NotANumber),
             _ => Err(Error::NotANumber),
         }
@@ -222,7 +218,7 @@ impl<'a> From<&ParsedValue<'a>> for Value {
     fn from(value: &ParsedValue) -> Self {
         match value {
             ParsedValue::String(x) => Self::String((*x).to_string()),
-            ParsedValue::Blob(x) => Self::new(*x),
+            ParsedValue::Blob(x) => Self::new(x),
             ParsedValue::Array(x) => Self::Array(x.iter().map(|x| x.into()).collect()),
             ParsedValue::Boolean(x) => Self::Boolean(*x),
             ParsedValue::BigInteger(x) => Self::BigInteger(*x),
@@ -326,7 +322,7 @@ mod test {
         ($name:ty, $x:expr, $str:expr) => {
             paste! {
                 #[test]
-                fn [<serialize_and_deserialize_ $name>]() {
+                fn [<serialize_and_deserialize $name>]() {
                     let raw_bytes: Vec<u8> = $x.into();
                     let parsed: ParsedValue = redis_zero_protocol_parser::parse(&raw_bytes).unwrap().1;
                     assert_eq!(Value::String($str.to_owned()), (&parsed).into());
@@ -336,7 +332,7 @@ mod test {
         ($name:ty, $x:expr) => {
             paste! {
                 #[test]
-                fn [<serialize_and_deserialize_ $name>]() {
+                fn [<serialize_and_deserialize $name>]() {
                     let raw_bytes: Vec<u8> = $x.into();
                     let parsed: ParsedValue = redis_zero_protocol_parser::parse(&raw_bytes).unwrap().1;
                     assert_eq!($x, (&parsed).into());

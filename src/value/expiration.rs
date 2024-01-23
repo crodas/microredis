@@ -1,6 +1,6 @@
 //! # Expiration timestamp struct
 
-use super::{bytes_to_int, typ};
+use super::bytes_to_int;
 use crate::{cmd::now, error::Error};
 use std::{convert::TryInto, time::Duration};
 
@@ -48,7 +48,7 @@ impl Expiration {
         };
 
         Ok(Expiration {
-            millis: millis.abs() as u64,
+            millis: millis.unsigned_abs(),
             is_negative: millis.is_negative(),
             command: command.to_string(),
         })

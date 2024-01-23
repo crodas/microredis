@@ -3,12 +3,7 @@
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
 use crc32fast::Hasher as Crc32Hasher;
-use std::{
-    convert::TryFrom,
-    io,
-    num::{IntErrorKind, ParseIntError},
-    str::FromStr,
-};
+use std::{convert::TryFrom, num::ParseIntError, str::FromStr};
 use thiserror::Error;
 
 /// Error
@@ -101,6 +96,7 @@ impl ToString for Cursor {
 mod test {
     use super::*;
 
+    #[test]
     fn serialize_end() {
         let x = Cursor::new(0, 0).unwrap();
         assert_eq!("0", x.to_string());
