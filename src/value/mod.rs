@@ -26,7 +26,7 @@ pub enum Value {
     /// Hash. This type cannot be serialized
     Hash(HashMap<Bytes, Bytes>),
     /// List. This type cannot be serialized
-    List(shared::Value<VecDeque<checksum::Value>>),
+    List(VecDeque<checksum::Value>),
     /// Set. This type cannot be serialized
     Set(shared::Value<HashSet<Bytes>>),
     /// Vector/Array of values
@@ -278,7 +278,7 @@ impl From<HashMap<Bytes, Bytes>> for Value {
 
 impl From<VecDeque<checksum::Value>> for Value {
     fn from(value: VecDeque<checksum::Value>) -> Value {
-        Value::List(shared::Value::new(value))
+        Value::List(value)
     }
 }
 
