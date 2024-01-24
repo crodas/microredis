@@ -42,7 +42,8 @@ pub struct RefValue<'a> {
 }
 
 impl<'a> RefValue<'a> {
-    /// test
+    /// Consumes the RefValue and a new cloned Value, only if the Value is
+    /// scalar, otherwise a WrongType error is returned (casted as a Value)
     #[inline(always)]
     pub fn into_inner(self) -> Value {
         self.slot
@@ -58,7 +59,7 @@ impl<'a> RefValue<'a> {
             .unwrap_or_default()
     }
 
-    /// test
+    /// Gets an optional reference to the read guarded value
     pub fn inner(&self) -> Option<RwLockReadGuard<'_, Value>> {
         self.slot
             .get(self.key)
@@ -66,7 +67,7 @@ impl<'a> RefValue<'a> {
             .map(|x| x.get())
     }
 
-    /// test
+    /// Gets an optional reference to the write guarded value
     pub fn inner_mut(&self) -> Option<RwLockWriteGuard<'_, Value>> {
         self.slot
             .get(self.key)
@@ -74,7 +75,12 @@ impl<'a> RefValue<'a> {
             .map(|x| x.get_mut())
     }
 
-    /// map_mut
+    /// map
+    ///
+    /// Maps an `Option<T>` to `Option<U>` by applying a function to a contained
+    /// value (if `Some`) or returns `None` (if `None`). The RefValue is
+    /// consumed so the underlying ReadGuard is dropped so slot is free as this
+    /// function returns
     #[inline(always)]
     pub fn map<T, F>(self, f: F) -> Option<T>
     where
@@ -86,7 +92,12 @@ impl<'a> RefValue<'a> {
         })
     }
 
-    /// map_mut
+    /// map_ut
+    ///
+    /// Maps an `Option<&mut T>` to `Option<&mut U>` by applying a function to a contained
+    /// value (if `Some`) or returns `None` (if `None`). The RefValue is
+    /// consumed so the underlying ReadGuard is dropped so slot is free as this
+    /// function returns
     #[inline(always)]
     pub fn map_mut<T, F>(self, f: F) -> Option<T>
     where
