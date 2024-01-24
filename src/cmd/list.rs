@@ -429,15 +429,57 @@ pub async fn lmove(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
     db.lock_keys(&to_lock);
 
     let mut to_create = None;
+    let is_same_key = source == destination;
 
     let result = db
         .get(&source)
         .map_mut(|v| match v {
-            Value::List(source) => conn
-                .db()
-                .get(&destination)
-                .map_mut(|v| match v {
-                    Value::List(target) => {
+            Value::List(source) => {
+                if is_same_key {
+                    // take a different approach to avoid a deadlock
+                    let element = if source_is_left {
+                        source.pop_front()
+                    } else {
+                        source.pop_back()
+                    };
+                    return if let Some(element) = element {
+                        let ret = element.clone_value();
+                        if target_is_left {
+                            source.push_front(element);
+                        } else {
+                            source.push_back(element);
+                        }
+                        Ok(ret)
+                    } else {
+                        Ok(Value::Null)
+                    };
+                }
+
+                conn.db()
+                    .get(&destination)
+                    .map_mut(|v| match v {
+                        Value::List(target) => {
+                            let element = if source_is_left {
+                                source.pop_front()
+                            } else {
+                                source.pop_back()
+                            };
+
+                            if let Some(element) = element {
+                                let ret = element.clone_value();
+                                if target_is_left {
+                                    target.push_front(element);
+                                } else {
+                                    target.push_back(element);
+                                }
+                                Ok(ret)
+                            } else {
+                                Ok(Value::Null)
+                            }
+                        }
+                        _ => Err(Error::WrongType),
+                    })
+                    .unwrap_or_else(|| {
                         let element = if source_is_left {
                             source.pop_front()
                         } else {
@@ -446,35 +488,15 @@ pub async fn lmove(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
 
                         if let Some(element) = element {
                             let ret = element.clone_value();
-                            if target_is_left {
-                                target.push_front(element);
-                            } else {
-                                target.push_back(element);
-                            }
+                            let mut h = VecDeque::new();
+                            h.push_front(element);
+                            to_create = Some(h);
                             Ok(ret)
                         } else {
                             Ok(Value::Null)
                         }
-                    }
-                    _ => Err(Error::WrongType),
-                })
-                .unwrap_or_else(|| {
-                    let element = if source_is_left {
-                        source.pop_front()
-                    } else {
-                        source.pop_back()
-                    };
-
-                    if let Some(element) = element {
-                        let ret = element.clone_value();
-                        let mut h = VecDeque::new();
-                        h.push_front(element);
-                        to_create = Some(h);
-                        Ok(ret)
-                    } else {
-                        Ok(Value::Null)
-                    }
-                }),
+                    })
+            }
             _ => Err(Error::WrongType),
         })
         .unwrap_or(Ok(Value::Null));

@@ -312,45 +312,51 @@ pub async fn smove(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
     let source = args.pop_front().ok_or(Error::Syntax)?;
     let destination = args.pop_front().ok_or(Error::Syntax)?;
     let member = args.pop_front().ok_or(Error::Syntax)?;
+    let mut to_insert = None;
     let result = conn
         .db()
         .get(&source)
         .map_mut(|v| match v {
-            Value::Set(set1) => conn
-                .db()
-                .get(&destination)
-                .map_mut(|v| match v {
-                    Value::Set(set2) => {
-                        if !set1.contains(&member) {
-                            return Ok(0.into());
-                        }
+            Value::Set(set1) => {
+                if source == destination {
+                    return Ok(if set1.contains(&member) { 1 } else { 0 }.into());
+                }
 
-                        if source == destination {
-                            return Ok(1.into());
-                        }
+                conn.db()
+                    .get(&destination)
+                    .map_mut(|v| match v {
+                        Value::Set(set2) => {
+                            if !set1.contains(&member) {
+                                return Ok(0.into());
+                            }
 
+                            set1.remove(&member);
+                            if set2.insert(member.clone()) {
+                                Ok(1.into())
+                            } else {
+                                conn.db().bump_version(&source);
+                                Ok(0.into())
+                            }
+                        }
+                        _ => Err(Error::WrongType),
+                    })
+                    .unwrap_or_else(|| {
                         set1.remove(&member);
-                        if set2.insert(member.clone()) {
-                            Ok(1.into())
-                        } else {
-                            Ok(0.into())
-                        }
-                    }
-                    _ => Err(Error::WrongType),
-                })
-                .unwrap_or_else(|| {
-                    set1.remove(&member);
-                    #[allow(clippy::mutable_key_type)]
-                    let mut x = HashSet::new();
-                    x.insert(member.clone());
-                    conn.db().set(destination.clone(), x.into(), None);
-                    Ok(1.into())
-                }),
+                        let mut x = HashSet::new();
+                        x.insert(member.clone());
+                        to_insert = Some(x);
+                        Ok(1.into())
+                    })
+            }
             _ => Err(Error::WrongType),
         })
         .unwrap_or(Ok(0.into()))?;
 
-    if result == Value::Integer(1) {
+    if let Some(x) = to_insert {
+        conn.db().set(destination.clone(), x.into(), None);
+    }
+
+    if let Value::Integer(1) = result {
         conn.db().bump_version(&source);
         conn.db().bump_version(&destination);
     }

@@ -82,7 +82,6 @@ impl Entry {
     }
 
     pub fn get_mut(&self) -> RwLockWriteGuard<'_, Value> {
-        self.bump_version();
         self.value.write()
     }
 
