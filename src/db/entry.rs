@@ -86,6 +86,7 @@ impl Entry {
     }
 
     pub fn ensure_blob_is_mutable(&self) -> Result<(), Error> {
+        self.bump_version();
         let mut val = self.get_mut();
         match *val {
             Value::Blob(ref mut data) => {

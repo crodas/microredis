@@ -447,6 +447,7 @@ impl Db {
 
             number = incr_by.checked_add(&number).ok_or(Error::Overflow)?;
             *value = Value::Blob(Self::round_numbers(number));
+            entry.bump_version();
             Ok(number)
         } else {
             drop(slot);
