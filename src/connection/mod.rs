@@ -46,7 +46,7 @@ pub struct ConnectionInfo {
     current_db: usize,
     db: Arc<Db>,
     name: Option<String>,
-    watch_keys: Vec<(Bytes, u128)>,
+    watch_keys: Vec<(Bytes, usize)>,
     tx_keys: HashSet<Bytes>,
     status: ConnectionStatus,
     commands: Option<Vec<VecDeque<Bytes>>>,
@@ -267,7 +267,7 @@ impl Connection {
 
     /// Watches keys. In a transaction watched keys are a mechanism to discard a transaction if
     /// some value changed since the moment the command was queued until the execution time.
-    pub fn watch_key(&self, keys: Vec<(Bytes, u128)>) {
+    pub fn watch_key(&self, keys: Vec<(Bytes, usize)>) {
         let watch_keys = &mut self.info.write().watch_keys;
         keys.into_iter()
             .map(|value| {
@@ -281,7 +281,7 @@ impl Connection {
         let watch_keys = &self.info.read().watch_keys;
 
         for key in watch_keys.iter() {
-            if self.info.read().db.get_version(&key.0) != key.1 {
+            if self.info.read().db.get(&key.0).version() != key.1 {
                 return true;
             }
         }

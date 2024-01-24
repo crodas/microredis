@@ -5,7 +5,6 @@ pub mod checksum;
 pub mod cursor;
 pub mod expiration;
 pub mod float;
-pub mod locked;
 pub mod typ;
 
 use crate::{error::Error, value_try_from, value_vec_try_from};
@@ -24,11 +23,11 @@ use std::{
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     /// Hash. This type cannot be serialized
-    Hash(locked::Value<HashMap<Bytes, Bytes>>),
+    Hash(HashMap<Bytes, Bytes>),
     /// List. This type cannot be serialized
-    List(locked::Value<VecDeque<checksum::Value>>),
+    List(VecDeque<checksum::Value>),
     /// Set. This type cannot be serialized
-    Set(locked::Value<HashSet<Bytes>>),
+    Set(HashSet<Bytes>),
     /// Vector/Array of values
     Array(Vec<Value>),
     /// Bytes/Strings/Binary data
@@ -272,19 +271,19 @@ impl From<&str> for Value {
 
 impl From<HashMap<Bytes, Bytes>> for Value {
     fn from(value: HashMap<Bytes, Bytes>) -> Value {
-        Value::Hash(locked::Value::new(value))
+        Value::Hash(value)
     }
 }
 
 impl From<VecDeque<checksum::Value>> for Value {
     fn from(value: VecDeque<checksum::Value>) -> Value {
-        Value::List(locked::Value::new(value))
+        Value::List(value)
     }
 }
 
 impl From<HashSet<Bytes>> for Value {
     fn from(value: HashSet<Bytes>) -> Value {
-        Value::Set(locked::Value::new(value))
+        Value::Set(value)
     }
 }
 
