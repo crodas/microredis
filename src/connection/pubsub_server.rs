@@ -74,10 +74,6 @@ impl Pubsub {
                 h.insert(conn.id(), conn.pubsub_client().sender());
                 subscriptions.insert(channel.clone(), h);
             }
-            if !conn.pubsub_client().is_psubcribed() {
-                conn.pubsub_client().make_psubcribed();
-            }
-
             conn.pubsub_client().new_psubscription(&channel);
 
             conn.append_response(

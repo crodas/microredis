@@ -66,7 +66,7 @@ impl Connections {
             id: *id,
             addr: addr.to_string(),
             all_connections: self.clone(),
-            info: RwLock::new(ConnectionInfo::new(db.new_db_instance(*id))),
+            info: RwLock::new(ConnectionInfo::new(db.set_conn_id(*id))),
             pubsub_client: PubsubClient::new(pubsub_sender),
         });
 

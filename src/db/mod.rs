@@ -185,12 +185,10 @@ impl Db {
         }
     }
 
-    /// Creates a new Database instance bound to a connection.
+    /// Attaches a conn_id to a database instance.
     ///
-    /// This is particular useful when locking keys exclusively.
-    ///
-    /// All the internal data are shjared through an Arc.
-    pub fn new_db_instance(self: Arc<Db>, conn_id: u128) -> Arc<Db> {
+    /// This conn_id is used to lock entries for a given conn_id.
+    pub fn set_conn_id(self: Arc<Db>, conn_id: u128) -> Arc<Db> {
         Arc::new(Self {
             slots: self.slots.clone(),
             tx_key_locks: self.tx_key_locks.clone(),
@@ -1387,8 +1385,8 @@ mod test {
     #[tokio::test]
     async fn lock_keys() {
         let db1 = Arc::new(Db::new(100));
-        let db2 = db1.clone().new_db_instance(2);
-        let db3 = db1.clone().new_db_instance(3);
+        let db2 = db1.clone().set_conn_id(2);
+        let db3 = db1.clone().set_conn_id(3);
         let shared = Arc::new(RwLock::new(1));
         let shared1 = shared.clone();
         let shared2 = shared.clone();

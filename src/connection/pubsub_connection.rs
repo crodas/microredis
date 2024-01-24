@@ -102,17 +102,13 @@ impl PubsubClient {
     /// Creates a new pattern subscription
     pub fn new_psubscription(&self, channel: &Pattern) {
         let mut meta = self.meta.write();
+        meta.is_psubcribed = true;
         meta.psubscriptions.insert(channel.clone(), true);
     }
 
     /// Does this connection has a pattern subscription?
     pub fn is_psubcribed(&self) -> bool {
         self.meta.read().is_psubcribed
-    }
-
-    /// Keeps a record about this connection using pattern suscription
-    pub fn make_psubcribed(&self) {
-        self.meta.write().is_psubcribed = true;
     }
 
     /// Returns a copy of the pubsub sender. This sender object can be used to send messages (from

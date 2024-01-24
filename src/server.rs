@@ -218,7 +218,7 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
                     }
                 }
                 buffered_commands.clear();
-            }
+            },
             result = transport.next() => match result {
                 Some(Ok(args)) => {
                         if conn.is_blocked() {
@@ -240,6 +240,8 @@ async fn handle_new_connection<T: AsyncReadExt + AsyncWriteExt + Unpin, A: ToStr
                     break;
                 },
                 None => break,
+            },
+            else => {
             }
         }
     }
