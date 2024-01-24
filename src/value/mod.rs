@@ -17,6 +17,8 @@ use std::{
     str::FromStr,
 };
 
+use self::typ::ValueTyp;
+
 /// Redis Value.
 ///
 /// This enum represents all data structures that are supported by Redis
@@ -88,6 +90,16 @@ impl Value {
     /// Creates a new Redis value from a stream of bytes
     pub fn new(value: &[u8]) -> Self {
         Self::Blob(Bytes::copy_from_slice(value))
+    }
+
+    /// Returns the value type
+    pub fn typ(&self) -> ValueTyp {
+        match self {
+            Self::Hash(_) => ValueTyp::Hash,
+            Self::List(_) => ValueTyp::List,
+            Self::Set(_) => ValueTyp::Set,
+            _ => ValueTyp::String,
+        }
     }
 
     /// Returns the internal encoding of the redis

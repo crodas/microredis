@@ -77,17 +77,17 @@ impl Entry {
         self.version.load(Ordering::Relaxed)
     }
 
-    pub fn get(&self) -> RwLockReadGuard<'_, Value> {
+    pub fn inner(&self) -> RwLockReadGuard<'_, Value> {
         self.value.read()
     }
 
-    pub fn get_mut(&self) -> RwLockWriteGuard<'_, Value> {
+    pub fn inner_mut(&self) -> RwLockWriteGuard<'_, Value> {
         self.value.write()
     }
 
     pub fn ensure_blob_is_mutable(&self) -> Result<(), Error> {
         self.bump_version();
-        let mut val = self.get_mut();
+        let mut val = self.inner_mut();
         match *val {
             Value::Blob(ref mut data) => {
                 let rw_data = BytesMut::from(&data[..]);

@@ -22,30 +22,22 @@ pub enum ValueTyp {
 }
 
 /// Type
+//
+// The type is a filter to query the database for a values with certain types. The type can be negated
 pub struct Typ {
     typ: ValueTyp,
     is_negated: bool,
 }
 
 impl Typ {
-    /// Returns the type from a given value
-    pub fn get_type(value: &Value) -> ValueTyp {
-        match value {
-            Value::Hash(_) => ValueTyp::Hash,
-            Value::List(_) => ValueTyp::List,
-            Value::Set(_) => ValueTyp::Set,
-            _ => ValueTyp::String,
-        }
-    }
-
     /// Whether the current type is negated or not
     pub fn is_negated(&self) -> bool {
         self.is_negated
     }
 
-    /// Checks if a given value is of the same type
-    pub fn is_value_type(&self, value: &Value) -> bool {
-        let t = Self::get_type(value);
+    /// Checks if a given value is of the same typ
+    pub fn check_type(&self, value: &Value) -> bool {
+        let t = value.typ();
         if self.is_negated {
             t != self.typ
         } else {
