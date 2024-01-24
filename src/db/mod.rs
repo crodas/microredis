@@ -13,13 +13,13 @@ use expiration::ExpirationDb;
 use glob::Pattern;
 use log::trace;
 use num_traits::CheckedAdd;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rand::{prelude::SliceRandom, Rng};
 use seahash::hash;
 use std::{
     collections::{HashMap, VecDeque},
     convert::{TryFrom, TryInto},
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     str::FromStr,
     sync::Arc,
     thread,
@@ -64,6 +64,38 @@ impl<'a> RefValue<'a> {
             .get(self.key)
             .filter(|x| x.is_valid())
             .map(|x| x.get())
+    }
+
+    /// test
+    pub fn inner_mut(&self) -> Option<RwLockWriteGuard<'_, Value>> {
+        self.slot
+            .get(self.key)
+            .filter(|x| x.is_valid())
+            .map(|x| x.get_mut())
+    }
+
+    /// map_mut
+    #[inline(always)]
+    pub fn map<T, F>(self, f: F) -> Option<T>
+    where
+        F: FnOnce(&Value) -> T,
+    {
+        self.slot.get(self.key).filter(|x| x.is_valid()).map(|x| {
+            let value = x.get();
+            f(value.deref())
+        })
+    }
+
+    /// map_mut
+    #[inline(always)]
+    pub fn map_mut<T, F>(self, f: F) -> Option<T>
+    where
+        F: FnOnce(&mut Value) -> T,
+    {
+        self.slot.get(self.key).filter(|x| x.is_valid()).map(|x| {
+            let mut value = x.get_mut();
+            f(value.deref_mut())
+        })
     }
 
     /// Returns the version of a given key
@@ -359,36 +391,40 @@ impl Db {
         let mut incr_by: T =
             bytes_to_number(incr_by).map_err(|_| Error::NotANumberType(typ.to_owned()))?;
 
-        if let Some(entry) = slot.get(key).filter(|x| x.is_valid()) {
-            let mut value = entry.get_mut();
-            if let Value::Hash(h) = value.deref_mut() {
-                let mut h = h.write();
-                if let Some(n) = h.get(sub_key) {
-                    incr_by = incr_by
-                        .checked_add(
-                            &bytes_to_number(n)
-                                .map_err(|_| Error::NotANumberType(typ.to_owned()))?,
-                        )
-                        .ok_or(Error::Overflow)?;
-                }
-                let incr_by_bytes = Self::round_numbers(incr_by);
-                h.insert(sub_key.clone(), incr_by_bytes.clone());
+        if let Some(x) = slot
+            .get(key)
+            .filter(|x| x.is_valid())
+            .map(|x| x.get_mut())
+            .map(|mut x| match x.deref_mut() {
+                Value::Hash(ref mut h) => {
+                    if let Some(n) = h.get(sub_key) {
+                        incr_by = incr_by
+                            .checked_add(
+                                &bytes_to_number(n)
+                                    .map_err(|_| Error::NotANumberType(typ.to_owned()))?,
+                            )
+                            .ok_or(Error::Overflow)?;
+                    }
+                    let incr_by_bytes = Self::round_numbers(incr_by);
+                    h.insert(sub_key.clone(), incr_by_bytes.clone());
 
-                Self::number_to_value(&incr_by_bytes)
-            } else {
-                Err(Error::WrongType)
-            }
-        } else {
-            drop(slot);
-            #[allow(clippy::mutable_key_type)]
-            let mut h = HashMap::new();
-            let incr_by_bytes = Self::round_numbers(incr_by);
-            h.insert(sub_key.clone(), incr_by_bytes.clone());
-            let _ = self.slots[slot_id]
-                .write()
-                .insert(key.clone(), Entry::new(h.into(), None));
-            Self::number_to_value(&incr_by_bytes)
+                    Self::number_to_value(&incr_by_bytes)
+                }
+                _ => Err(Error::WrongType),
+            })
+        {
+            return x;
         }
+
+        drop(slot);
+        #[allow(clippy::mutable_key_type)]
+        let mut h = HashMap::new();
+        let incr_by_bytes = Self::round_numbers(incr_by);
+        h.insert(sub_key.clone(), incr_by_bytes.clone());
+        let _ = self.slots[slot_id]
+            .write()
+            .insert(key.clone(), Entry::new(h.into(), None));
+        Self::number_to_value(&incr_by_bytes)
     }
 
     /// Increments a key's value by a given number

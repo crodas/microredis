@@ -34,10 +34,12 @@ impl Entry {
         }
     }
 
+    #[inline(always)]
     pub fn take_value(self) -> Value {
         self.value.into_inner()
     }
 
+    #[inline(always)]
     pub fn digest(&self) -> Vec<u8> {
         self.value.read().digest()
     }

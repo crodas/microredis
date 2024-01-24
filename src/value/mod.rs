@@ -24,7 +24,7 @@ use std::{
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     /// Hash. This type cannot be serialized
-    Hash(shared::Value<HashMap<Bytes, Bytes>>),
+    Hash(HashMap<Bytes, Bytes>),
     /// List. This type cannot be serialized
     List(shared::Value<VecDeque<checksum::Value>>),
     /// Set. This type cannot be serialized
@@ -272,7 +272,7 @@ impl From<&str> for Value {
 
 impl From<HashMap<Bytes, Bytes>> for Value {
     fn from(value: HashMap<Bytes, Bytes>) -> Value {
-        Value::Hash(shared::Value::new(value))
+        Value::Hash(value)
     }
 }
 
