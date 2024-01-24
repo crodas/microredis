@@ -779,35 +779,6 @@ impl Db {
         matches
     }
 
-    /// get_map_or
-    ///
-    /// Instead of returning an entry of the database, to avoid cloning, this function will
-    /// execute a callback function with the entry as a parameter. If no record is found another
-    /// callback function is going to be executed, dropping the lock before doing so.
-    ///
-    /// If an entry is found, the lock is not dropped before doing the callback. Avoid inserting
-    /// new entries. In this case the value is passed by reference, so it is possible to modify the
-    /// entry itself.
-    ///
-    /// This function is useful to read non-scalar values from the database. Non-scalar values are
-    /// forbidden to clone, attempting cloning will end-up in an error (Error::WrongType)
-    pub fn get_map<F1>(&self, key: &Bytes, found: F1) -> Result<Value, Error>
-    where
-        F1: FnOnce(Option<&Value>) -> Result<Value, Error>,
-    {
-        let slot = self.slots[self.get_slot(key)].read();
-        let entry = slot.get(key).filter(|x| x.is_valid()).map(|e| e.get());
-
-        if let Some(entry) = entry.as_ref() {
-            found(Some(entry))
-        } else {
-            // drop lock
-            drop(entry);
-            drop(slot);
-            found(None)
-        }
-    }
-
     /// Updates the entry version of a given key
     pub fn bump_version(&self, key: &Bytes) -> bool {
         let slot = self.slots[self.get_slot(key)].read();

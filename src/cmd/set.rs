@@ -32,53 +32,63 @@ where
     F1: Fn(&mut HashSet<Bytes>, &HashSet<Bytes>) -> bool,
 {
     let top_key = keys.pop_front().ok_or(Error::Syntax)?;
-    conn.db().get_map(&top_key, |v| match v {
-        Some(Value::Set(x)) => {
-            #[allow(clippy::mutable_key_type)]
-            let mut all_entries = x.read().clone();
-            for key in keys.iter() {
-                let mut do_break = false;
-                let mut found = false;
-                let _ = conn.db().get_map(key, |v| match v {
-                    Some(Value::Set(x)) => {
-                        found = true;
-                        if !op(&mut all_entries, &x.read()) {
-                            do_break = true;
-                        }
-                        Ok(Value::Null)
+    conn.db()
+        .get(&top_key)
+        .map(|v| match v {
+            Value::Set(x) => {
+                #[allow(clippy::mutable_key_type)]
+                let mut all_entries = x.clone();
+                for key in keys.iter() {
+                    let mut do_break = false;
+                    let mut found = false;
+                    let _ = conn
+                        .db()
+                        .get(key)
+                        .map(|v| match v {
+                            Value::Set(x) => {
+                                found = true;
+                                if !op(&mut all_entries, x) {
+                                    do_break = true;
+                                }
+                                Ok(Value::Null)
+                            }
+                            _ => Err(Error::WrongType),
+                        })
+                        .unwrap_or(Ok(Value::Null))?;
+                    if !found && !op(&mut all_entries, &HashSet::new()) {
+                        break;
                     }
-                    None => Ok(Value::Null),
-                    _ => Err(Error::WrongType),
-                })?;
-                if !found && !op(&mut all_entries, &HashSet::new()) {
-                    break;
+                    if do_break {
+                        break;
+                    }
                 }
-                if do_break {
-                    break;
-                }
-            }
 
-            Ok(all_entries
-                .iter()
-                .map(|entry| Value::new(entry))
-                .collect::<Vec<Value>>()
-                .into())
-        }
-        None => {
+                Ok(all_entries
+                    .iter()
+                    .map(|entry| Value::new(entry))
+                    .collect::<Vec<Value>>()
+                    .into())
+            }
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or_else(|| {
             #[allow(clippy::mutable_key_type)]
             let mut all_entries: HashSet<Bytes> = HashSet::new();
             for key in keys.iter() {
                 let mut do_break = false;
-                let _ = conn.db().get_map(key, |v| match v {
-                    Some(Value::Set(x)) => {
-                        if !op(&mut all_entries, &x.read()) {
-                            do_break = true;
+                let _ = conn
+                    .db()
+                    .get(key)
+                    .map(|v| match v {
+                        Value::Set(x) => {
+                            if !op(&mut all_entries, x) {
+                                do_break = true;
+                            }
+                            Ok(Value::Null)
                         }
-                        Ok(Value::Null)
-                    }
-                    None => Ok(Value::Null),
-                    _ => Err(Error::WrongType),
-                })?;
+                        _ => Err(Error::WrongType),
+                    })
+                    .unwrap_or(Ok(Value::Null))?;
                 if do_break {
                     break;
                 }
@@ -89,9 +99,7 @@ where
                 .map(|entry| Value::new(entry))
                 .collect::<Vec<Value>>()
                 .into())
-        }
-        _ => Err(Error::WrongType),
-    })
+        })
 }
 
 /// Add the specified members to the set stored at key. Specified members that are already a member
@@ -100,21 +108,24 @@ where
 pub async fn sadd(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
     let key_for_not_found = key.clone();
-    let result = conn.db().get_map(&key, |v| match v {
-        Some(Value::Set(x)) => {
-            let mut x = x.write();
+    let result = conn
+        .db()
+        .get(&key)
+        .map_mut(|v| match v {
+            Value::Set(x) => {
+                let mut len = 0;
 
-            let mut len = 0;
-
-            for val in args.into_iter() {
-                if x.insert(val) {
-                    len += 1;
+                for val in args.clone().into_iter() {
+                    if x.insert(val) {
+                        len += 1;
+                    }
                 }
-            }
 
-            Ok(len.into())
-        }
-        None => {
+                Ok(len.into())
+            }
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or_else(|| {
             #[allow(clippy::mutable_key_type)]
             let mut x = HashSet::new();
             let mut len = 0;
@@ -127,9 +138,7 @@ pub async fn sadd(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
 
             conn.db().set(key_for_not_found, x.into(), None);
             Ok(len.into())
-        }
-        _ => Err(Error::WrongType),
-    })?;
+        })?;
 
     conn.db().bump_version(&key);
 
@@ -138,11 +147,13 @@ pub async fn sadd(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
 
 /// Returns the set cardinality (number of elements) of the set stored at key.
 pub async fn scard(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map(&args[0], |v| match v {
-        Some(Value::Set(x)) => Ok(x.read().len().into()),
-        None => Ok(0.into()),
-        _ => Err(Error::WrongType),
-    })
+    conn.db()
+        .get(&args[0])
+        .map(|v| match v {
+            Value::Set(x) => Ok(x.len().into()),
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or(Ok(0.into()))
 }
 
 /// Returns the members of the set resulting from the difference between the first set and all the
@@ -234,33 +245,36 @@ pub async fn sinterstore(conn: &Connection, mut args: VecDeque<Bytes>) -> Result
 
 /// Returns if member is a member of the set stored at key.
 pub async fn sismember(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map(&args[0], |v| match v {
-        Some(Value::Set(x)) => {
-            if x.read().contains(&args[1]) {
-                Ok(1.into())
-            } else {
-                Ok(0.into())
+    conn.db()
+        .get(&args[0])
+        .map(|v| match v {
+            Value::Set(x) => {
+                if x.contains(&args[1]) {
+                    Ok(1.into())
+                } else {
+                    Ok(0.into())
+                }
             }
-        }
-        None => Ok(0.into()),
-        _ => Err(Error::WrongType),
-    })
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or(Ok(0.into()))
 }
 
 /// Returns all the members of the set value stored at key.
 ///
 /// This has the same effect as running SINTER with one argument key.
 pub async fn smembers(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map(&args[0], |v| match v {
-        Some(Value::Set(x)) => Ok(x
-            .read()
-            .iter()
-            .map(|x| Value::new(x))
-            .collect::<Vec<Value>>()
-            .into()),
-        None => Ok(Value::Array(vec![])),
-        _ => Err(Error::WrongType),
-    })
+    conn.db()
+        .get(&args[0])
+        .map(|v| match v {
+            Value::Set(x) => Ok(x
+                .iter()
+                .map(|x| Value::new(x))
+                .collect::<Vec<Value>>()
+                .into()),
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or(Ok(Value::Array(vec![])))
 }
 
 /// Returns whether each member is a member of the set stored at key.
@@ -269,18 +283,17 @@ pub async fn smembers(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value,
 /// a member of the set or if key does not exist.
 pub async fn smismember(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
-    conn.db().get_map(&key, |v| match v {
-        Some(Value::Set(x)) => {
-            let x = x.read();
-            Ok(args
+    conn.db()
+        .get(&key)
+        .map(|v| match v {
+            Value::Set(x) => Ok(args
                 .iter()
                 .map(|member| if x.contains(member) { 1 } else { 0 })
                 .collect::<Vec<i32>>()
-                .into())
-        }
-        None => Ok(args.iter().map(|_| 0.into()).collect::<Vec<Value>>().into()),
-        _ => Err(Error::WrongType),
-    })
+                .into()),
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or_else(|| Ok(args.iter().map(|_| 0.into()).collect::<Vec<Value>>().into()))
 }
 
 /// Move member from the set at source to the set at destination. This operation is atomic. In
@@ -299,39 +312,43 @@ pub async fn smove(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value
     let source = args.pop_front().ok_or(Error::Syntax)?;
     let destination = args.pop_front().ok_or(Error::Syntax)?;
     let member = args.pop_front().ok_or(Error::Syntax)?;
-    let result = conn.db().get_map(&source, |v| match v {
-        Some(Value::Set(set1)) => conn.db().get_map(&destination, |v| match v {
-            Some(Value::Set(set2)) => {
-                let mut set1 = set1.write();
-                if !set1.contains(&member) {
-                    return Ok(0.into());
-                }
+    let result = conn
+        .db()
+        .get(&source)
+        .map_mut(|v| match v {
+            Value::Set(set1) => conn
+                .db()
+                .get(&destination)
+                .map_mut(|v| match v {
+                    Value::Set(set2) => {
+                        if !set1.contains(&member) {
+                            return Ok(0.into());
+                        }
 
-                if source == destination {
-                    return Ok(1.into());
-                }
+                        if source == destination {
+                            return Ok(1.into());
+                        }
 
-                let mut set2 = set2.write();
-                set1.remove(&member);
-                if set2.insert(member.clone()) {
+                        set1.remove(&member);
+                        if set2.insert(member.clone()) {
+                            Ok(1.into())
+                        } else {
+                            Ok(0.into())
+                        }
+                    }
+                    _ => Err(Error::WrongType),
+                })
+                .unwrap_or_else(|| {
+                    set1.remove(&member);
+                    #[allow(clippy::mutable_key_type)]
+                    let mut x = HashSet::new();
+                    x.insert(member.clone());
+                    conn.db().set(destination.clone(), x.into(), None);
                     Ok(1.into())
-                } else {
-                    Ok(0.into())
-                }
-            }
-            None => {
-                set1.write().remove(&member);
-                #[allow(clippy::mutable_key_type)]
-                let mut x = HashSet::new();
-                x.insert(member.clone());
-                conn.db().set(destination.clone(), x.into(), None);
-                Ok(1.into())
-            }
+                }),
             _ => Err(Error::WrongType),
-        }),
-        None => Ok(0.into()),
-        _ => Err(Error::WrongType),
-    })?;
+        })
+        .unwrap_or(Ok(0.into()))?;
 
     if result == Value::Integer(1) {
         conn.db().bump_version(&source);
@@ -353,29 +370,31 @@ pub async fn spop(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
     let rand = srandmember(conn, args.clone()).await?;
     let key = args.pop_front().ok_or(Error::Syntax)?;
     let mut should_remove = false;
-    let result = conn.db().get_map(&key, |v| match v {
-        Some(Value::Set(x)) => {
-            let mut x = x.write();
-            match &rand {
-                Value::Blob(value) => {
-                    x.remove(value.as_ref());
-                }
-                Value::Array(values) => {
-                    for value in values.iter() {
-                        if let Value::Blob(value) = value {
-                            x.remove(value.as_ref());
+    let result = conn
+        .db()
+        .get(&key)
+        .map_mut(|v| match v {
+            Value::Set(x) => {
+                match &rand {
+                    Value::Blob(value) => {
+                        x.remove(value.as_ref());
+                    }
+                    Value::Array(values) => {
+                        for value in values.iter() {
+                            if let Value::Blob(value) = value {
+                                x.remove(value.as_ref());
+                            }
                         }
                     }
-                }
-                _ => unreachable!(),
-            };
+                    _ => unreachable!(),
+                };
 
-            should_remove = x.is_empty();
-            Ok(rand)
-        }
-        None => Ok(Value::Null),
-        _ => Err(Error::WrongType),
-    })?;
+                should_remove = x.is_empty();
+                Ok(rand)
+            }
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or(Ok(Value::Null))?;
 
     if should_remove {
         let _ = conn.db().del(&[key]);
@@ -396,67 +415,68 @@ pub async fn spop(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value,
 /// same element multiple times. In this case, the number of returned elements is the absolute
 /// value of the specified count.
 pub async fn srandmember(conn: &Connection, args: VecDeque<Bytes>) -> Result<Value, Error> {
-    conn.db().get_map(&args[0], |v| match v {
-        Some(Value::Set(x)) => {
-            let mut rng = rand::thread_rng();
-            let set = x.read();
+    conn.db()
+        .get(&args[0])
+        .map(|v| match v {
+            Value::Set(set) => {
+                let mut rng = rand::thread_rng();
 
-            let mut items = set
-                .iter()
-                .map(|x| (x, rng.gen()))
-                .collect::<Vec<(&Bytes, i128)>>();
+                let mut items = set
+                    .iter()
+                    .map(|x| (x, rng.gen()))
+                    .collect::<Vec<(&Bytes, i128)>>();
 
-            items.sort_by(|a, b| a.1.cmp(&b.1));
+                items.sort_by(|a, b| a.1.cmp(&b.1));
 
-            if args.len() == 1 {
-                // Two arguments provided, return the first element or null if the array is null
-                if items.is_empty() {
-                    Ok(Value::Null)
+                if args.len() == 1 {
+                    // Two arguments provided, return the first element or null if the array is null
+                    if items.is_empty() {
+                        Ok(Value::Null)
+                    } else {
+                        let item = items[0].0.clone();
+                        Ok(Value::new(&item))
+                    }
                 } else {
-                    let item = items[0].0.clone();
-                    Ok(Value::new(&item))
-                }
-            } else {
-                if items.is_empty() {
-                    return Ok(Value::Array(vec![]));
-                }
-                let len = bytes_to_number::<i64>(&args[1])?;
+                    if items.is_empty() {
+                        return Ok(Value::Array(vec![]));
+                    }
+                    let len = bytes_to_number::<i64>(&args[1])?;
 
-                if len > 0 {
-                    // required length is positive, return *up* to the requested number and no duplicated allowed
-                    let len: usize = min(items.len(), len as usize);
-                    Ok(items[0..len]
-                        .iter()
-                        .map(|item| Value::new(item.0))
-                        .collect::<Vec<Value>>()
-                        .into())
-                } else {
-                    // duplicated results are allowed and the requested number must be returned
-                    let len = -len as usize;
-                    let total = items.len() - 1;
-                    let mut i = 0;
-                    let items = (0..len)
-                        .map(|_| {
-                            let r = (items[i].0, rng.gen());
-                            i = if i >= total { 0 } else { i + 1 };
-                            r
-                        })
-                        .collect::<Vec<(&Bytes, i128)>>();
-                    Ok(items
-                        .iter()
-                        .map(|item| Value::new(item.0))
-                        .collect::<Vec<Value>>()
-                        .into())
+                    if len > 0 {
+                        // required length is positive, return *up* to the requested number and no duplicated allowed
+                        let len: usize = min(items.len(), len as usize);
+                        Ok(items[0..len]
+                            .iter()
+                            .map(|item| Value::new(item.0))
+                            .collect::<Vec<Value>>()
+                            .into())
+                    } else {
+                        // duplicated results are allowed and the requested number must be returned
+                        let len = -len as usize;
+                        let total = items.len() - 1;
+                        let mut i = 0;
+                        let items = (0..len)
+                            .map(|_| {
+                                let r = (items[i].0, rng.gen());
+                                i = if i >= total { 0 } else { i + 1 };
+                                r
+                            })
+                            .collect::<Vec<(&Bytes, i128)>>();
+                        Ok(items
+                            .iter()
+                            .map(|item| Value::new(item.0))
+                            .collect::<Vec<Value>>()
+                            .into())
+                    }
                 }
             }
-        }
-        None => Ok(if args.len() == 1 {
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or(Ok(if args.len() == 1 {
             Value::Null
         } else {
             Value::Array(vec![])
-        }),
-        _ => Err(Error::WrongType),
-    })
+        }))
 }
 
 /// Remove the specified members from the set stored at key. Specified members that are not a
@@ -464,22 +484,24 @@ pub async fn srandmember(conn: &Connection, args: VecDeque<Bytes>) -> Result<Val
 /// command returns 0.
 pub async fn srem(conn: &Connection, mut args: VecDeque<Bytes>) -> Result<Value, Error> {
     let key = args.pop_front().ok_or(Error::Syntax)?;
-    let result = conn.db().get_map(&key, |v| match v {
-        Some(Value::Set(x)) => {
-            let mut set = x.write();
-            let mut i = 0;
+    let result = conn
+        .db()
+        .get(&key)
+        .map_mut(|v| match v {
+            Value::Set(set) => {
+                let mut i = 0;
 
-            args.into_iter().for_each(|value| {
-                if set.remove(&value) {
-                    i += 1;
-                }
-            });
+                args.into_iter().for_each(|value| {
+                    if set.remove(&value) {
+                        i += 1;
+                    }
+                });
 
-            Ok(i.into())
-        }
-        None => Ok(0.into()),
-        _ => Err(Error::WrongType),
-    })?;
+                Ok(i.into())
+            }
+            _ => Err(Error::WrongType),
+        })
+        .unwrap_or(Ok(0.into()))?;
 
     conn.db().bump_version(&key);
 

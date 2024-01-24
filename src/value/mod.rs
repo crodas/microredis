@@ -5,7 +5,6 @@ pub mod checksum;
 pub mod cursor;
 pub mod expiration;
 pub mod float;
-pub mod shared;
 pub mod typ;
 
 use crate::{error::Error, value_try_from, value_vec_try_from};
@@ -28,7 +27,7 @@ pub enum Value {
     /// List. This type cannot be serialized
     List(VecDeque<checksum::Value>),
     /// Set. This type cannot be serialized
-    Set(shared::Value<HashSet<Bytes>>),
+    Set(HashSet<Bytes>),
     /// Vector/Array of values
     Array(Vec<Value>),
     /// Bytes/Strings/Binary data
@@ -284,7 +283,7 @@ impl From<VecDeque<checksum::Value>> for Value {
 
 impl From<HashSet<Bytes>> for Value {
     fn from(value: HashSet<Bytes>) -> Value {
-        Value::Set(shared::Value::new(value))
+        Value::Set(value)
     }
 }
 
