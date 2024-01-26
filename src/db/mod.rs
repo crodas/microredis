@@ -51,7 +51,7 @@ impl<'a> RefValue<'a> {
             .filter(|x| x.is_valid())
             .map(|x| {
                 if x.is_scalar() {
-                    x.get().clone()
+                    x.inner().clone()
                 } else {
                     Error::WrongType.into()
                 }
@@ -64,7 +64,7 @@ impl<'a> RefValue<'a> {
         self.slot
             .get(self.key)
             .filter(|x| x.is_valid())
-            .map(|x| x.get())
+            .map(|x| x.inner())
     }
 
     /// Gets an optional reference to the write guarded value
@@ -72,7 +72,7 @@ impl<'a> RefValue<'a> {
         self.slot
             .get(self.key)
             .filter(|x| x.is_valid())
-            .map(|x| x.get_mut())
+            .map(|x| x.inner_mut())
     }
 
     /// map
@@ -87,7 +87,7 @@ impl<'a> RefValue<'a> {
         F: FnOnce(&Value) -> T,
     {
         self.slot.get(self.key).filter(|x| x.is_valid()).map(|x| {
-            let value = x.get();
+            let value = x.inner();
             f(value.deref())
         })
     }
@@ -104,7 +104,7 @@ impl<'a> RefValue<'a> {
         F: FnOnce(&mut Value) -> T,
     {
         self.slot.get(self.key).filter(|x| x.is_valid()).map(|x| {
-            let mut value = x.get_mut();
+            let mut value = x.inner_mut();
             f(value.deref_mut())
         })
     }
@@ -295,7 +295,7 @@ impl Db {
         let slot = self.slots[self.get_slot(key)].read();
         slot.get(key)
             .filter(|x| x.is_valid())
-            .map(|x| x.get().debug())
+            .map(|x| x.inner().debug())
             .ok_or(Error::NotFound)
     }
 
@@ -403,7 +403,7 @@ impl Db {
         if let Some(x) = slot
             .get(key)
             .filter(|x| x.is_valid())
-            .map(|x| x.get_mut())
+            .map(|x| x.inner_mut())
             .map(|mut x| match x.deref_mut() {
                 Value::Hash(ref mut h) => {
                     if let Some(n) = h.get(sub_key) {
@@ -451,7 +451,7 @@ impl Db {
             if !entry.is_scalar() {
                 return Err(Error::WrongType);
             }
-            let mut value = entry.get_mut();
+            let mut value = entry.inner_mut();
             let mut number: T = (&*value).try_into()?;
 
             number = incr_by.checked_add(&number).ok_or(Error::Overflow)?;
@@ -557,7 +557,7 @@ impl Db {
                     self.expirations.lock().remove(key);
                     value.persist();
                 }
-                Ok::<_, Error>(value.get_mut())
+                Ok::<_, Error>(value.inner_mut())
             })
             .transpose()?;
 
@@ -650,7 +650,7 @@ impl Db {
         let (expires_in, value) = if let Some(value) = slot.get(&source).filter(|v| v.is_valid()) {
             (
                 value.get_ttl().map(|t| t - Instant::now()),
-                value.get().clone(),
+                value.inner().clone(),
             )
         } else {
             return Ok(false);
@@ -838,7 +838,7 @@ impl Db {
         slot.get(key)
             .filter(|x| x.is_valid())
             .map_or("none".to_owned(), |x| {
-                Typ::get_type(&x.get()).to_string().to_lowercase()
+                x.inner().typ().to_string().to_lowercase()
             })
     }
 
@@ -908,7 +908,7 @@ impl Db {
 
         if let Some(entry) = slot.get(key).filter(|x| x.is_valid()) {
             entry.ensure_blob_is_mutable()?;
-            match *entry.get_mut() {
+            match *entry.inner_mut() {
                 Value::BlobRw(ref mut value) => {
                     value.put(value_to_append.as_ref());
                     Ok(value.len().into())
@@ -1153,7 +1153,7 @@ impl scan::Scan for Db {
                     }
                 }
                 if let Some(typ) = &typ {
-                    if !typ.is_value_type(&value.get()) {
+                    if !typ.check_type(&value.inner()) {
                         last_pos += 1;
                         continue;
                     }
